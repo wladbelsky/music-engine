@@ -3,7 +3,7 @@
   "preview": "preview.jpg",
   "title": "Engine Revs — audio reactive",
   "type": "web",
-  "description": "Двигатель, который набирает обороты под музыку: BPM, огонь из выхлопа, тахометр и лампы ошибок.",
+  "description": "An engine that revs up to the music: BPM detection, exhaust flames, a tachometer and warning lamps.",
   "tags": [
     "Vehicle",
     "Music"
@@ -18,7 +18,7 @@
         "order": 1
       },
       "cylinders": {
-        "text": "Количество цилиндров",
+        "text": "Number of cylinders",
         "type": "combo",
         "value": "8",
         "options": [
@@ -58,84 +58,84 @@
         "order": 4
       },
       "layout": {
-        "text": "Компоновка",
+        "text": "Layout",
         "type": "combo",
         "value": "v",
         "options": [
           {
-            "label": "Рядный",
+            "label": "Inline",
             "value": "inline"
           },
           {
-            "label": "V-образный",
+            "label": "V",
             "value": "v"
           },
           {
-            "label": "Оппозитный",
+            "label": "Boxer",
             "value": "boxer"
           }
         ],
         "order": 5
       },
       "cutaway": {
-        "text": "Разрез блока (видны поршни)",
+        "text": "Cutaway block (shows pistons)",
         "type": "bool",
         "value": true,
         "order": 6
       },
       "accentcolor": {
-        "text": "Цвет клапанных крышек",
+        "text": "Valve cover color",
         "type": "color",
         "value": "0.75 0.08 0.06",
         "order": 7
       },
       "dashcolor": {
-        "text": "Цвет подсветки приборов",
+        "text": "Gauge backlight color",
         "type": "color",
         "value": "1 0.35 0.1",
         "order": 8
       },
       "background": {
-        "text": "Фон",
+        "text": "Background",
         "type": "combo",
         "value": "garage",
         "options": [
           {
-            "label": "Гараж",
+            "label": "Garage",
             "value": "garage"
           },
           {
-            "label": "Диностенд",
+            "label": "Dyno",
             "value": "dyno"
           },
           {
-            "label": "Карбон",
+            "label": "Carbon",
             "value": "carbon"
           },
           {
-            "label": "Ночной асфальт",
+            "label": "Night asphalt",
             "value": "asphalt"
           },
           {
-            "label": "Градиент (свой цвет)",
+            "label": "Gradient (custom color)",
             "value": "gradient"
           },
           {
-            "label": "Своя картинка",
+            "label": "Custom image",
             "value": "custom"
           }
         ],
         "order": 9
       },
       "bgcolor": {
-        "text": "Цвет градиента",
+        "text": "Gradient color",
         "type": "color",
         "value": "0.12 0.13 0.16",
         "condition": "background.value == 'gradient'",
         "order": 10
       },
       "customimage": {
-        "text": "Картинка фона",
+        "text": "Background image",
         "type": "file",
         "fileType": "image",
         "value": "",
@@ -143,7 +143,7 @@
         "order": 11
       },
       "bgdim": {
-        "text": "Затемнение фона, %",
+        "text": "Background dimming, %",
         "type": "slider",
         "value": 20,
         "min": 0,
@@ -152,7 +152,7 @@
         "order": 12
       },
       "sensitivity": {
-        "text": "Чувствительность к звуку, %",
+        "text": "Audio sensitivity, %",
         "type": "slider",
         "value": 100,
         "min": 25,
@@ -161,7 +161,7 @@
         "order": 13
       },
       "redline": {
-        "text": "Отсечка (об/мин)",
+        "text": "Rev limiter (RPM)",
         "type": "slider",
         "value": 7000,
         "min": 5000,
@@ -170,7 +170,7 @@
         "order": 14
       },
       "flamethreshold": {
-        "text": "Порог огня (меньше = чаще)",
+        "text": "Flame threshold (lower = more often)",
         "type": "slider",
         "value": 62,
         "min": 20,
@@ -179,7 +179,7 @@
         "order": 15
       },
       "stalldelay": {
-        "text": "Глохнуть после тишины, сек",
+        "text": "Stall after silence, s",
         "type": "slider",
         "value": 3,
         "min": 1,
@@ -188,7 +188,7 @@
         "order": 16
       },
       "animspeed": {
-        "text": "Скорость анимации коленвала, %",
+        "text": "Crankshaft animation speed, %",
         "type": "slider",
         "value": 100,
         "min": 25,
@@ -197,40 +197,40 @@
         "order": 17
       },
       "quality": {
-        "text": "Качество графики",
+        "text": "Graphics quality",
         "type": "combo",
         "value": "high",
         "options": [
           {
-            "label": "Низкое",
+            "label": "Low",
             "value": "low"
           },
           {
-            "label": "Среднее",
+            "label": "Medium",
             "value": "medium"
           },
           {
-            "label": "Высокое",
+            "label": "High",
             "value": "high"
           }
         ],
         "order": 19
       },
       "showbpm": {
-        "text": "Показывать BPM и нагрузку",
+        "text": "Show BPM and load",
         "type": "bool",
         "value": true,
         "order": 20
       },
       "debug": {
-        "text": "Отладочная информация",
+        "text": "Debug info",
         "type": "bool",
         "value": false,
         "order": 21
       },
       "sway": {
         "order": 18,
-        "text": "Сила покачивания мотора, %",
+        "text": "Engine sway strength, %",
         "type": "slider",
         "value": 100,
         "min": 0,
@@ -239,13 +239,13 @@
       },
       "ignition": {
         "order": 2,
-        "text": "Зажигание включено",
+        "text": "Ignition on",
         "type": "bool",
         "value": true
       },
       "showcontrols": {
         "order": 3,
-        "text": "Показывать ключ и педаль газа",
+        "text": "Show key and throttle pedal",
         "type": "bool",
         "value": true
       }

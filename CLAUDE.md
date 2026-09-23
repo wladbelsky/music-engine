@@ -3,7 +3,7 @@
 Context for Claude Code / Claude when working on this project.
 
 ## About the user and communication
-- The owner is Vlad. **Reply in Russian.** UI texts in `project.json` and the dev panel are in Russian. Instrument and lamp labels are in English (STALL, REDLINE...), which is intentional.
+- The owner is Vlad. **Reply in Russian.** README.md and the WE property labels in `project.json` are in English; the dev panel in `index.html` is in Russian. Instrument and lamp labels are in English (STALL, REDLINE...), which is intentional.
 - The user gives visual feedback in iterations. After every change, take a screenshot and look at it (see "Testing").
 
 ## What it is

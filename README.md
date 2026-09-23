@@ -1,83 +1,83 @@
-# Engine Revs: аудиореактивные обои для Wallpaper Engine
+# Engine Revs: audio-reactive wallpaper for Wallpaper Engine
 
-Web-обои с 3D-двигателем. Мотор набирает обороты под музыку, а на самых мощных моментах из выхлопа бьёт огонь. Справа приборная панель: тахометр, температура, наддув, лампы ошибок, ключ зажигания и педаль газа.
+A web wallpaper with a 3D engine. The engine revs up to the music, and on the most powerful moments flames shoot out of the exhaust. On the right is a dashboard: tachometer, temperature, boost, warning lamps, an ignition key and a throttle pedal.
 
 ![preview](preview.jpg)
 
-## Установка
+## Installation
 
-1. Wallpaper Engine → **Создать обои** (Create Wallpaper) → выберите `index.html` из этой папки. WE скопирует проект в свою папку `myprojects`.
-   - Другой способ: скопировать папку `EngineRevs` в `…\steamapps\common\wallpaper_engine\projects\myprojects\` и перезапустить WE.
-2. Если в панели свойств WE нет настроек мотора, замените `project.json` в папке проекта WE на этот файл и перезапустите WE.
-3. Чтобы обои реагировали на звук, в настройках WE должен быть включён захват аудио с устройства вывода.
-4. Ключ и педаль работают мышью только если WE передаёт обоям мышь: в настройках WE должен быть разрешён ввод мышью. Клик по иконке рабочего стола обоям не передаётся.
+1. Wallpaper Engine → **Create Wallpaper** → select `index.html` from this folder. WE will copy the project into its `myprojects` folder.
+   - Alternatively, copy the `EngineRevs` folder into `…\steamapps\common\wallpaper_engine\projects\myprojects\` and restart WE.
+2. If the engine settings don't show up in the WE properties panel, replace `project.json` in the WE project folder with this file and restart WE.
+3. For the wallpaper to react to sound, audio capture from the output device must be enabled in the WE settings.
+4. The key and pedal respond to the mouse only if WE passes mouse input to the wallpaper: mouse input must be allowed in the WE settings. Clicks on desktop icons are not passed to the wallpaper.
 
-> После изменения файлов в этой папке импортируйте `index.html` заново: WE работает со своей копией проекта.
+> After changing files in this folder, import `index.html` again: WE works with its own copy of the project.
 
-## Управление
+## Controls
 
-| Элемент | Действие |
+| Element | Action |
 |---|---|
-| **Ключ зажигания** (слева над тахометром) | Клик переключает ВЫКЛ/ВКЛ. При включении все лампы загораются на ~1 с для проверки, потом стартер крутит мотор и он заводится. Выключенный мотор глохнет, приборы гаснут, на музыку он не реагирует. |
-| **Педаль газа** (справа над тахометром) | Пока зажата кнопка мыши, обороты растут вплоть до отсечки: будет огонь, «выстрелы» при сбросе газа и пшик блоу-офф клапана. Педаль работает и без музыки и может сама завести заглохший мотор. |
-| Клавиатура (только в браузере) | `Пробел` или `↑` работают как педаль, `I` поворачивает ключ. |
+| **Ignition key** (left, above the tachometer) | Click to toggle OFF/ON. When switched on, all lamps light up for ~1 s as a bulb check, then the starter cranks the engine and it starts. When switched off, the engine stalls, the gauges go dark, and it ignores the music. |
+| **Throttle pedal** (right, above the tachometer) | While the mouse button is held, RPM climbs all the way to the rev limiter: you get flames, backfire "pops" when you lift off, and the hiss of the blow-off valve. The pedal works without music too and can restart a stalled engine on its own. |
+| Keyboard (browser only) | `Space` or `↑` act as the pedal, `I` turns the key. |
 
-## Настройки (панель свойств обоев в WE)
+## Settings (wallpaper properties panel in WE)
 
-- **Зажигание включено**: состояние ключа при запуске.
-- **Показывать ключ и педаль**.
-- **Количество цилиндров** (2–12) и **Компоновка**: рядный, V-образный, оппозитный. Для V и оппозитного нечётное число округляется вверх.
-- **Разрез блока**: полупрозрачный блок, видны поршни, шатуны и коленвал.
-- **Цвет клапанных крышек**, **цвет подсветки приборов**.
-- **Фон**: Гараж, Диностенд, Карбон, Ночной асфальт, Градиент (свой цвет), Своя картинка. Плюс затемнение фона.
-- **Чувствительность к звуку**, **отсечка**, **порог огня** (чем меньше, тем чаще огонь).
-- **Глохнуть после тишины, сек**.
-- **Скорость анимации коленвала**, **сила покачивания мотора**.
-- **Качество графики**: низкое, среднее, высокое. Если обои грузят систему, также ограничьте FPS в настройках WE.
-- **Показывать BPM и нагрузку**, **отладочная информация** (BPM, уверенность, громкость, состояние мотора).
+- **Ignition on**: key position at startup.
+- **Show key and throttle pedal**.
+- **Number of cylinders** (2–12) and **Layout**: inline, V, boxer. For V and boxer an odd number is rounded up.
+- **Cutaway block**: a semi-transparent block that shows the pistons, connecting rods and crankshaft.
+- **Valve cover color**, **gauge backlight color**.
+- **Background**: Garage, Dyno, Carbon, Night asphalt, Gradient (custom color), Custom image. Plus background dimming.
+- **Audio sensitivity**, **rev limiter**, **flame threshold** (lower means more frequent flames).
+- **Stall after silence, s**.
+- **Crankshaft animation speed**, **engine sway strength**.
+- **Graphics quality**: low, medium, high. If the wallpaper loads your system too much, also cap the FPS in the WE settings.
+- **Show BPM and load**, **debug info** (BPM, confidence, loudness, engine state).
 
-## Индикаторы
+## Warning lamps
 
-| Лампа | Когда горит |
+| Lamp | When it lights up |
 |---|---|
-| STALL | Мотор заглох: тишина дольше заданного времени и педаль не нажата |
-| LOW RPM | Долго держатся низкие обороты (тихая или медленная музыка) |
-| REDLINE | Обороты у отсечки |
-| OVERHEAT | Долгая пиковая нагрузка. Выше 118 °C лампа мигает |
-| OIL PRESS | Обороты ниже 500: мотор заглох или крутит стартер |
-| BATTERY | Мотор заглох или работает стартер |
-| CHECK ENG | Громкая музыка, но анализатор несколько секунд не может поймать ритм |
-| OVERBOOST | Наддув больше секунды держится у максимума |
+| STALL | The engine has stalled: silence longer than the configured time and the pedal is not pressed |
+| LOW RPM | RPM stays low for a long time (quiet or slow music) |
+| REDLINE | RPM at the rev limiter |
+| OVERHEAT | Sustained peak load. Blinks above 118 °C |
+| OIL PRESS | RPM below 500: the engine has stalled or the starter is cranking |
+| BATTERY | The engine has stalled or the starter is cranking |
+| CHECK ENG | The music is loud, but the analyzer can't lock onto the beat for several seconds |
+| OVERBOOST | Boost stays near maximum for more than a second |
 
-## Как это работает
+## How it works
 
-- WE ~30 раз в секунду передаёт спектр звука (64 полосы на каждый канал). BPM считается самостоятельно: по скачкам энергии в басах ищется период повторения ударов (автокорреляция на окне ~10 с).
-- Обороты складываются из громкости, BPM, плотности ударов, толчков на сильных ударах и педали газа.
-- Огонь появляется, когда «мощность» (громкость относительно трека + BPM + плотность ударов) выше порога. Его рисуют шейдерные струи с процедурной турбулентностью, клубы при «выстрелах» и искры.
+- About 30 times per second WE passes the audio spectrum (64 bands per channel). BPM is computed by the wallpaper itself: it looks for the repetition period of the beats from energy jumps in the bass (autocorrelation over a ~10 s window).
+- RPM is made up of loudness, BPM, beat density, kicks on strong beats and the throttle pedal.
+- Flames appear when the "power" (loudness relative to the track + BPM + beat density) is above the threshold. They are drawn as shader jets with procedural turbulence, plus fireballs on backfires and sparks.
 
-## Проверка без Wallpaper Engine
+## Testing without Wallpaper Engine
 
-Откройте `index.html` в Chrome. Появится панель разработки: демо-ритм, микрофон, аудиофайл, выбор мотора и фона.
-Для микрофона нужен локальный сервер:
+Open `index.html` in Chrome. A dev panel will appear: demo beat, microphone, audio file, engine and background selection.
+The microphone requires a local server:
 
 ```
 python -m http.server 8000
 # http://localhost:8000/?debug=true
 ```
 
-Параметры можно передать в адресе: `?demo=1&layout=inline&cylinders=6&background=dyno&ignition=false`.
+Parameters can be passed in the URL: `?demo=1&layout=inline&cylinders=6&background=dyno&ignition=false`.
 
-## Файлы
+## Files
 
 ```
-index.html        разметка и подключение скриптов
-project.json      описание обоев и свойства для WE
-preview.jpg       превью
-js/audio.js       анализ звука: BPM, удары, громкость, тишина; демо и источники звука для браузера
-js/sim.js         модель мотора: состояния, обороты, наддув, температура, огонь, лампы, ключ, педаль
-js/engine3d.js    3D-сцена на Three.js: генерация мотора, камера, тени, покачивание, пламя, дым
-js/dash.js        приборная панель на 2D canvas, ключ и педаль
-js/bg.js          фоны
-js/main.js        связка всего: свойства WE, аудио, ввод, главный цикл
-js/three.min.js   Three.js r149 (MIT, лицензия в js/three.LICENSE.txt)
+index.html        markup and script loading
+project.json      wallpaper description and properties for WE
+preview.jpg       preview
+js/audio.js       audio analysis: BPM, beats, loudness, silence; demo and browser audio sources
+js/sim.js         engine model: states, RPM, boost, temperature, flames, lamps, key, pedal
+js/engine3d.js    Three.js 3D scene: engine generation, camera, shadows, sway, flames, smoke
+js/dash.js        dashboard on a 2D canvas, key and pedal
+js/bg.js          backgrounds
+js/main.js        glue: WE properties, audio, input, main loop
+js/three.min.js   Three.js r149 (MIT, license in js/three.LICENSE.txt)
 ```
