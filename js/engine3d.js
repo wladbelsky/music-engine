@@ -416,6 +416,7 @@
         dark2: std(0x202226, 0.7, 0.45),
         spark: new T.MeshBasicMaterial({ color: 0x331a0a }),
         header: std(0xa89a8e, 1.0, 0.28, { emissive: new T.Color(1.0, 0.32, 0.06), emissiveIntensity: 0 }),
+        soot: std(0x17120f, 0.4, 0.85, { side: T.DoubleSide, emissive: new T.Color(1.0, 0.38, 0.08), emissiveIntensity: 0 }),
         pulley: std(0x2b2d31, 0.9, 0.35),
         turbo: std(0x9a9ea5, 0.95, 0.3),
         turboHot: std(0x6b5e55, 0.9, 0.4, { emissive: new T.Color(1.0, 0.3, 0.05), emissiveIntensity: 0 }),
@@ -534,6 +535,15 @@
       const tip = new T.Mesh(new T.CylinderGeometry(0.115, 0.095, 0.16, 16, 1, true), M.header);
       tip.position.copy(p4).addScaledVector(dir, -0.04);
       tip.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), dir); this.eng.add(tip);
+      // inside of the stack: sooty liner + throat disc (otherwise the open end shows through), rolled lip on the rim
+      const liner = new T.Mesh(new T.CylinderGeometry(0.104, 0.086, 0.16, 16, 1, true), M.soot);
+      liner.position.copy(tip.position); liner.quaternion.copy(tip.quaternion); this.eng.add(liner);
+      const throat = new T.Mesh(new T.CircleGeometry(0.09, 16), M.soot);
+      throat.position.copy(p4).addScaledVector(dir, -0.09);
+      throat.quaternion.setFromUnitVectors(new T.Vector3(0, 0, 1), dir); this.eng.add(throat);
+      const lip = new T.Mesh(new T.TorusGeometry(0.11, 0.009, 6, 24), M.header);
+      lip.position.copy(p4).addScaledVector(dir, 0.04);
+      lip.quaternion.setFromUnitVectors(new T.Vector3(0, 0, 1), dir); this.eng.add(lip);
       c.tip = p4.clone().addScaledVector(dir, 0.02); c.dir = dir;
       c.pulse = 0; c.burst = 0; c.jetI = 0;
       const jg = new T.BufferGeometry();
@@ -659,6 +669,7 @@
       const heatT = clamp(sim.flame * 0.7 + Math.max(0, rpm / sim.settings.redline - 0.55) * 0.6 + Math.max(0, sim.temp - 100) / 40, 0, 1);
       this.heat += (heatT - this.heat) * (1 - Math.exp(-dt / 1.8));
       this.mats.header.emissiveIntensity = this.heat * 0.9;
+      this.mats.soot.emissiveIntensity = clamp(sim.flame * 1.2 + this.flash * 2 + this.heat * 0.3, 0, 1.6);
       this.mats.turboHot.emissiveIntensity = clamp(this.heat * 0.7 + Math.max(0, sim.boost) * 0.25, 0, 1);
 
       // flame light
