@@ -37,6 +37,8 @@ Each file is an IIFE exporting a class to `window`.
 - `silentTime` must not be accumulated from a clamped `dt`: at low FPS the stall never triggered.
 - Flame particles/jets spawn from `tipW/dirW` (world space after sway), not from `tip + eng.position`.
 - The plate font size is one value for all lamps, computed from the base `fs0` (not reduced cumulatively).
+- **Page hang ("Page Unresponsive" in WE):** in `_estimateTempo` the parabolic peak refinement was unclamped; `best` maximizes the prior-weighted score, not `ac`, so it can sit on a slope and the shift made the lag negative → negative BPM → `while (bpm < 80) bpm *= 2` never ended. Refine only at a real local max, clamp the shift to ±0.5 lag, reject non-positive/non-finite BPM, and keep the octave folding bounded.
+- **One rAF chain only:** `setPaused(false)` used to call `requestAnimationFrame(loop)` unconditionally; WE unpausing without a pause (or pause+unpause within one frame) stacked extra loops, each running a full frame. Use `startLoop()` (tracks `rafId`).
 
 ## Testing
 Headless Chromium + SwiftShader (the sandbox has Playwright, browsers in `/opt/pw-browsers`):

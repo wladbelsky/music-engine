@@ -73,7 +73,7 @@
       applySettings();
     },
     applyGeneralProperties(p) { if (p.fps !== undefined) S.fps = p.fps; },
-    setPaused(isPaused) { paused = isPaused; if (!paused) { last = performance.now(); requestAnimationFrame(loop); } },
+    setPaused(isPaused) { paused = isPaused; if (!paused) { last = performance.now(); startLoop(); } },
   };
 
   /* ---------- ignition key & throttle pedal (mouse / touch; keyboard only in a browser) ---------- */
@@ -139,10 +139,14 @@
   if (!IS_WE) { $('dv-cyl').value = String(S.cylinders); $('dv-layout').value = S.layout; $('dv-bg').value = S.background; }
 
   /* ---------- loop ---------- */
-  let last = performance.now(), dbgT = 0;
+  // exactly one rAF chain: WE may send setPaused(false) without a pause before it, or pause+unpause
+  // within one frame; blindly calling requestAnimationFrame there stacked extra loops, each doing a full frame
+  let last = performance.now(), dbgT = 0, rafId = 0;
+  function startLoop() { if (!rafId) rafId = requestAnimationFrame(loop); }
   function loop(now) {
+    rafId = 0;
     if (paused) return;
-    requestAnimationFrame(loop);
+    rafId = requestAnimationFrame(loop);
     if (S.fps > 0 && now - last < 1000 / S.fps - 2) return;
     const dt = Math.min(0.1, Math.max(0.001, (now - last) / 1000)); last = now;
     const t = now / 1000;
@@ -173,6 +177,6 @@
       `flame ${sim.flame.toFixed(2)}  boost ${sim.boost.toFixed(2)}  temp ${sim.temp.toFixed(1)}\n` + bars;
   }
 
-  requestAnimationFrame(loop);
+  startLoop();
   window.__dbg = { audio, sim, eng3d, dash, S };
 })();

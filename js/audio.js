@@ -131,14 +131,17 @@
         if (s > bestS) { bestS = s; best = L; }
       }
       if (best < 0) return;
-      // parabolic interpolation around peak
+      // parabolic interpolation around peak. `best` maximizes the prior-weighted score, not ac itself,
+      // so it may not be a local max of ac: only refine at a real peak and keep the shift within half a lag
+      // (an unclamped shift once gave a negative lag -> negative bpm -> the folding loop below never ended)
       let Lf = best;
       const a = ac[best - 1], b = ac[best], c = ac[best + 1] || 0;
       const den = a - 2 * b + c;
-      if (den < 0) Lf = best + 0.5 * (a - c) / den;
+      if (den < 0 && b >= a && b >= c) Lf = best + Math.max(-0.5, Math.min(0.5, 0.5 * (a - c) / den));
       let bpm = 60 / (Lf * fp);
-      while (bpm < 80) bpm *= 2;
-      while (bpm > 170) bpm /= 2;
+      if (!(bpm > 0 && isFinite(bpm))) return;
+      for (let i = 0; i < 8 && bpm < 80; i++) bpm *= 2;
+      for (let i = 0; i < 8 && bpm > 170; i++) bpm /= 2;
       const conf = Math.max(0, Math.min(1, ac[best] * 1.6));
       this.rawBpm = bpm;
       this.conf += (conf - this.conf) * 0.35;
