@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Engine Revs</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+  canvas, #glow { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
+  #glow { pointer-events: none; opacity: 0; mix-blend-mode: screen; }
+  #dash { pointer-events: none; }
+  #debug { position: absolute; left: 10px; bottom: 10px; display: none; margin: 0; padding: 8px 10px;
+    font: 12px/1.4 Consolas, monospace; color: #9fe; background: rgba(0,0,0,.6); border-radius: 6px; white-space: pre; pointer-events: none; }
+  #devpanel { position: absolute; left: 10px; top: 10px; display: none; padding: 10px; background: rgba(12,13,15,.85);
+    color: #ccd; font: 13px "Segoe UI", Arial, sans-serif; border: 1px solid #2a2d31; border-radius: 8px; z-index: 5; }
+  #devpanel b { color: #fff; } #devpanel .row { margin: 6px 0; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  #devpanel button, #devpanel select { background: #1d2024; color: #dde; border: 1px solid #3a3f45; border-radius: 4px; padding: 3px 8px; }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div id="glow"></div>
+<canvas id="gl"></canvas>
+<canvas id="dash"></canvas>
+<pre id="debug"></pre>
+
+<div id="devpanel">
+  <b>Режим разработки</b> (в Wallpaper Engine панель скрыта)
+  <div class="row">Звук:
+    <button id="dv-demo">Демо-ритм</button><button id="dv-mic">Микрофон</button>
+    <label>Файл <input id="dv-file" type="file" accept="audio/*"></label><button id="dv-stop">Стоп</button></div>
+  <div class="row">Мотор:
+    <select id="dv-layout"><option value="inline">Рядный</option><option value="v">V-образный</option><option value="boxer">Оппозитный</option></select>
+    <select id="dv-cyl"><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option selected>8</option><option>10</option><option>12</option></select>
+    <label><input id="dv-cut" type="checkbox" checked> разрез</label>
+    <label><input id="dv-dbg" type="checkbox"> отладка</label></div>
+  <div class="row">Фон:
+    <select id="dv-bg"><option value="garage">Гараж</option><option value="dyno">Диностенд</option><option value="carbon">Карбон</option><option value="asphalt">Ночной асфальт</option><option value="gradient">Градиент</option><option value="custom">Своя картинка</option></select>
+    <label>картинка <input id="dv-img" type="file" accept="image/*"></label>
+    <button id="dv-hide">Скрыть</button></div>
+</div>
+
+<script src="js/three.min.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/engine3d.js"></script>
+<script src="js/dash.js"></script>
+<script src="js/bg.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
