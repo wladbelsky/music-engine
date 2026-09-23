@@ -3,6 +3,7 @@
   'use strict';
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const IDLE = 850;
+  const FIRE_RPM = 2500;              // no flames or pops below this, whatever the redline is
 
   class EngineSim {
     constructor() {
@@ -19,14 +20,14 @@
       this.limiter = false; this._limT = 0;
       this.lowT = 0; this.ceT = 0; this.obT = 0;
       this.warn = {};
-      this.settings = { redline: 7000, stallDelay: 3, flameThr: 0.62 };
+      this.settings = { redline: 7000, stallDelay: 3, flameThr: 0.62, turbos: 1 };
     }
 
     emit(type, k = 1) { this.events.push({ type, k }); }
     takeEvents() { const e = this.events; this.events = []; return e; }
 
     update(dt, a, t) {
-      const s = this.settings, red = s.redline;
+      const s = this.settings, red = Math.max(250, s.redline || 7000);
       const beats = a.takeBeats();
       this.stateT += dt;
       const soundOn = a.silentTime < 0.12 && a.level > 0.006;
@@ -85,7 +86,7 @@
       if (target > lim) target = lim;
       if (this.rpm >= lim * 0.995 && this.state === 'running') {
         this.limiter = true;
-        if (t - this._limT > 0.09) { this._limT = t; this.rpm -= 280; if (Math.random() < 0.5) this.emit('backfire', 0.55); }
+        if (t - this._limT > 0.09) { this._limT = t; this.rpm -= Math.min(280, red * 0.04); if (this.rpm > FIRE_RPM && Math.random() < 0.5) this.emit('backfire', 0.55); }
       }
       this.target = target;
       const k = target > this.rpm ? rise : fall;
@@ -94,21 +95,24 @@
 
       const pw = Math.max(a.power, this.pedal * 0.95);
       // throttle & decel detection
-      const thr = this.state === 'running' ? clamp((target - IDLE) / (red - IDLE), 0, 1) : 0;
+      const thr = this.state === 'running' ? clamp((target - IDLE) / Math.max(250, red - IDLE), 0, 1) : 0;
       this.throttle += (thr - this.throttle) * (1 - Math.exp(-dt / 0.08));
       this._thrHist.push([t, this.throttle]);
       while (this._thrHist.length && t - this._thrHist[0][0] > 0.25) this._thrHist.shift();
       const maxRecent = Math.max(...this._thrHist.map(x => x[1]));
-      if (maxRecent - this.throttle > 0.28 && this.rpm > red * 0.45 && !this._decel) {
+      if (maxRecent - this.throttle > 0.28 && this.rpm > Math.max(red * 0.45, FIRE_RPM) && !this._decel) {
         this._decel = true;
         this.emit('backfire', 0.5 + 0.5 * pw);
-        if (this.boost > 0.6) this.emit('bov', this.boost / this.maxBoost);
+        if (s.turbos > 0 && this.boost > 0.6) this.emit('bov', this.boost / this.maxBoost);
       }
       if (maxRecent - this.throttle < 0.08) this._decel = false;
 
       // boost (turbo spool)
       const rpmF = clamp((this.rpm - 1800) / 2600, 0, 1);
-      const bTarget = this.state === 'running' ? -0.6 + (this.maxBoost + 0.6) * clamp(this.throttle * 1.25, 0, 1) * rpmF : 0;
+      // no turbos: manifold vacuum only, from about -0.65 at idle to ~0 at full throttle
+      const bTarget = this.state !== 'running' ? 0 : s.turbos > 0
+        ? -0.6 + (this.maxBoost + 0.6) * clamp(this.throttle * 1.25, 0, 1) * rpmF
+        : -0.65 + 0.62 * clamp(this.throttle * 1.25, 0, 1);
       const bk = bTarget > this.boost ? 1 / 0.7 : 1 / 0.2;
       this.boost += (bTarget - this.boost) * (1 - Math.exp(-dt * bk));
 
@@ -121,8 +125,8 @@
       // flames (hysteresis)
       const ft = s.flameThr;
       if (this.state === 'running') {
-        if (!this._flameOn && pw > ft && this.rpm > red * 0.5) this._flameOn = true;
-        if (this._flameOn && (pw < ft - 0.08 || this.rpm < red * 0.4)) this._flameOn = false;
+        if (!this._flameOn && pw > ft && this.rpm > Math.max(red * 0.5, FIRE_RPM)) this._flameOn = true;
+        if (this._flameOn && (pw < ft - 0.08 || this.rpm < Math.max(red * 0.4, FIRE_RPM * 0.8))) this._flameOn = false;
       } else this._flameOn = false;
       const fTarget = this._flameOn ? 0.35 + 0.65 * clamp((pw - ft) / Math.max(0.05, 1 - ft), 0, 1) : 0;
       this.flame += (fTarget - this.flame) * (1 - Math.exp(-dt / (fTarget > this.flame ? 0.1 : 0.35)));

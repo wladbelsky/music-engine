@@ -6,7 +6,7 @@
   const IS_WE = typeof window.wallpaperRegisterAudioListener === 'function';
 
   const S = {
-    cylinders: 8, layout: 'v', cutaway: true,
+    cylinders: 8, layout: 'v', turbos: 1, cutaway: true,
     accent: [0.75, 0.08, 0.06], dashColor: [1, 0.35, 0.1],
     background: 'garage', bgcolor: [0.12, 0.13, 0.16], customimage: '', bgdim: 0.2,
     sensitivity: 1, sway: 1, redline: 7000, flameThr: 0.62, stallDelay: 3, animSpeed: 1,
@@ -20,17 +20,19 @@
   const bg = new Background($('bg'));
   const glow = $('glow');
   let paused = false, needRebuild = true;
+  const MIN_REDLINE = 500, MAX_REDLINE = 15000;
 
   const hex = c => '#' + c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('');
   const parseColor = s => s.split(' ').map(Number);
   const engineLabel = () => {
     let n = S.cylinders; if (S.layout !== 'inline' && n % 2) n++;
-    return (S.layout === 'inline' ? 'I' + n : S.layout === 'boxer' ? 'BOXER ' + n : 'V' + n) + ' TURBO';
+    const tt = ['', ' TURBO', ' TWIN TURBO', '', ' QUAD TURBO'][S.turbos] || '';
+    return (S.layout === 'inline' ? 'I' + n : S.layout === 'boxer' ? 'BOXER ' + n : 'V' + n) + tt;
   };
 
   function applySettings() {
     audio.gain = S.sensitivity;
-    sim.settings.redline = S.redline; sim.settings.flameThr = S.flameThr; sim.settings.stallDelay = S.stallDelay;
+    sim.settings.redline = S.redline; sim.settings.turbos = S.turbos; sim.settings.flameThr = S.flameThr; sim.settings.stallDelay = S.stallDelay;
     eng3d.setAccent(new THREE.Color(S.accent[0], S.accent[1], S.accent[2]));
     eng3d.setCutaway(S.cutaway);
     eng3d.sway = S.sway;
@@ -45,6 +47,7 @@
       let bgChanged = false, rebuild = false, q = false;
       if (v('cylinders') !== undefined) { S.cylinders = parseInt(v('cylinders'), 10) || 8; rebuild = true; }
       if (v('layout') !== undefined) { S.layout = v('layout'); rebuild = true; }
+      if (v('turbos') !== undefined) { const nt = parseInt(v('turbos'), 10); S.turbos = [0, 1, 2, 4].includes(nt) ? nt : 1; rebuild = true; }
       if (v('cutaway') !== undefined) S.cutaway = !!v('cutaway');
       if (v('accentcolor') !== undefined) S.accent = parseColor(v('accentcolor'));
       if (v('dashcolor') !== undefined) S.dashColor = parseColor(v('dashcolor'));
@@ -57,7 +60,10 @@
       }
       if (v('bgdim') !== undefined) { S.bgdim = v('bgdim') / 100; bgChanged = true; }
       if (v('sensitivity') !== undefined) S.sensitivity = v('sensitivity') / 100;
-      if (v('redline') !== undefined) S.redline = Math.round(v('redline') / 250) * 250;
+      if (v('redline') !== undefined) { // editable slider: typed values can be anything, keep it sane
+        const r = Math.round(Number(v('redline')) / 250) * 250;
+        if (isFinite(r)) S.redline = Math.max(MIN_REDLINE, Math.min(MAX_REDLINE, r));
+      }
       if (v('flamethreshold') !== undefined) S.flameThr = v('flamethreshold') / 100;
       if (v('stalldelay') !== undefined) S.stallDelay = v('stalldelay');
       if (v('animspeed') !== undefined) S.animSpeed = v('animspeed') / 100;
@@ -73,7 +79,7 @@
       applySettings();
     },
     applyGeneralProperties(p) { if (p.fps !== undefined) S.fps = p.fps; },
-    setPaused(isPaused) { paused = isPaused; if (!paused) { last = performance.now(); requestAnimationFrame(loop); } },
+    setPaused(isPaused) { paused = isPaused; if (!paused) { last = performance.now(); startLoop(); } },
   };
 
   /* ---------- ignition key & throttle pedal (mouse / touch; keyboard only in a browser) ---------- */
@@ -114,12 +120,13 @@
     const panel = $('devpanel'); panel.style.display = 'block';
     const stopSrc = () => { if (devSrc && devSrc.stop) devSrc.stop(); if (devSrc && devSrc.id) clearInterval(devSrc.id); if (devSrc && devSrc.el) devSrc.el.pause(); devSrc = null; };
     $('dv-demo').onclick = () => { stopSrc(); devSrc = new DemoSource(onAudio); };
-    $('dv-mic').onclick = async () => { stopSrc(); const s = new WebAudioSource(onAudio); try { await s.startMic(); devSrc = s; } catch (e) { alert('Микрофон недоступен: ' + e.message); } };
+    $('dv-mic').onclick = async () => { stopSrc(); const s = new WebAudioSource(onAudio); try { await s.startMic(); devSrc = s; } catch (e) { alert('Microphone unavailable: ' + e.message); } };
     $('dv-file').onchange = e => { const f = e.target.files[0]; if (!f) return; stopSrc(); const s = new WebAudioSource(onAudio); s.startFile(f); devSrc = s; };
     $('dv-stop').onclick = stopSrc;
     const prop = (k, val) => window.wallpaperPropertyListener.applyUserProperties({ [k]: { value: val } });
     $('dv-cyl').onchange = e => prop('cylinders', e.target.value);
     $('dv-layout').onchange = e => prop('layout', e.target.value);
+    $('dv-turbo').onchange = e => prop('turbos', e.target.value);
     $('dv-bg').onchange = e => prop('background', e.target.value);
     $('dv-img').onchange = e => { const f = e.target.files[0]; if (f) { prop('customimage', URL.createObjectURL(f)); prop('background', 'custom'); $('dv-bg').value = 'custom'; } };
     $('dv-cut').onchange = e => prop('cutaway', e.target.checked);
@@ -132,21 +139,26 @@
   const init = {};
   for (const [k, v] of qs.entries()) if (!['demo'].includes(k)) init[k] = { value: isNaN(v) ? (v === 'true' ? true : v === 'false' ? false : v) : Number(v) };
   if (init.cylinders) init.cylinders.value = String(init.cylinders.value);
+  if (init.turbos) init.turbos.value = String(init.turbos.value);
   resize();
   eng3d.setQuality(S.quality);
   bg.set({ preset: S.background, bgcolor: S.bgcolor, dim: S.bgdim });
   window.wallpaperPropertyListener.applyUserProperties(init);
-  if (!IS_WE) { $('dv-cyl').value = String(S.cylinders); $('dv-layout').value = S.layout; $('dv-bg').value = S.background; }
+  if (!IS_WE) { $('dv-cyl').value = String(S.cylinders); $('dv-layout').value = S.layout; $('dv-turbo').value = String(S.turbos); $('dv-bg').value = S.background; }
 
   /* ---------- loop ---------- */
-  let last = performance.now(), dbgT = 0;
+  // exactly one rAF chain: WE may send setPaused(false) without a pause before it, or pause+unpause
+  // within one frame; blindly calling requestAnimationFrame there stacked extra loops, each doing a full frame
+  let last = performance.now(), dbgT = 0, rafId = 0;
+  function startLoop() { if (!rafId) rafId = requestAnimationFrame(loop); }
   function loop(now) {
+    rafId = 0;
     if (paused) return;
-    requestAnimationFrame(loop);
+    rafId = requestAnimationFrame(loop);
     if (S.fps > 0 && now - last < 1000 / S.fps - 2) return;
     const dt = Math.min(0.1, Math.max(0.001, (now - last) / 1000)); last = now;
     const t = now / 1000;
-    if (needRebuild) { needRebuild = false; eng3d.build(S.cylinders, S.layout); eng3d.setCutaway(S.cutaway); eng3d.resize(window.innerWidth, window.innerHeight); dash.set({ label: engineLabel() }); }
+    if (needRebuild) { needRebuild = false; eng3d.build(S.cylinders, S.layout, S.turbos); eng3d.setCutaway(S.cutaway); eng3d.resize(window.innerWidth, window.innerHeight); dash.set({ label: engineLabel() }); }
     audio.tick(t);
     sim.update(dt, audio, t);
     eng3d.update(dt, sim, S.animSpeed, S.quality);
@@ -173,6 +185,6 @@
       `flame ${sim.flame.toFixed(2)}  boost ${sim.boost.toFixed(2)}  temp ${sim.temp.toFixed(1)}\n` + bars;
   }
 
-  requestAnimationFrame(loop);
+  startLoop();
   window.__dbg = { audio, sim, eng3d, dash, S };
 })();

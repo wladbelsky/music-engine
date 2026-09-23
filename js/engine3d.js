@@ -269,13 +269,14 @@
     }
 
     /* ------------------------------------------------------------ build */
-    build(nCyl, layout) {
+    build(nCyl, layout, nTurbo = 1) {
       if (this.root) { this.scene.remove(this.root); this._dispose(this.root); }
       this.flames.clear(); this.smoke.clear();
       let n = clamp(nCyl | 0, 1, 16);
       if (layout !== 'inline' && n % 2) n += 1;
       if (layout !== 'inline' && n < 2) n = 2;
       this.n = n; this.layout = layout;
+      this.nTurbo = [0, 1, 2, 4].includes(nTurbo) ? nTurbo : 1;
 
       const root = this.root = new T.Group();
       const eng = this.eng = new T.Group(); root.add(eng);
@@ -416,6 +417,7 @@
         dark2: std(0x202226, 0.7, 0.45),
         spark: new T.MeshBasicMaterial({ color: 0x331a0a }),
         header: std(0xa89a8e, 1.0, 0.28, { emissive: new T.Color(1.0, 0.32, 0.06), emissiveIntensity: 0 }),
+        soot: std(0x17120f, 0.4, 0.85, { side: T.DoubleSide, emissive: new T.Color(1.0, 0.38, 0.08), emissiveIntensity: 0 }),
         pulley: std(0x2b2d31, 0.9, 0.35),
         turbo: std(0x9a9ea5, 0.95, 0.3),
         turboHot: std(0x6b5e55, 0.9, 0.4, { emissive: new T.Color(1.0, 0.3, 0.05), emissiveIntensity: 0 }),
@@ -488,24 +490,55 @@
       pulley(0.36, 0, 0, 1);
       pulley(0.22, Math.min(topY, 1.1), 0, 1.6);
       pulley(0.15, 0.55, layout === 'inline' ? -0.62 : -0.7, 2.4);
-      // turbo on the camera side, low front
-      const tz = layout === 'inline' ? 0.8 : 1.05, tx = fx + 0.4;
-      const tg = this.turbo = new T.Group(); tg.position.set(tx, 0.45, tz); eng.add(tg);
-      const snail = new T.Mesh(new T.TorusGeometry(0.26, 0.13, 14, 32), M.turbo); snail.rotation.y = Math.PI / 2; snail.castShadow = true; tg.add(snail);
-      const hot = new T.Mesh(new T.TorusGeometry(0.22, 0.12, 12, 28), M.turboHot); hot.rotation.y = Math.PI / 2; hot.position.x = -0.32; tg.add(hot);
-      const core = new T.Mesh(new T.CylinderGeometry(0.14, 0.14, 0.3, 16), M.steel); core.rotation.z = Math.PI / 2; core.position.x = -0.16; tg.add(core);
-      const inlet = new T.Mesh(new T.CylinderGeometry(0.2, 0.2, 0.22, 24, 1, true), M.turbo); inlet.rotation.z = Math.PI / 2; inlet.position.x = 0.16; tg.add(inlet);
-      const wheel = this.compressor = new T.Group(); wheel.position.x = 0.18; tg.add(wheel);
-      for (let k = 0; k < 8; k++) {
-        const bl = new T.Mesh(new T.BoxGeometry(0.02, 0.17, 0.04), M.steel);
-        bl.position.set(0, Math.cos(k * Math.PI / 4) * 0.085, Math.sin(k * Math.PI / 4) * 0.085); bl.rotation.x = k * Math.PI / 4 + 0.4; wheel.add(bl);
+      this._turbos(layout, M);
+    }
+
+    /* Turbos low at the front: one per side on V/boxer (camera side first), all on the exhaust side for inline.
+       Size follows the engine (V8 = 1.0, V12 = 1.5); twin/quad use the same size as a single, they just multiply.
+       No turbos -> an air filter on the throttle body. */
+    _turbos(layout, M) {
+      const eng = this.eng, nT = this.nTurbo, tb = this.tbPos.clone();
+      this.compressors = []; this.bovs = [];
+      if (!nT) {
+        const f = new T.Group(); f.position.set(tb.x + 0.17, tb.y, tb.z); eng.add(f);
+        const el = new T.Mesh(new T.CylinderGeometry(0.3, 0.3, 0.24, 36, 1, true), M.dark2); el.rotation.z = Math.PI / 2; f.add(el);
+        for (let k = 0; k < 28; k++) {           // pleats
+          const a = k / 28 * Math.PI * 2, p = new T.Mesh(new T.BoxGeometry(0.22, 0.02, 0.03), M.dark);
+          p.position.set(0, Math.cos(a) * 0.305, Math.sin(a) * 0.305); p.rotation.x = -a; f.add(p);
+        }
+        for (const x of [-0.13, 0.13]) {
+          const lid = new T.Mesh(new T.CylinderGeometry(0.34, 0.34, 0.03, 36), M.steel); lid.rotation.z = Math.PI / 2; lid.position.x = x; f.add(lid);
+        }
+        const nut = new T.Mesh(new T.CylinderGeometry(0.06, 0.06, 0.05, 6), M.steel); nut.rotation.z = Math.PI / 2; nut.position.x = 0.16; f.add(nut);
+        return;
       }
-      // charge pipe turbo -> throttle body
-      const a = new T.Vector3(tx, 0.75, tz);
-      const b = this.tbPos.clone();
-      const curve = new T.CatmullRomCurve3([a, new T.Vector3(tx + 0.1, 1.05, tz * 0.8), new T.Vector3(b.x + 0.35, b.y, b.z + (tz - b.z) * 0.3), b]);
-      const pipe = new T.Mesh(new T.TubeGeometry(curve, 30, 0.1, 12, false), M.steel); pipe.castShadow = true; eng.add(pipe);
-      this.bovPos = new T.Vector3(tx + 0.1, 1.05, tz * 0.8);
+      const s = clamp(this.n / 8, 0.7, 1.6);
+      const inl = layout === 'inline';
+      const tz = inl ? Math.max(0.8 + 0.4 * (s - 1), 0.58 + 0.39 * s) : 1.05 + 0.4 * (s - 1); // inline: clear of the block side
+      const tx = this.frontX + 0.1 + 0.3 * s, gap = 0.85 * s;
+      const sides = layout === 'inline' ? [1] : [1, -1];
+      const per = nT / sides.length;
+      for (let j = 0; j < per; j++) for (const sg of sides) {
+        if (sides.length * j + (sg > 0 ? 0 : 1) >= nT) continue;
+        const col = j % 2, row = Math.floor(j / 2);
+        // second column: outward on V/boxer; along the block on inline (outward would hide it behind the first)
+        const x = inl ? tx - col * gap : tx, y = 0.45 + row * gap, z = sg * (tz + (inl ? 0 : col * gap));
+        const tg = new T.Group(); tg.position.set(x, y, z); tg.scale.setScalar(s); eng.add(tg);
+        const snail = new T.Mesh(new T.TorusGeometry(0.26, 0.13, 14, 32), M.turbo); snail.rotation.y = Math.PI / 2; tg.add(snail);
+        const hot = new T.Mesh(new T.TorusGeometry(0.22, 0.12, 12, 28), M.turboHot); hot.rotation.y = Math.PI / 2; hot.position.x = -0.32; tg.add(hot);
+        const core = new T.Mesh(new T.CylinderGeometry(0.14, 0.14, 0.3, 16), M.steel); core.rotation.z = Math.PI / 2; core.position.x = -0.16; tg.add(core);
+        const inlet = new T.Mesh(new T.CylinderGeometry(0.2, 0.2, 0.22, 24, 1, true), M.turbo); inlet.rotation.z = Math.PI / 2; inlet.position.x = 0.16; tg.add(inlet);
+        const wheel = new T.Group(); wheel.position.x = 0.18; tg.add(wheel); this.compressors.push(wheel);
+        for (let k = 0; k < 8; k++) {
+          const bl = new T.Mesh(new T.BoxGeometry(0.02, 0.17, 0.04), M.steel);
+          bl.position.set(0, Math.cos(k * Math.PI / 4) * 0.085, Math.sin(k * Math.PI / 4) * 0.085); bl.rotation.x = k * Math.PI / 4 + 0.4; wheel.add(bl);
+        }
+        // charge pipe turbo -> throttle body
+        const a = new T.Vector3(x, y + 0.3 * s, z), m1 = new T.Vector3(x + 0.1, Math.max(1.05, y + 0.6 * s), z * 0.8);
+        const curve = new T.CatmullRomCurve3([a, m1, new T.Vector3(tb.x + 0.35, tb.y, tb.z + (z - tb.z) * 0.3), tb]);
+        const pipe = new T.Mesh(new T.TubeGeometry(curve, 30, 0.07 + 0.03 * s, 12, false), M.steel); pipe.castShadow = true; eng.add(pipe);
+        this.bovs.push(m1);
+      }
     }
 
     _stack(c, layout, M) {
@@ -534,6 +567,15 @@
       const tip = new T.Mesh(new T.CylinderGeometry(0.115, 0.095, 0.16, 16, 1, true), M.header);
       tip.position.copy(p4).addScaledVector(dir, -0.04);
       tip.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), dir); this.eng.add(tip);
+      // inside of the stack: sooty liner + throat disc (otherwise the open end shows through), rolled lip on the rim
+      const liner = new T.Mesh(new T.CylinderGeometry(0.104, 0.086, 0.16, 16, 1, true), M.soot);
+      liner.position.copy(tip.position); liner.quaternion.copy(tip.quaternion); this.eng.add(liner);
+      const throat = new T.Mesh(new T.CircleGeometry(0.09, 16), M.soot);
+      throat.position.copy(p4).addScaledVector(dir, -0.09);
+      throat.quaternion.setFromUnitVectors(new T.Vector3(0, 0, 1), dir); this.eng.add(throat);
+      const lip = new T.Mesh(new T.TorusGeometry(0.11, 0.009, 6, 24), M.header);
+      lip.position.copy(p4).addScaledVector(dir, 0.04);
+      lip.quaternion.setFromUnitVectors(new T.Vector3(0, 0, 1), dir); this.eng.add(lip);
       c.tip = p4.clone().addScaledVector(dir, 0.02); c.dir = dir;
       c.pulse = 0; c.burst = 0; c.jetI = 0;
       const jg = new T.BufferGeometry();
@@ -614,6 +656,8 @@
     /* ------------------------------------------------------------ frame */
     update(dt, sim, animSpeed, quality) {
       if (!this.root) return;
+      // one NaN in these accumulators (e.g. from a bad setting) would hide the engine for good
+      for (const k of ['crank', 'heat', 'flash', 'rock', 'lean', 'vibA', 'ph1', 'ph2', 'ph3', 'phI']) if (!isFinite(this[k])) this[k] = 0;
       const n = this.n, rpm = sim.rpm;
       const running = sim.state === 'running' || sim.state === 'stalling';
       // crank (visual speed scaled down to avoid aliasing)
@@ -644,21 +688,22 @@
       this.shaft.rotation.x = crank * DEG;
       this.pulleys.forEach(p => p.g.rotation.x = crank * DEG * p.ratio);
       this.flywheel.rotation.x = crank * DEG;
-      this.compressor.rotation.x += dt * Math.max(0, sim.boost + 0.7) * 40;
+      this.compressors.forEach(w => w.rotation.x += dt * Math.max(0, sim.boost + 0.7) * 40);
 
       // events
       for (const e of sim.takeEvents()) {
         if (e.type === 'backfire') this._backfire(e.k);
         else if (e.type === 'smoke') this.stacks.forEach(c => this._smoke(c.tipW || c.tip, c.dirW || c.dir, 3 + 4 * e.k, 0));
-        else if (e.type === 'bov') for (let i = 0; i < 26; i++) this.smoke.spawn(this.bovPos.x, this.bovPos.y + (this.baseY || 0), this.bovPos.z, 0.8 + Math.random() * 1.5, 0.6 + Math.random(), (Math.random() - 0.3) * 1.2, 0.5 + Math.random() * 0.4, 0.25, 2);
+        else if (e.type === 'bov') this.bovs.forEach(p => { for (let i = 0; i < 26 / this.bovs.length + 4; i++) this.smoke.spawn(p.x, p.y + (this.baseY || 0), p.z, 0.8 + Math.random() * 1.5, 0.6 + Math.random(), (Math.random() - 0.3) * 1.2 * Math.sign(p.z || 1), 0.5 + Math.random() * 0.4, 0.25, 2); });
         else if (e.type === 'start') this.rock = 1;
       }
       this.flames.update(dt); this.smoke.update(dt);
 
       // header heat glow
-      const heatT = clamp(sim.flame * 0.7 + Math.max(0, rpm / sim.settings.redline - 0.55) * 0.6 + Math.max(0, sim.temp - 100) / 40, 0, 1);
+      const heatT = clamp(sim.flame * 0.7 + Math.max(0, rpm / Math.max(500, sim.settings.redline || 7000) - 0.55) * 0.6 + Math.max(0, sim.temp - 100) / 40, 0, 1);
       this.heat += (heatT - this.heat) * (1 - Math.exp(-dt / 1.8));
       this.mats.header.emissiveIntensity = this.heat * 0.9;
+      this.mats.soot.emissiveIntensity = clamp(sim.flame * 1.2 + this.flash * 2 + this.heat * 0.3, 0, 1.6);
       this.mats.turboHot.emissiveIntensity = clamp(this.heat * 0.7 + Math.max(0, sim.boost) * 0.25, 0, 1);
 
       // flame light
@@ -678,7 +723,7 @@
     }
 
     _sway(dt, sim) {
-      const TAU = Math.PI * 2, rpm = sim.rpm, red = sim.settings.redline;
+      const TAU = Math.PI * 2, rpm = sim.rpm, red = Math.max(500, sim.settings.redline || 7000);
       const rn = clamp(rpm / red, 0, 1.1), on = rpm > 60, k = this.sway;
       // torque reaction: block leans against crank rotation under load
       this.lean += ((on ? sim.throttle : 0) * 0.05 - this.lean) * (1 - Math.exp(-dt / 0.25));
