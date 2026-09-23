@@ -20,7 +20,7 @@
       this.limiter = false; this._limT = 0;
       this.lowT = 0; this.ceT = 0; this.obT = 0;
       this.warn = {};
-      this.settings = { redline: 7000, stallDelay: 3, flameThr: 0.62 };
+      this.settings = { redline: 7000, stallDelay: 3, flameThr: 0.62, turbos: 1 };
     }
 
     emit(type, k = 1) { this.events.push({ type, k }); }
@@ -103,13 +103,16 @@
       if (maxRecent - this.throttle > 0.28 && this.rpm > Math.max(red * 0.45, FIRE_RPM) && !this._decel) {
         this._decel = true;
         this.emit('backfire', 0.5 + 0.5 * pw);
-        if (this.boost > 0.6) this.emit('bov', this.boost / this.maxBoost);
+        if (s.turbos > 0 && this.boost > 0.6) this.emit('bov', this.boost / this.maxBoost);
       }
       if (maxRecent - this.throttle < 0.08) this._decel = false;
 
       // boost (turbo spool)
       const rpmF = clamp((this.rpm - 1800) / 2600, 0, 1);
-      const bTarget = this.state === 'running' ? -0.6 + (this.maxBoost + 0.6) * clamp(this.throttle * 1.25, 0, 1) * rpmF : 0;
+      // no turbos: manifold vacuum only, from about -0.65 at idle to ~0 at full throttle
+      const bTarget = this.state !== 'running' ? 0 : s.turbos > 0
+        ? -0.6 + (this.maxBoost + 0.6) * clamp(this.throttle * 1.25, 0, 1) * rpmF
+        : -0.65 + 0.62 * clamp(this.throttle * 1.25, 0, 1);
       const bk = bTarget > this.boost ? 1 / 0.7 : 1 / 0.2;
       this.boost += (bTarget - this.boost) * (1 - Math.exp(-dt * bk));
 

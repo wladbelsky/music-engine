@@ -77,23 +77,47 @@
         ],
         "order": 5
       },
+      "turbos": {
+        "text": "Turbochargers",
+        "type": "combo",
+        "value": "1",
+        "options": [
+          {
+            "label": "None",
+            "value": "0"
+          },
+          {
+            "label": "1",
+            "value": "1"
+          },
+          {
+            "label": "2 (twin)",
+            "value": "2"
+          },
+          {
+            "label": "4 (quad)",
+            "value": "4"
+          }
+        ],
+        "order": 6
+      },
       "cutaway": {
         "text": "Cutaway block (shows pistons)",
         "type": "bool",
         "value": true,
-        "order": 6
+        "order": 7
       },
       "accentcolor": {
         "text": "Valve cover color",
         "type": "color",
         "value": "0.75 0.08 0.06",
-        "order": 7
+        "order": 8
       },
       "dashcolor": {
         "text": "Gauge backlight color",
         "type": "color",
         "value": "1 0.35 0.1",
-        "order": 8
+        "order": 9
       },
       "background": {
         "text": "Background",
@@ -117,14 +141,14 @@
             "value": "custom"
           }
         ],
-        "order": 9
+        "order": 10
       },
       "bgcolor": {
         "text": "Gradient color",
         "type": "color",
         "value": "0.12 0.13 0.16",
         "condition": "background.value == 'gradient'",
-        "order": 10
+        "order": 11
       },
       "customimage": {
         "text": "Background image",
@@ -132,7 +156,7 @@
         "fileType": "image",
         "value": "",
         "condition": "background.value == 'custom'",
-        "order": 11
+        "order": 12
       },
       "bgdim": {
         "text": "Background dimming, %",
@@ -141,7 +165,7 @@
         "min": 0,
         "max": 90,
         "editable": true,
-        "order": 12
+        "order": 13
       },
       "sensitivity": {
         "text": "Audio sensitivity, %",
@@ -150,7 +174,7 @@
         "min": 25,
         "max": 300,
         "editable": true,
-        "order": 13
+        "order": 14
       },
       "redline": {
         "text": "Rev limiter (RPM)",
@@ -159,7 +183,7 @@
         "min": 5000,
         "max": 9500,
         "editable": true,
-        "order": 14
+        "order": 15
       },
       "flamethreshold": {
         "text": "Flame threshold (lower = more often)",
@@ -168,7 +192,7 @@
         "min": 20,
         "max": 95,
         "editable": true,
-        "order": 15
+        "order": 16
       },
       "stalldelay": {
         "text": "Stall after silence, s",
@@ -177,7 +201,7 @@
         "min": 1,
         "max": 15,
         "editable": true,
-        "order": 16
+        "order": 17
       },
       "animspeed": {
         "text": "Crankshaft animation speed, %",
@@ -186,7 +210,7 @@
         "min": 25,
         "max": 200,
         "editable": true,
-        "order": 17
+        "order": 18
       },
       "quality": {
         "text": "Graphics quality",
@@ -206,22 +230,22 @@
             "value": "high"
           }
         ],
-        "order": 19
+        "order": 20
       },
       "showbpm": {
         "text": "Show BPM and load",
         "type": "bool",
         "value": true,
-        "order": 20
+        "order": 21
       },
       "debug": {
         "text": "Debug info",
         "type": "bool",
         "value": false,
-        "order": 21
+        "order": 22
       },
       "sway": {
-        "order": 18,
+        "order": 19,
         "text": "Engine sway strength, %",
         "type": "slider",
         "value": 100,

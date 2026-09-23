@@ -27,6 +27,7 @@ A web wallpaper with a 3D engine. The engine revs up to the music, and on the mo
 - **Ignition on**: key position at startup.
 - **Show key and throttle pedal**.
 - **Number of cylinders** (2–12) and **Layout**: inline, V, boxer. For V and boxer an odd number is rounded up.
+- **Turbochargers**: none, 1, 2 (twin) or 4 (quad). Turbo size follows how many cylinders each one feeds, so a single turbo on a V12 is big and a quad setup uses small ones. Without turbos the engine gets an air filter, the boost gauge shows manifold vacuum and there is no blow-off valve.
 - **Cutaway block**: a semi-transparent block that shows the pistons, connecting rods and crankshaft.
 - **Valve cover color**, **gauge backlight color**.
 - **Background**: Garage, Carbon, Gradient (custom color), Custom image. Plus background dimming.

@@ -269,13 +269,14 @@
     }
 
     /* ------------------------------------------------------------ build */
-    build(nCyl, layout) {
+    build(nCyl, layout, nTurbo = 1) {
       if (this.root) { this.scene.remove(this.root); this._dispose(this.root); }
       this.flames.clear(); this.smoke.clear();
       let n = clamp(nCyl | 0, 1, 16);
       if (layout !== 'inline' && n % 2) n += 1;
       if (layout !== 'inline' && n < 2) n = 2;
       this.n = n; this.layout = layout;
+      this.nTurbo = [0, 1, 2, 4].includes(nTurbo) ? nTurbo : 1;
 
       const root = this.root = new T.Group();
       const eng = this.eng = new T.Group(); root.add(eng);
@@ -489,24 +490,52 @@
       pulley(0.36, 0, 0, 1);
       pulley(0.22, Math.min(topY, 1.1), 0, 1.6);
       pulley(0.15, 0.55, layout === 'inline' ? -0.62 : -0.7, 2.4);
-      // turbo on the camera side, low front
-      const tz = layout === 'inline' ? 0.8 : 1.05, tx = fx + 0.4;
-      const tg = this.turbo = new T.Group(); tg.position.set(tx, 0.45, tz); eng.add(tg);
-      const snail = new T.Mesh(new T.TorusGeometry(0.26, 0.13, 14, 32), M.turbo); snail.rotation.y = Math.PI / 2; snail.castShadow = true; tg.add(snail);
-      const hot = new T.Mesh(new T.TorusGeometry(0.22, 0.12, 12, 28), M.turboHot); hot.rotation.y = Math.PI / 2; hot.position.x = -0.32; tg.add(hot);
-      const core = new T.Mesh(new T.CylinderGeometry(0.14, 0.14, 0.3, 16), M.steel); core.rotation.z = Math.PI / 2; core.position.x = -0.16; tg.add(core);
-      const inlet = new T.Mesh(new T.CylinderGeometry(0.2, 0.2, 0.22, 24, 1, true), M.turbo); inlet.rotation.z = Math.PI / 2; inlet.position.x = 0.16; tg.add(inlet);
-      const wheel = this.compressor = new T.Group(); wheel.position.x = 0.18; tg.add(wheel);
-      for (let k = 0; k < 8; k++) {
-        const bl = new T.Mesh(new T.BoxGeometry(0.02, 0.17, 0.04), M.steel);
-        bl.position.set(0, Math.cos(k * Math.PI / 4) * 0.085, Math.sin(k * Math.PI / 4) * 0.085); bl.rotation.x = k * Math.PI / 4 + 0.4; wheel.add(bl);
+      this._turbos(layout, M);
+    }
+
+    /* Turbos low at the front: one per side on V/boxer (camera side first), all on the exhaust side for inline.
+       Size follows the cylinders each turbo feeds (V8 with one turbo = 1.0), so a single turbo on a V12 grows
+       and a quad setup gets small ones. No turbos -> an air filter on the throttle body. */
+    _turbos(layout, M) {
+      const eng = this.eng, nT = this.nTurbo, tb = this.tbPos.clone();
+      this.compressors = []; this.bovs = [];
+      if (!nT) {
+        const f = new T.Group(); f.position.set(tb.x + 0.17, tb.y, tb.z); eng.add(f);
+        const el = new T.Mesh(new T.CylinderGeometry(0.3, 0.3, 0.24, 36, 1, true), M.dark2); el.rotation.z = Math.PI / 2; f.add(el);
+        for (let k = 0; k < 28; k++) {           // pleats
+          const a = k / 28 * Math.PI * 2, p = new T.Mesh(new T.BoxGeometry(0.22, 0.02, 0.03), M.dark);
+          p.position.set(0, Math.cos(a) * 0.305, Math.sin(a) * 0.305); p.rotation.x = -a; f.add(p);
+        }
+        for (const x of [-0.13, 0.13]) {
+          const lid = new T.Mesh(new T.CylinderGeometry(0.34, 0.34, 0.03, 36), M.steel); lid.rotation.z = Math.PI / 2; lid.position.x = x; f.add(lid);
+        }
+        const nut = new T.Mesh(new T.CylinderGeometry(0.06, 0.06, 0.05, 6), M.steel); nut.rotation.z = Math.PI / 2; nut.position.x = 0.16; f.add(nut);
+        return;
       }
-      // charge pipe turbo -> throttle body
-      const a = new T.Vector3(tx, 0.75, tz);
-      const b = this.tbPos.clone();
-      const curve = new T.CatmullRomCurve3([a, new T.Vector3(tx + 0.1, 1.05, tz * 0.8), new T.Vector3(b.x + 0.35, b.y, b.z + (tz - b.z) * 0.3), b]);
-      const pipe = new T.Mesh(new T.TubeGeometry(curve, 30, 0.1, 12, false), M.steel); pipe.castShadow = true; eng.add(pipe);
-      this.bovPos = new T.Vector3(tx + 0.1, 1.05, tz * 0.8);
+      const s = clamp(this.n / nT / 8, 0.7, 1.6);
+      const tz = (layout === 'inline' ? 0.8 : 1.05) + 0.4 * (s - 1), tx = this.frontX + 0.1 + 0.3 * s, gap = 0.85 * s;
+      const sides = layout === 'inline' ? [1] : [1, -1];
+      const per = nT / sides.length;
+      for (let j = 0; j < per; j++) for (const sg of sides) {
+        if (sides.length * j + (sg > 0 ? 0 : 1) >= nT) continue;
+        const col = j % 2, row = Math.floor(j / 2);
+        const x = tx, y = 0.45 + row * gap, z = sg * (tz + col * gap);
+        const tg = new T.Group(); tg.position.set(x, y, z); tg.scale.setScalar(s); eng.add(tg);
+        const snail = new T.Mesh(new T.TorusGeometry(0.26, 0.13, 14, 32), M.turbo); snail.rotation.y = Math.PI / 2; tg.add(snail);
+        const hot = new T.Mesh(new T.TorusGeometry(0.22, 0.12, 12, 28), M.turboHot); hot.rotation.y = Math.PI / 2; hot.position.x = -0.32; tg.add(hot);
+        const core = new T.Mesh(new T.CylinderGeometry(0.14, 0.14, 0.3, 16), M.steel); core.rotation.z = Math.PI / 2; core.position.x = -0.16; tg.add(core);
+        const inlet = new T.Mesh(new T.CylinderGeometry(0.2, 0.2, 0.22, 24, 1, true), M.turbo); inlet.rotation.z = Math.PI / 2; inlet.position.x = 0.16; tg.add(inlet);
+        const wheel = new T.Group(); wheel.position.x = 0.18; tg.add(wheel); this.compressors.push(wheel);
+        for (let k = 0; k < 8; k++) {
+          const bl = new T.Mesh(new T.BoxGeometry(0.02, 0.17, 0.04), M.steel);
+          bl.position.set(0, Math.cos(k * Math.PI / 4) * 0.085, Math.sin(k * Math.PI / 4) * 0.085); bl.rotation.x = k * Math.PI / 4 + 0.4; wheel.add(bl);
+        }
+        // charge pipe turbo -> throttle body
+        const a = new T.Vector3(x, y + 0.3 * s, z), m1 = new T.Vector3(x + 0.1, Math.max(1.05, y + 0.6 * s), z * 0.8);
+        const curve = new T.CatmullRomCurve3([a, m1, new T.Vector3(tb.x + 0.35, tb.y, tb.z + (z - tb.z) * 0.3), tb]);
+        const pipe = new T.Mesh(new T.TubeGeometry(curve, 30, 0.07 + 0.03 * s, 12, false), M.steel); pipe.castShadow = true; eng.add(pipe);
+        this.bovs.push(m1);
+      }
     }
 
     _stack(c, layout, M) {
@@ -656,13 +685,13 @@
       this.shaft.rotation.x = crank * DEG;
       this.pulleys.forEach(p => p.g.rotation.x = crank * DEG * p.ratio);
       this.flywheel.rotation.x = crank * DEG;
-      this.compressor.rotation.x += dt * Math.max(0, sim.boost + 0.7) * 40;
+      this.compressors.forEach(w => w.rotation.x += dt * Math.max(0, sim.boost + 0.7) * 40);
 
       // events
       for (const e of sim.takeEvents()) {
         if (e.type === 'backfire') this._backfire(e.k);
         else if (e.type === 'smoke') this.stacks.forEach(c => this._smoke(c.tipW || c.tip, c.dirW || c.dir, 3 + 4 * e.k, 0));
-        else if (e.type === 'bov') for (let i = 0; i < 26; i++) this.smoke.spawn(this.bovPos.x, this.bovPos.y + (this.baseY || 0), this.bovPos.z, 0.8 + Math.random() * 1.5, 0.6 + Math.random(), (Math.random() - 0.3) * 1.2, 0.5 + Math.random() * 0.4, 0.25, 2);
+        else if (e.type === 'bov') this.bovs.forEach(p => { for (let i = 0; i < 26 / this.bovs.length + 4; i++) this.smoke.spawn(p.x, p.y + (this.baseY || 0), p.z, 0.8 + Math.random() * 1.5, 0.6 + Math.random(), (Math.random() - 0.3) * 1.2 * Math.sign(p.z || 1), 0.5 + Math.random() * 0.4, 0.25, 2); });
         else if (e.type === 'start') this.rock = 1;
       }
       this.flames.update(dt); this.smoke.update(dt);
