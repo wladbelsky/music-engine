@@ -20,6 +20,7 @@
   const bg = new Background($('bg'));
   const glow = $('glow');
   let paused = false, needRebuild = true;
+  const MIN_REDLINE = 500, MAX_REDLINE = 15000;
 
   const hex = c => '#' + c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('');
   const parseColor = s => s.split(' ').map(Number);
@@ -57,7 +58,10 @@
       }
       if (v('bgdim') !== undefined) { S.bgdim = v('bgdim') / 100; bgChanged = true; }
       if (v('sensitivity') !== undefined) S.sensitivity = v('sensitivity') / 100;
-      if (v('redline') !== undefined) S.redline = Math.round(v('redline') / 250) * 250;
+      if (v('redline') !== undefined) { // editable slider: typed values can be anything, keep it sane
+        const r = Math.round(Number(v('redline')) / 250) * 250;
+        if (isFinite(r)) S.redline = Math.max(MIN_REDLINE, Math.min(MAX_REDLINE, r));
+      }
       if (v('flamethreshold') !== undefined) S.flameThr = v('flamethreshold') / 100;
       if (v('stalldelay') !== undefined) S.stallDelay = v('stalldelay');
       if (v('animspeed') !== undefined) S.animSpeed = v('animspeed') / 100;

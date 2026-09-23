@@ -38,6 +38,7 @@ Each file is an IIFE exporting a class to `window`.
 - Flame particles/jets spawn from `tipW/dirW` (world space after sway), not from `tip + eng.position`.
 - The plate font size is one value for all lamps, computed from the base `fs0` (not reduced cumulatively).
 - **Page hang ("Page Unresponsive" in WE):** in `_estimateTempo` the parabolic peak refinement was unclamped; `best` maximizes the prior-weighted score, not `ac`, so it can sit on a slope and the shift made the lag negative → negative BPM → `while (bpm < 80) bpm *= 2` never ended. Refine only at a real local max, clamp the shift to ±0.5 lag, reject non-positive/non-finite BPM, and keep the octave folding bounded.
+- **Redline from an editable slider can be anything** (typing 7 rounded to 0): `rpm / redline` became NaN, the NaN stuck in the `_sway` phases/`heat` and the engine vanished for good. `main.js` clamps redline to 500–15000; `sim`/`engine3d` also guard the divisor, and `Engine3D.update` resets non-finite accumulators. Flames and backfire pops need `rpm > FIRE_RPM` (2500) regardless of redline.
 - **One rAF chain only:** `setPaused(false)` used to call `requestAnimationFrame(loop)` unconditionally; WE unpausing without a pause (or pause+unpause within one frame) stacked extra loops, each running a full frame. Use `startLoop()` (tracks `rafId`).
 
 ## Testing

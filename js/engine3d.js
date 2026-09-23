@@ -624,6 +624,8 @@
     /* ------------------------------------------------------------ frame */
     update(dt, sim, animSpeed, quality) {
       if (!this.root) return;
+      // one NaN in these accumulators (e.g. from a bad setting) would hide the engine for good
+      for (const k of ['crank', 'heat', 'flash', 'rock', 'lean', 'vibA', 'ph1', 'ph2', 'ph3', 'phI']) if (!isFinite(this[k])) this[k] = 0;
       const n = this.n, rpm = sim.rpm;
       const running = sim.state === 'running' || sim.state === 'stalling';
       // crank (visual speed scaled down to avoid aliasing)
@@ -666,7 +668,7 @@
       this.flames.update(dt); this.smoke.update(dt);
 
       // header heat glow
-      const heatT = clamp(sim.flame * 0.7 + Math.max(0, rpm / sim.settings.redline - 0.55) * 0.6 + Math.max(0, sim.temp - 100) / 40, 0, 1);
+      const heatT = clamp(sim.flame * 0.7 + Math.max(0, rpm / Math.max(500, sim.settings.redline || 7000) - 0.55) * 0.6 + Math.max(0, sim.temp - 100) / 40, 0, 1);
       this.heat += (heatT - this.heat) * (1 - Math.exp(-dt / 1.8));
       this.mats.header.emissiveIntensity = this.heat * 0.9;
       this.mats.soot.emissiveIntensity = clamp(sim.flame * 1.2 + this.flash * 2 + this.heat * 0.3, 0, 1.6);
@@ -689,7 +691,7 @@
     }
 
     _sway(dt, sim) {
-      const TAU = Math.PI * 2, rpm = sim.rpm, red = sim.settings.redline;
+      const TAU = Math.PI * 2, rpm = sim.rpm, red = Math.max(500, sim.settings.redline || 7000);
       const rn = clamp(rpm / red, 0, 1.1), on = rpm > 60, k = this.sway;
       // torque reaction: block leans against crank rotation under load
       this.lean += ((on ? sim.throttle : 0) * 0.05 - this.lean) * (1 - Math.exp(-dt / 0.25));
