@@ -337,6 +337,12 @@
       g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
     }
 
+    _hub(g, x, y, r) { // needle hub cap with an off-centre highlight
+      const gr = g.createRadialGradient(x - r * 0.3, y - r * 0.3, 0, x, y, r);
+      gr.addColorStop(0, '#6a7078'); gr.addColorStop(1, '#15171a');
+      g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+    }
+
     _needle(g, cx, cy, a, len, tail, width, col) {
       g.save(); g.translate(cx, cy); g.rotate(a);
       g.shadowColor = col; g.shadowBlur = width * 3;
@@ -361,9 +367,7 @@
       if (rpm > 20 && !off) { g.beginPath(); g.arc(cx, cy, R * 0.985, a0, this._ang(rpm, max, a0, sw)); g.stroke(); }
       g.restore();
       this._needle(g, cx, cy, this._ang(rpm, max, a0, sw), R * 0.88, R * 0.16, R * 0.028, off ? '#4a3a33' : sim.limiter ? '#ffffff' : this.color);
-      let gr = g.createRadialGradient(cx - R * 0.03, cy - R * 0.03, 0, cx, cy, R * 0.1);
-      gr.addColorStop(0, '#6a7078'); gr.addColorStop(1, '#15171a');
-      g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, R * 0.1, 0, TAU); g.fill();
+      this._hub(g, cx, cy, R * 0.1);
 
       // digital readouts
       g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -400,7 +404,7 @@
       for (const [G, v, dg] of [[this.tempG, this.tempN, 110], [this.boostG, this.boostN, 1.5]]) {
         const a = G.a0 + clamp((v - G.min) / (G.max - G.min), 0, 1) * G.sw;
         this._needle(g, G.x, G.y, a, G.r * 0.82, G.r * 0.15, G.r * 0.05, off ? '#4a3a33' : v > dg ? '#ff3322' : this.color);
-        g.fillStyle = '#23262a'; g.beginPath(); g.arc(G.x, G.y, G.r * 0.12, 0, TAU); g.fill();
+        this._hub(g, G.x, G.y, G.r * 0.12);
         g.font = `700 ${G.r * 0.22}px Consolas, monospace`; g.fillStyle = '#e6e9ec';
         if (!off) g.fillText(G === this.tempG ? Math.round(v) : (v >= 0 ? '+' : '') + v.toFixed(2), G.x, G.y + G.r * 0.36);
       }
