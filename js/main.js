@@ -114,7 +114,7 @@
     const panel = $('devpanel'); panel.style.display = 'block';
     const stopSrc = () => { if (devSrc && devSrc.stop) devSrc.stop(); if (devSrc && devSrc.id) clearInterval(devSrc.id); if (devSrc && devSrc.el) devSrc.el.pause(); devSrc = null; };
     $('dv-demo').onclick = () => { stopSrc(); devSrc = new DemoSource(onAudio); };
-    $('dv-mic').onclick = async () => { stopSrc(); const s = new WebAudioSource(onAudio); try { await s.startMic(); devSrc = s; } catch (e) { alert('Микрофон недоступен: ' + e.message); } };
+    $('dv-mic').onclick = async () => { stopSrc(); const s = new WebAudioSource(onAudio); try { await s.startMic(); devSrc = s; } catch (e) { alert('Microphone unavailable: ' + e.message); } };
     $('dv-file').onchange = e => { const f = e.target.files[0]; if (!f) return; stopSrc(); const s = new WebAudioSource(onAudio); s.startFile(f); devSrc = s; };
     $('dv-stop').onclick = stopSrc;
     const prop = (k, val) => window.wallpaperPropertyListener.applyUserProperties({ [k]: { value: val } });

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>Engine Revs</title>
@@ -25,19 +25,19 @@
 <pre id="debug"></pre>
 
 <div id="devpanel">
-  <b>Режим разработки</b> (в Wallpaper Engine панель скрыта)
-  <div class="row">Звук:
-    <button id="dv-demo">Демо-ритм</button><button id="dv-mic">Микрофон</button>
-    <label>Файл <input id="dv-file" type="file" accept="audio/*"></label><button id="dv-stop">Стоп</button></div>
-  <div class="row">Мотор:
-    <select id="dv-layout"><option value="inline">Рядный</option><option value="v">V-образный</option><option value="boxer">Оппозитный</option></select>
+  <b>Dev mode</b> (this panel is hidden in Wallpaper Engine)
+  <div class="row">Audio:
+    <button id="dv-demo">Demo beat</button><button id="dv-mic">Microphone</button>
+    <label>File <input id="dv-file" type="file" accept="audio/*"></label><button id="dv-stop">Stop</button></div>
+  <div class="row">Engine:
+    <select id="dv-layout"><option value="inline">Inline</option><option value="v">V</option><option value="boxer">Boxer</option></select>
     <select id="dv-cyl"><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option selected>8</option><option>10</option><option>12</option></select>
-    <label><input id="dv-cut" type="checkbox" checked> разрез</label>
-    <label><input id="dv-dbg" type="checkbox"> отладка</label></div>
-  <div class="row">Фон:
-    <select id="dv-bg"><option value="garage">Гараж</option><option value="dyno">Диностенд</option><option value="carbon">Карбон</option><option value="asphalt">Ночной асфальт</option><option value="gradient">Градиент</option><option value="custom">Своя картинка</option></select>
-    <label>картинка <input id="dv-img" type="file" accept="image/*"></label>
-    <button id="dv-hide">Скрыть</button></div>
+    <label><input id="dv-cut" type="checkbox" checked> cutaway</label>
+    <label><input id="dv-dbg" type="checkbox"> debug</label></div>
+  <div class="row">Background:
+    <select id="dv-bg"><option value="garage">Garage</option><option value="dyno">Dyno</option><option value="carbon">Carbon</option><option value="asphalt">Night asphalt</option><option value="gradient">Gradient</option><option value="custom">Custom image</option></select>
+    <label>image <input id="dv-img" type="file" accept="image/*"></label>
+    <button id="dv-hide">Hide</button></div>
 </div>
 
 <script src="js/three.min.js"></script>
