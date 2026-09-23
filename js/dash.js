@@ -52,6 +52,15 @@
       this._layout();
       const g = this.sctx, d = this.dpr, R = this.R, cx = this.cx, cy = this.cy;
       g.setTransform(d, 0, 0, d, 0, 0); g.clearRect(0, 0, this.w, this.h);
+      // instrument positions first: the cable conduits run behind everything
+      const sr = R * 0.36;
+      this.tempG = { x: cx - R * 1.2, y: cy + R * 1.02, r: sr };
+      this.boostG = { x: cx + R * 1.2, y: cy + R * 1.02, r: sr };
+      const cellW = R * 0.74, cellH = R * 0.24, gapX = R * 0.035, gapY = R * 0.07;
+      const totalW = 4 * cellW + 3 * gapX, x0 = cx - totalW / 2, y0 = cy + R * 1.58;
+      this.keyC = { x: cx - R * 1.5, y: cy - R * 0.93, r: R * 0.27 };
+      this.pedalR = { x: cx + R * 1.5 - R * 0.17, y: cy - R * 1.24, w: R * 0.34, h: R * 0.62 };
+      this._harness(g, x0, x0 + totalW, y0, y0 + cellH + gapY / 2);
       this._bezel(g, cx, cy, R);
       // tach ticks
       const max = this.maxRpm, a0 = 0.75 * Math.PI, sw = 1.5 * Math.PI;
@@ -75,15 +84,10 @@
       g.fillText(this.label, cx, cy - R * 0.3);
 
       // small gauges
-      const sr = R * 0.36;
-      this.tempG = { x: cx - R * 1.2, y: cy + R * 1.02, r: sr };
-      this.boostG = { x: cx + R * 1.2, y: cy + R * 1.02, r: sr };
       this._smallStatic(g, this.tempG, 60, 130, [60, 80, 100, 120], 110, 'TEMP °C');
       this._smallStatic(g, this.boostG, -1, 2, [-1, 0, 1, 2], 1.5, 'BOOST bar');
 
       // warning lamps: round lamp + screwed metal nameplate
-      const cellW = R * 0.74, cellH = R * 0.24, gapX = R * 0.035, gapY = R * 0.07;
-      const totalW = 4 * cellW + 3 * gapX, x0 = cx - totalW / 2, y0 = cy + R * 1.58;
       this.lampRects = LAMPS.map((l, i) => {
         const x = x0 + (i % 4) * (cellW + gapX), y = y0 + Math.floor(i / 4) * (cellH + gapY);
         const lr = cellH * 0.42;
@@ -102,9 +106,104 @@
       g.fillStyle = '#0d0e10'; g.strokeStyle = '#2c3035'; g.lineWidth = 2;
       this._rr(g, cx - n * sp / 2 - sp * 0.2, cy - R * 1.22 - sp * 0.45, n * sp + sp * 0.4, sp * 0.9, sp * 0.45); g.fill(); g.stroke();
       // ignition key + throttle pedal
-      this.keyC = { x: cx - R * 1.5, y: cy - R * 0.93, r: R * 0.27 };
-      this.pedalR = { x: cx + R * 1.5 - R * 0.17, y: cy - R * 1.24, w: R * 0.34, h: R * 0.62 };
       if (this.showControls) { this._keyStatic(g, this.keyC); this._pedalStatic(g, this.pedalR); }
+    }
+
+    /* ---------- cable conduits (corrugated loom) linking the instruments ---------- */
+    _harness(g, xl, xr, y0, busY) {
+      const R = this.R, cx = this.cx, cy = this.cy, w = this.w, T = this.tempG, B = this.boostG;
+      const thick = R * 0.1, thin = R * 0.075, off = R * 0.6; // off: how far the bundle runs past the right edge
+      const ctl = this.showControls, K = this.keyC, P = this.pedalR;
+      // every line gathers right of the tach and leaves through the right edge as one bundle;
+      // slots top -> bottom, so lines joining from above/behind the tach never cross the ones coming up from below
+      const lines = (ctl ? ['pedal', 'key'] : []).concat(['tach', 'temp', 'boost', 'bus']);
+      const wd = { pedal: thin, key: thin, tach: thin, temp: thin, boost: thin, bus: thick };
+      const pack = 0.95, span = lines.reduce((a, k) => a + wd[k] * pack, 0), sy = {};
+      lines.reduce((y, k) => { sy[k] = y + wd[k] * pack / 2; return y + wd[k] * pack; }, cy + R * 0.3 - span / 2);
+      const out = k => [w + off, sy[k] + R * 0.04];                                   // off the right edge
+      const up = (k, x) => [[x, sy[k] + R * 0.12], [x + R * 0.12, sy[k]], out(k)];     // rise at x, turn right
+      const run = (k, pts) => this._conduit(g, pts, wd[k], []);
+
+      // ignition switch -> tach; key and tach lines come out from behind the right side of the tach
+      if (ctl) this._conduit(g, [[K.x, K.y], [K.x + R * 0.45, K.y + R * 0.12], [cx - R * 0.8, cy - R * 0.35]], thin, []);
+      for (const k of ctl ? ['key', 'tach'] : ['tach']) run(k, [[cx + R * 0.8, sy[k]], [cx + R * 1.1, sy[k]], out(k)]);
+      // throttle pedal: down past the left of the THROTTLE label
+      if (ctl) run('pedal', [[P.x + P.w * 0.15, P.y + P.h * 0.94], [cx + R * 1.22, cy - R * 0.45], [cx + R * 1.22, sy.pedal - R * 0.12], [cx + R * 1.34, sy.pedal], out('pedal')]);
+      // temp: along the gap above the lamps, then up behind the boost gauge
+      run('temp', [[T.x, T.y], [T.x + R * 0.3, cy + R * 1.49], [cx + R * 1.1, cy + R * 1.49], [cx + R * 1.3, cy + R * 1.15], ...up('temp', cx + R * 1.3)]);
+      // boost: straight up out of the gauge
+      run('boost', [[B.x + R * 0.22, B.y], [B.x + R * 0.22, B.y - R * 0.3], ...up('boost', B.x + R * 0.22)]);
+      // lamp bus: between the two lamp rows, up past the last lamp and behind the boost gauge
+      run('bus', [[xl + R * 0.2, busY], [cx + R * 1.3, busY], [cx + R * 1.5, busY - R * 0.25], [cx + R * 1.5, cy + R * 1.1], ...up('bus', cx + R * 1.5)]);
+      // strap across the bundle once everything has joined
+      const top = sy[lines[0]] - wd[lines[0]] / 2, bot = sy[lines[lines.length - 1]] + wd[lines[lines.length - 1]] / 2;
+      const stx = cx + R * 1.68;
+      if (stx < w) this._strap(g, stx, (top + bot) / 2 + R * 0.04, bot - top, R * 0.07, Math.PI / 2);
+    }
+
+    _strap(g, x, y, len, t, ang) { // metal strap across a bundle, screwed to the panel at both ends
+      const e = t * 1.4;
+      g.save(); g.translate(x, y); g.rotate(ang);
+      g.shadowColor = 'rgba(0,0,0,0.7)'; g.shadowBlur = t * 0.8; g.shadowOffsetY = t * 0.3;
+      const gr = g.createLinearGradient(0, -t / 2, 0, t / 2);
+      gr.addColorStop(0, '#5c6268'); gr.addColorStop(0.35, '#e6e9ec'); gr.addColorStop(0.7, '#9aa0a6'); gr.addColorStop(1, '#4a4f55');
+      g.fillStyle = gr; this._rr(g, -len / 2 - e, -t / 2, len + 2 * e, t, t * 0.3); g.fill();
+      g.shadowColor = 'transparent';
+      g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 0.8; g.stroke();
+      this._screw(g, -len / 2 - e * 0.5, 0, t * 0.32, 1); this._screw(g, len / 2 + e * 0.5, 0, t * 0.32, 2);
+      g.restore();
+    }
+
+    _spline(pts, n) { // Catmull-Rom through the control points -> polyline, n samples per segment
+      const out = [], m = pts.length - 1;
+      for (let i = 0; i < m; i++) {
+        const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(m, i + 2)];
+        for (let k = 0; k < n; k++) {
+          const t = k / n, t2 = t * t, t3 = t2 * t;
+          out.push([0, 1].map(j => 0.5 * (2 * p1[j] + (p2[j] - p0[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2 + (3 * p1[j] - p0[j] - 3 * p2[j] + p3[j]) * t3)));
+        }
+      }
+      out.push(pts[m].slice()); return out;
+    }
+
+    _conduit(g, pts, wd, clamps) {
+      const N = 24, P = this._spline(pts, N);
+      const path = () => { g.beginPath(); g.moveTo(P[0][0], P[0][1]); for (let i = 1; i < P.length; i++) g.lineTo(P[i][0], P[i][1]); };
+      g.save(); g.lineJoin = 'round'; g.lineCap = 'butt';
+      // body + soft shadow on the panel
+      g.shadowColor = 'rgba(0,0,0,0.75)'; g.shadowBlur = wd * 0.9; g.shadowOffsetX = wd * 0.15; g.shadowOffsetY = wd * 0.45;
+      path(); g.strokeStyle = '#0b0c0e'; g.lineWidth = wd; g.stroke();
+      g.shadowColor = 'transparent';
+      // round shading: stacked strokes from the dark rim to the lit core
+      for (const [k, c] of [[0.82, '#1e2125'], [0.58, '#2c3035'], [0.32, '#3e434a']]) { path(); g.strokeStyle = c; g.lineWidth = wd * k; g.stroke(); }
+      // corrugation: dark grooves + a thin lit crest on each rib
+      const pitch = wd * 0.32;
+      g.setLineDash([pitch * 0.4, pitch * 0.6]);
+      path(); g.strokeStyle = 'rgba(0,0,0,0.65)'; g.lineWidth = wd; g.stroke();
+      g.setLineDash([pitch * 0.14, pitch * 0.86]); g.lineDashOffset = -pitch * 0.45;
+      path(); g.strokeStyle = 'rgba(255,255,255,0.13)'; g.lineWidth = wd * 0.8; g.stroke();
+      g.setLineDash([]);
+      path(); g.strokeStyle = 'rgba(255,255,255,0.1)'; g.lineWidth = wd * 0.12; g.stroke();
+      g.restore();
+      clamps.forEach((s, i) => {
+        const j = Math.min(P.length - 2, Math.round(s * N)), a = Math.atan2(P[j + 1][1] - P[j][1], P[j + 1][0] - P[j][0]);
+        this._pclip(g, P[j][0], P[j][1], a, wd, i + j);
+      });
+    }
+
+    _pclip(g, x, y, a, wd, seed) { // metal P-clip holding the conduit to the panel
+      const bw = wd * 0.6, bh = wd * 0.62;
+      g.save(); g.translate(x, y); g.rotate(a);
+      g.shadowColor = 'rgba(0,0,0,0.7)'; g.shadowBlur = wd * 0.5; g.shadowOffsetY = wd * 0.2;
+      const gr = g.createLinearGradient(0, -bh, 0, bh);
+      gr.addColorStop(0, '#5c6268'); gr.addColorStop(0.3, '#e6e9ec'); gr.addColorStop(0.6, '#9aa0a6'); gr.addColorStop(1, '#4a4f55');
+      g.fillStyle = gr;
+      this._rr(g, -bw / 2, -bh, bw, bh * 2, bw * 0.3); g.fill();                 // band over the tube
+      this._rr(g, -bw * 0.95, bh * 0.55, bw * 1.9, wd * 0.75, wd * 0.2); g.fill(); // tab
+      g.shadowColor = 'transparent';
+      g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 0.8; g.stroke();
+      this._screw(g, 0, bh * 0.55 + wd * 0.37, wd * 0.22, seed);
+      g.restore();
     }
 
     _bezel(g, cx, cy, R) {
