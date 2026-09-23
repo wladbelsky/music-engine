@@ -21,7 +21,7 @@ Each file is an IIFE exporting a class to `window`.
 | `js/sim.js` | `EngineSim.update(dt, audio, t)`. States: `off → lamptest → cranking → running ⇄ stalling → stalled`. Fields: `rpm, throttle, boost, temp, flame, kick, pedal, ignition, pedalIn, warn{}`, event queue `takeEvents()` (`backfire`, `bov`, `smoke`, `start`). `pw = max(audio.power, pedal*0.95)` drives flames and temperature. |
 | `js/engine3d.js` | `Engine3D.build(nCyl, layout)` generates the engine procedurally: `inline`/`v`/`boxer`, per-bank groups rotated about X (crank axis = X, front = +X). Slider-crank piston/rod kinematics, firing slots over 720°, zoomie exhaust stacks (CatmullRom tubes), turbo, pulleys, flywheel. Camera is fixed at three-quarter (`camDir`), fitted to the bounding box, image shifted with `setViewOffset`. `_sway()` = torque roll + RPM-dependent vibration; after it, world-space `tipW/dirW` of the stack tips are computed (particles/jets use only those). `_jets()` = shader flame jets (axial billboard + scrolling fBm noise). `ParticleSystem` = fireballs/sparks (additive) and smoke (normal), sprite shape from the noise texture. |
 | `js/dash.js` | `Dash.draw(sim, audio, dt, t)`. Static layer (bezels, scales, plates, screws, key/pedal mounts) in an offscreen canvas, rebuilt in `_static()` on resize/setting changes. `hitTest(x, y)` → `'key' \| 'pedal' \| null`. |
-| `js/bg.js` | Background presets (garage, dyno, carbon, asphalt, gradient) + user image (cover) + dimming. |
+| `js/bg.js` | Background presets (garage, carbon = fine 2x2 twill tile, gradient; unknown values fall back to garage) + user image (cover) + dimming. |
 | `js/main.js` | `window.wallpaperPropertyListener` (applyUserProperties / applyGeneralProperties(fps) / setPaused), audio listener registration, mouse/touch/keyboard input, main loop, dev panel, URL parameters, `window.__dbg`. |
 
 ## Wallpaper Engine specifics (verified against docs.wallpaperengine.io)
@@ -50,7 +50,7 @@ state = await pg.evaluate("__dbg.sim.state")   # __dbg = {audio, sim, eng3d, das
 ```
 - In headless mode FPS is low and `dt` is clamped to 0.1, so sim time lags wall time. Pick frames by state (for example `__dbg.sim.flame > 0.5`), not by timer.
 - Key/pedal: take coordinates from `__dbg.dash.keyC` / `__dbg.dash.pedalR` and use `page.mouse`.
-- URL parameters are passed straight into `applyUserProperties` (`?ignition=false&background=dyno…`).
+- URL parameters are passed straight into `applyUserProperties` (`?ignition=false&background=carbon…`).
 - Before finishing, check JS syntax: `node -e "new Function(fs.readFileSync(f,'utf8'))"`, and that there are no `pageerror`s.
 
 ## Delivering to the user

@@ -105,16 +105,8 @@
             "value": "garage"
           },
           {
-            "label": "Dyno",
-            "value": "dyno"
-          },
-          {
             "label": "Carbon",
             "value": "carbon"
-          },
-          {
-            "label": "Night asphalt",
-            "value": "asphalt"
           },
           {
             "label": "Gradient (custom color)",

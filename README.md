@@ -29,7 +29,7 @@ A web wallpaper with a 3D engine. The engine revs up to the music, and on the mo
 - **Number of cylinders** (2–12) and **Layout**: inline, V, boxer. For V and boxer an odd number is rounded up.
 - **Cutaway block**: a semi-transparent block that shows the pistons, connecting rods and crankshaft.
 - **Valve cover color**, **gauge backlight color**.
-- **Background**: Garage, Dyno, Carbon, Night asphalt, Gradient (custom color), Custom image. Plus background dimming.
+- **Background**: Garage, Carbon, Gradient (custom color), Custom image. Plus background dimming.
 - **Audio sensitivity**, **rev limiter**, **flame threshold** (lower means more frequent flames).
 - **Stall after silence, s**.
 - **Crankshaft animation speed**, **engine sway strength**.
@@ -65,7 +65,7 @@ python -m http.server 8000
 # http://localhost:8000/?debug=true
 ```
 
-Parameters can be passed in the URL: `?demo=1&layout=inline&cylinders=6&background=dyno&ignition=false`.
+Parameters can be passed in the URL: `?demo=1&layout=inline&cylinders=6&background=carbon&ignition=false`.
 
 ## Files
 

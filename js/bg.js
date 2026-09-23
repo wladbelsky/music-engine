@@ -40,43 +40,50 @@
       g.fillStyle = g.createPattern(noiseTile(128, 0.05, true), 'repeat'); g.fillRect(0, 0, w, h);
       vignette(g, w, h, 0.7);
     },
-    dyno(g, w, h) {
-      let gr = g.createLinearGradient(0, 0, 0, h);
-      gr.addColorStop(0, '#05080d'); gr.addColorStop(0.62, '#0a1320'); gr.addColorStop(1, '#03050a');
-      g.fillStyle = gr; g.fillRect(0, 0, w, h);
-      const hy = h * 0.62, vx = w * 0.3;
-      g.strokeStyle = 'rgba(60,170,255,0.18)'; g.lineWidth = 1;
-      for (let i = -30; i <= 30; i++) { g.beginPath(); g.moveTo(vx, hy); g.lineTo(vx + i * w * 0.08, h); g.stroke(); }
-      for (let k = 1; k < 18; k++) { const y = hy + (h - hy) * Math.pow(k / 18, 2.2); g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
-      gr = g.createRadialGradient(vx, hy, 0, vx, hy, w * 0.5);
-      gr.addColorStop(0, 'rgba(60,160,255,0.2)'); gr.addColorStop(1, 'rgba(60,160,255,0)');
-      g.fillStyle = gr; g.fillRect(0, 0, w, h);
-      vignette(g, w, h, 0.75);
-    },
     carbon(g, w, h) {
-      const t = document.createElement('canvas'); t.width = t.height = 24; const c = t.getContext('2d');
-      c.fillStyle = '#0c0d0f'; c.fillRect(0, 0, 24, 24);
-      const cell = (x, y, vert) => {
-        const gr = vert ? c.createLinearGradient(x, y, x + 12, y) : c.createLinearGradient(x, y, x, y + 12);
-        gr.addColorStop(0, '#16181b'); gr.addColorStop(0.5, '#2a2d32'); gr.addColorStop(1, '#101113');
-        c.fillStyle = gr; c.fillRect(x + 0.5, y + 0.5, 11, 11);
+      // 2x2 twill weave: each tow shows over two cells then dives under; horizontal and vertical tows catch
+      // the light differently, which gives the stepped diagonal look. Tile drawn at 2x for sharp edges.
+      const S = 4, K = 2, cs = S * K, T = cs * 4;                 // tow width in CSS px, supersampling, tile size
+      const t = document.createElement('canvas'); t.width = t.height = T; const c = t.getContext('2d');
+      c.fillStyle = '#050506'; c.fillRect(0, 0, T, T);
+      const rnd = (() => { let q = 7; return () => (q = (q * 16807) % 2147483647) / 2147483647; })();
+      const tow = (x, y, horiz) => {
+        const len = cs * 2, wd = cs, gw = K * 0.6;                 // gw: dark gap around the tow
+        const [lo, hi] = horiz ? ['#0b0c0e', '#3a3e44'] : ['#070809', '#1f2226'];
+        for (const [ox, oy] of [[0, 0], [-T, 0], [0, -T], [-T, -T]]) {
+          const X = x + ox, Y = y + oy;
+          if (X >= T || Y >= T || X + (horiz ? len : wd) <= 0 || Y + (horiz ? wd : len) <= 0) continue;
+          const gr = horiz ? c.createLinearGradient(0, Y, 0, Y + wd) : c.createLinearGradient(X, 0, X + wd, 0);
+          gr.addColorStop(0, lo); gr.addColorStop(0.5, hi); gr.addColorStop(1, lo);
+          c.fillStyle = gr;
+          if (horiz) c.fillRect(X + gw, Y + gw, len - 2 * gw, wd - 2 * gw); else c.fillRect(X + gw, Y + gw, wd - 2 * gw, len - 2 * gw);
+          // individual fibres along the tow
+          c.lineWidth = 0.5;
+          for (let k = 0; k < 5; k++) {
+            const p = gw + (wd - 2 * gw) * (k + 0.5) / 5, a = 0.04 + rnd() * 0.06;
+            c.strokeStyle = rnd() < 0.5 ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${a * 2})`;
+            c.beginPath();
+            if (horiz) { c.moveTo(X + gw, Y + p); c.lineTo(X + len - gw, Y + p); } else { c.moveTo(X + p, Y + gw); c.lineTo(X + p, Y + len - gw); }
+            c.stroke();
+          }
+        }
       };
-      cell(0, 0, true); cell(12, 0, false); cell(0, 12, false); cell(12, 12, true);
-      g.fillStyle = g.createPattern(t, 'repeat'); g.fillRect(0, 0, w, h);
-      const gr = g.createLinearGradient(0, 0, w, h);
-      gr.addColorStop(0, 'rgba(255,255,255,0.06)'); gr.addColorStop(0.5, 'rgba(255,255,255,0)'); gr.addColorStop(1, 'rgba(255,255,255,0.03)');
+      for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
+        const m = (i + j) % 4;
+        if (m === 0) tow(i * cs, j * cs, true);                    // horizontal tow over cells i, i+1
+        if (m === 2) tow(i * cs, j * cs, false);                   // vertical tow over cells j, j+1
+      }
+      const pat = g.createPattern(t, 'repeat');
+      pat.setTransform(new DOMMatrix().scale(1 / K));
+      g.fillStyle = pat; g.fillRect(0, 0, w, h);
+      // clear-coat sheen
+      let gr = g.createLinearGradient(0, 0, w, h);
+      gr.addColorStop(0, 'rgba(255,255,255,0.07)'); gr.addColorStop(0.45, 'rgba(255,255,255,0)'); gr.addColorStop(1, 'rgba(255,255,255,0.03)');
+      g.fillStyle = gr; g.fillRect(0, 0, w, h);
+      gr = g.createRadialGradient(w * 0.3, h * 0.2, 0, w * 0.3, h * 0.2, Math.max(w, h) * 0.6);
+      gr.addColorStop(0, 'rgba(255,255,255,0.06)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
       g.fillStyle = gr; g.fillRect(0, 0, w, h);
       vignette(g, w, h, 0.8);
-    },
-    asphalt(g, w, h) {
-      g.fillStyle = '#121315'; g.fillRect(0, 0, w, h);
-      g.fillStyle = g.createPattern(noiseTile(256, 0.12, true), 'repeat'); g.fillRect(0, 0, w, h);
-      let gr = g.createRadialGradient(w * 0.85, -h * 0.1, 0, w * 0.85, -h * 0.1, h * 1.1);
-      gr.addColorStop(0, 'rgba(255,150,50,0.28)'); gr.addColorStop(1, 'rgba(255,150,50,0)');
-      g.fillStyle = gr; g.fillRect(0, 0, w, h);
-      g.strokeStyle = 'rgba(230,200,80,0.18)'; g.lineWidth = h * 0.012; g.setLineDash([h * 0.08, h * 0.06]);
-      g.beginPath(); g.moveTo(0, h * 0.93); g.lineTo(w, h * 0.86); g.stroke(); g.setLineDash([]);
-      vignette(g, w, h, 0.75);
     },
     gradient(g, w, h, opt) {
       const c = opt.bgcolor || [0.12, 0.13, 0.16];
