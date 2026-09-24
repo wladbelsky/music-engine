@@ -9,6 +9,9 @@
   // geometry constants (1 unit ~ 10 cm)
   const P = 1.0, CR = 0.34, ROD = 1.05, BORE = 0.36, DECK = 1.65;
   const FLOOR_GAP = 0.012;  // lowest engine point above the floor while it rocks (rest clearance is 0.02)
+  // the engine rocks about its own axis (as on mounts), so it sits a bit up: enough clearance for this much
+  // roll/pitch/bounce (rad, rad, units) at sway 100%; the rare bigger swings are caught by the lift in _sway
+  const MOUNT_ROLL = 0.06, MOUNT_PITCH = 0.012, MOUNT_BOUNCE = 0.012;
   const FIT_RIGHT = 0.14; // landscape: rightmost engine part in NDC (= the old inline 8), keeps it off the dash
 
   const FIRING = {
@@ -223,7 +226,7 @@
       this.accent = new T.Color(0.75, 0.08, 0.06);
       this.cutaway = true; this.quality = 'high';
       this.crank = 0; this.crankTotal = 0; this.heat = 0; this.flash = 0; this.rock = 0;
-      this._rotM = new T.Matrix4(); this.sway = 1; this.lean = 0; this.vibA = 0; this.ph1 = 0; this.ph2 = 0; this.ph3 = 0; this.phI = 0;
+      this._rotM = new T.Matrix4(); this._eul = new T.Euler(); this.lift = 0; this.sway = 1; this.lean = 0; this.vibA = 0; this.ph1 = 0; this.ph2 = 0; this.ph3 = 0; this.phI = 0;
       this.root = null;
       this.w = 1; this.h = 1;
     }
@@ -317,7 +320,7 @@
       root.updateMatrixWorld(true);
       this.box = new T.Box3().setFromObject(eng);
       this.ground.position.y = 0;
-      this.baseY = eng.position.y;
+      this.baseY = this.groundY = eng.position.y; this._mountK = null; this.lift = 0;
       // soft contact shadow (works on any background, also on 'low' quality)
       const sz = this.box.getSize(new T.Vector3());
       const cs = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ alphaMap: this._blobTex(), transparent: true, depthWrite: false, color: 0x000000, opacity: 0.6 }));
@@ -347,6 +350,22 @@
       const pts = [];
       for (let c = 0; c < N * N; c++) if (low[c * 3 + 1] === low[c * 3 + 1]) pts.push(low[c * 3], low[c * 3 + 1], low[c * 3 + 2]);
       return new Float32Array(pts);
+    }
+
+    // lowest foot point (engine-local, relative to the pivot) after rotating by roll (X) and pitch (Z)
+    _lowest(roll, pitch) {
+      const f = this.foot, e = this._rotM.makeRotationFromEuler(this._eul.set(roll, 0, pitch)).elements;
+      let lo = Infinity;
+      for (let i = 0; i < f.length; i += 3) { const wy = e[1] * f[i] + e[5] * f[i + 1] + e[9] * f[i + 2]; if (wy < lo) lo = wy; }
+      return lo;
+    }
+    // mount height for this sway strength: clearance for the usual swing (capped, so sway 250% doesn't float it)
+    _mount(k) {
+      this._mountK = k;
+      if (!this.foot || !this.foot.length) return;
+      const s = Math.min(Math.max(k, 0), 1.5), r = MOUNT_ROLL * s, p = MOUNT_PITCH * s;
+      const lo = Math.min(this._lowest(r, p), this._lowest(r, -p), this._lowest(-r, p), this._lowest(-r, -p));
+      this.baseY = Math.max(this.groundY, FLOOR_GAP + MOUNT_BOUNCE * s - lo);
     }
 
     /* one cylinder: liner, piston, rod, coil (bank-local). cd = {i, x, zo, phase, port?, intake?} from the layout */
@@ -653,16 +672,13 @@
       this.rock *= Math.exp(-dt / 0.35);
       roll += Math.sin(performance.now() / 45) * this.rock * 0.035 * k;
       this.eng.rotation.set(roll, 0, pitch);
-      // rest on the floor: the lowest foot point after the rotation stays at the grounding clearance or above
+      // the pivot stays the engine's own axis; it just sits high enough (_mount) not to dip into the floor.
+      // A swing past that lifts it at once and lets it settle back slowly, so nothing sinks through
+      if (this._mountK !== k) this._mount(k);
       let y = (this.baseY || 0) + bounce * 0.6;
-      const f = this.foot;
-      if (f && f.length) {
-        const e = this._rotM.makeRotationFromEuler(this.eng.rotation).elements;
-        let lo = Infinity;
-        for (let i = 0; i < f.length; i += 3) { const wy = e[1] * f[i] + e[5] * f[i + 1] + e[9] * f[i + 2]; if (wy < lo) lo = wy; }
-        y = Math.max(y, FLOOR_GAP - lo);
-      }
-      this.eng.position.set(0, y, 0);
+      const need = this.foot ? Math.max(0, FLOOR_GAP - (y + this._lowest(roll, pitch))) : 0;
+      this.lift = need > this.lift ? need : this.lift + (need - this.lift) * (1 - Math.exp(-dt / 0.4));
+      this.eng.position.set(0, y + this.lift, 0);
       this.eng.updateMatrixWorld(true);
       const q = this.eng.quaternion;
       this.stacks.forEach(c => { c.tipW = this.eng.localToWorld(c.tip.clone()); c.dirW = c.dir.clone().applyQuaternion(q); });
