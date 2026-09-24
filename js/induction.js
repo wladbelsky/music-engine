@@ -118,7 +118,7 @@
         const inl = new T.Mesh(new T.CylinderGeometry(0.14, 0.14, 0.26, 20), M.blower);
         inl.rotation.z = Math.PI / 2; inl.position.set(hx + 0.5, top + 0.14, 0); g.add(inl);
         e.tbPos = new T.Vector3(bx + hx + 0.62, mt.y + top + 0.14, mt.z);
-      } else this._scoop(e, g, top);
+      } else this._scoop(e, g, top, L);
     }
 
     /* two straight belt runs tangent to both pulleys (in the YZ plane, so a slanted belt works too) */
@@ -139,8 +139,10 @@
     /* butterfly injector hat ("shotgun" scoop): a polished stadium-shaped mouth facing forward and a bit up,
        three big round butterflies in a row on one cross shaft, a linkage lever outside. They open with the
        throttle (update). The butterflies use the valve cover colour. */
-    _scoop(e, g, top) {
+    _scoop(e, g0, top, L) {
       const M = e.mats;
+      // everything below is built at base size in `g`, then scaled with the blower (V8 ~1.4x, short boxer less)
+      const g = new T.Group(); g.position.y = top; g.scale.setScalar(clamp(0.9 + 0.2 * L, 1.15, 1.5)); g0.add(g);
       const stadium = (w, h) => {               // rounded-end rectangle in the shape's XY plane (X -> engine z)
         const r = h / 2, sh = new T.Shape();
         sh.moveTo(-w / 2 + r, -r); sh.lineTo(w / 2 - r, -r); sh.absarc(w / 2 - r, 0, r, -Math.PI / 2, Math.PI / 2, false);
@@ -152,8 +154,8 @@
       // proportions as on a real hat: the three butterflies almost touch, the mouth is one disc tall
       const rb = 0.15, sp = 0.32, Hm = 2 * rb + 0.03, Wm = 2 * sp + Hm, wall = 0.05, Lh = 0.5, zs = [-sp, 0, sp];
       // neck from the blower top up into the hat
-      const neck = new T.Mesh(e._roundBox(0.5, 0.44, 0.7, 0.1), M.blower); neck.position.set(0.0, top + 0.2, 0); g.add(neck);
-      const hat = new T.Group(); hat.position.set(0.28, top + 0.5, 0); hat.rotation.z = 0.28; g.add(hat);
+      const neck = new T.Mesh(e._roundBox(0.5, 0.44, 0.7, 0.1), M.blower); neck.position.set(0.0, 0.2, 0); g.add(neck);
+      const hat = new T.Group(); hat.position.set(0.28, 0.5, 0); hat.rotation.z = 0.28; g.add(hat);
       // hollow body: outer stadium with the inner one as a hole, rolled edges
       const body = stadium(Wm + 2 * wall, Hm + 2 * wall); body.holes.push(stadium(Wm, Hm));
       hat.add(new T.Mesh(alongX(new T.ExtrudeGeometry(body, { depth: Lh, bevelEnabled: true, bevelSize: 0.014, bevelThickness: 0.014, bevelSegments: 2, curveSegments: 20 }), Lh, 0), M.blower));
