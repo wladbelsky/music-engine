@@ -133,7 +133,13 @@
     $('dv-img').onchange = e => { const f = e.target.files[0]; if (f) { prop('customimage', URL.createObjectURL(f)); prop('background', 'custom'); $('dv-bg').value = 'custom'; } };
     $('dv-cut').onchange = e => prop('cutaway', e.target.checked);
     $('dv-dbg').onchange = e => prop('debug', e.target.checked);
-    $('dv-hide').onclick = () => panel.style.display = 'none';
+    // hidden panel leaves a small "Dev" button in the corner; D toggles it too
+    const showPanel = on => { panel.style.display = on ? 'block' : 'none'; $('dv-show').style.display = on ? 'none' : 'block'; };
+    $('dv-hide').onclick = () => showPanel(false);
+    $('dv-show').onclick = () => showPanel(true);
+    window.addEventListener('keydown', e => {
+      if (e.code === 'KeyD' && !(e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName))) showPanel(panel.style.display === 'none');
+    });
     if (qs.get('demo')) devSrc = new DemoSource(onAudio);
   }
 

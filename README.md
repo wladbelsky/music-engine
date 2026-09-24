@@ -56,7 +56,7 @@ A web wallpaper with a 3D engine. The engine revs up to the music, and on the mo
 
 ## Testing without Wallpaper Engine
 
-Open `index.html` in Chrome. A dev panel will appear: demo beat, microphone, audio file, engine and background selection.
+Open `index.html` in Chrome. A dev panel will appear: demo beat, microphone, audio file, engine and background selection. **Hide** leaves a small **Dev** button in the top-left corner to bring it back; `D` toggles the panel too.
 The microphone requires a local server:
 
 ```
