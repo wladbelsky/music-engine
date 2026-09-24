@@ -5,6 +5,27 @@
   const IDLE = 850;
   const FIRE_RPM = 2500;              // no flames or pops below this, whatever the redline is
 
+  /* Boost sources (bar). Each has a target and its own rise/fall time; the gauge shows the max of all.
+     To add a kind of forced induction, add a class and pick it in EngineSim._sources(). */
+  class VacuumOnly {                  // naturally aspirated: manifold vacuum, ~-0.65 at idle to ~0 flat out
+    constructor() { this.v = -0.1; this.rise = 0.7; this.fall = 0.2; }
+    target(sim) { return -0.65 + 0.62 * clamp(sim.throttle * 1.25, 0, 1); }
+  }
+  class TurboBoost {                  // exhaust driven: needs revs and load, spools with lag
+    constructor(max) { this.v = -0.1; this.max = max; this.rise = 0.7; this.fall = 0.2; }
+    target(sim) {
+      const rpmF = clamp((sim.rpm - 1800) / 2600, 0, 1);
+      return -0.6 + (this.max + 0.6) * clamp(sim.throttle * 1.25, 0, 1) * rpmF;
+    }
+  }
+  class RootsBoost {                  // crank driven, positive displacement: instant, grows with rpm
+    constructor(max) { this.v = -0.1; this.max = max; this.rise = 0.12; this.fall = 0.12; }
+    target(sim, red) {
+      const th = clamp(sim.throttle * 1.25, 0, 1);
+      return -0.6 * (1 - th) + th * this.max * clamp(0.3 + 0.7 * sim.rpm / red, 0, 1);
+    }
+  }
+
   class EngineSim {
     constructor() {
       this.state = 'off';            // off | lamptest | cranking | running | stalling | stalled
@@ -20,7 +41,21 @@
       this.limiter = false; this._limT = 0;
       this.lowT = 0; this.ceT = 0; this.obT = 0;
       this.warn = {};
-      this.settings = { redline: 7000, stallDelay: 3, flameThr: 0.62, turbos: 1 };
+      this.settings = { redline: 7000, stallDelay: 3, flameThr: 0.62, turbos: 1, blower: false };
+      this._srcKey = '';
+    }
+
+    _sources() {
+      const s = this.settings, key = (s.turbos | 0) + '|' + !!s.blower;
+      if (key !== this._srcKey) {
+        this._srcKey = key; const src = [];
+        if (s.blower) src.push(new RootsBoost(1.1));
+        if (s.turbos > 0) src.push(new TurboBoost(this.maxBoost));
+        if (!src.length) src.push(new VacuumOnly());
+        src.forEach(b => b.v = this.boost);
+        this._src = src;
+      }
+      return this._src;
     }
 
     emit(type, k = 1) { this.events.push({ type, k }); }
@@ -107,14 +142,15 @@
       }
       if (maxRecent - this.throttle < 0.08) this._decel = false;
 
-      // boost (turbo spool)
-      const rpmF = clamp((this.rpm - 1800) / 2600, 0, 1);
-      // no turbos: manifold vacuum only, from about -0.65 at idle to ~0 at full throttle
-      const bTarget = this.state !== 'running' ? 0 : s.turbos > 0
-        ? -0.6 + (this.maxBoost + 0.6) * clamp(this.throttle * 1.25, 0, 1) * rpmF
-        : -0.65 + 0.62 * clamp(this.throttle * 1.25, 0, 1);
-      const bk = bTarget > this.boost ? 1 / 0.7 : 1 / 0.2;
-      this.boost += (bTarget - this.boost) * (1 - Math.exp(-dt * bk));
+      // boost: max over the sources (twincharged = blower down low, turbos take over higher up)
+      let boost = -Infinity;
+      for (const b of this._sources()) {
+        const bt = this.state !== 'running' ? 0 : b.target(this, red);
+        b.v += (bt - b.v) * (1 - Math.exp(-dt / (bt > b.v ? b.rise : b.fall)));
+        if (!isFinite(b.v)) b.v = 0;
+        boost = Math.max(boost, b.v);
+      }
+      this.boost = boost;
 
       // temperature
       const run = this.rpm > 300;
