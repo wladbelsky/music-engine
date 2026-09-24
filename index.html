@@ -27,14 +27,14 @@
 <canvas id="dash"></canvas>
 <pre id="debug"></pre>
 
-<button id="dv-show" title="Show the dev panel (D)">Dev ▸</button>
+<button id="dv-show" title="Show settings (D)">Settings ▸</button>
 <div id="devpanel">
-  <b>Dev mode</b> (this panel is hidden in Wallpaper Engine)
+  <b>Settings</b>
   <div class="row">Audio:
     <button id="dv-demo">Demo beat</button><button id="dv-mic">Microphone</button>
     <label>File <input id="dv-file" type="file" accept="audio/*"></label><button id="dv-stop">Stop</button></div>
   <div class="row">Engine:
-    <select id="dv-layout"><option value="inline">Inline</option><option value="v">V</option><option value="boxer">Boxer</option><option value="w">W</option><option value="radial">Radial</option></select>
+    <select id="dv-layout"><option value="inline">Inline</option><option value="v">V</option><option value="boxer">Boxer</option><option value="w">W</option><option value="radial">Radial</option><option value="rotary">Rotary</option></select>
     <input id="dv-cyl" type="number" min="1" max="32" value="8" title="Cylinders" style="width:4em">
     <select id="dv-turbo" title="Forced induction"><option value="0">none</option><option value="1" selected>turbo</option><option value="2">twin turbo</option><option value="4">quad turbo</option><option value="sc">supercharger</option><option value="sc2">twincharged</option></select>
     <label><input id="dv-cut" type="checkbox" checked> cutaway</label>

@@ -60,6 +60,19 @@
     }
 
     /* ---- builders ---- */
+    buildCylinder(b, bi, cd) { return this.e._cylinder(b, bi, cd, this); } // liner, piston, rod, coil
+
+    /* per-frame motion of one cylinder: slider-crank; zo = bore offset from the crank plane (W rows) */
+    animate(c, cyc) {
+      const beta = cyc * DEG;
+      const py = CR * Math.cos(beta), pz = CR * Math.sin(beta);
+      const dz = c.zo - pz, dy = Math.sqrt(c.rodL * c.rodL - dz * dz), s = py + dy;
+      c.piston.position.set(c.x, s + 0.08, c.zo);
+      c.rod.position.set(c.x, (s + py) / 2, (pz + c.zo) / 2);
+      c.rod.rotation.x = Math.atan2(dz, dy);
+      c.throwG.rotation.x = (cyc + c.bank.tilt) * DEG;
+    }
+
     buildBank(b) {
       const e = this.e, M = this.M, grp = b.grp, bl = b.m * this.pitch + 0.28, W = 2 * b.hw;
       const block = new T.Mesh(new T.BoxGeometry(bl, DECK - 0.3, W), M.block);
@@ -104,7 +117,7 @@
     buildIntake(cyls) {
       const e = this.e, M = this.M, eng = this.eng;
       const { pos: plenPos, size: plenSize } = this.plenum();
-      const plen = new T.Mesh(e._roundBox(plenSize[0], plenSize[1], plenSize[2], 0.12), M.head);
+      const plen = new T.Mesh(e._roundBox(plenSize[0], plenSize[1], plenSize[2], 0.12), this.plenumMat());
       plen.position.copy(plenPos); plen.castShadow = true; eng.add(plen);
       // throttle body at the front (a blower carries its own throttles on top)
       if (!e.ind.blower) {
@@ -115,14 +128,16 @@
         const a = e._toEng(c.bank, c.intake);
         const outDir = e._toEng(c.bank, new T.Vector3(0, 0, -c.bank.outer)).sub(e._toEng(c.bank, new T.Vector3())).normalize();
         const b = new T.Vector3(a.x, plenPos.y - plenSize[1] * 0.2, plenPos.z + Math.sign(a.z - plenPos.z) * plenSize[2] * 0.35);
-        const mid = a.clone().addScaledVector(outDir, 0.25);
-        const curve = new T.CatmullRomCurve3([a, mid, b]);
+        const curve = new T.CatmullRomCurve3(this.runnerPath(a, outDir, b));
         const tube = new T.Mesh(new T.TubeGeometry(curve, 16, 0.085, 10, false), M.head);
         tube.castShadow = true; eng.add(tube);
       });
       e.tbPos = new T.Vector3(plenPos.x + plenSize[0] / 2 + 0.3, plenPos.y, plenPos.z);
       return { pos: plenPos, size: plenSize };
     }
+
+    runnerPath(a, outDir, b) { return [a, a.clone().addScaledVector(outDir, 0.25), b]; } // port -> plenum
+    plenumMat() { return this.M.head; }
 
     buildFront() {
       const e = this.e, M = this.M, fx = this.frontX, topY = this.frontTopY();
@@ -397,9 +412,127 @@
   RadialLayout.turbos = false;   // no forced induction on the radial: every option acts as none
   RadialLayout.blower = false;
 
+  /* ------------------------------------------------------------ rotary (Wankel), one "cylinder" = one rotor
+     Housing bore = epitrochoid (long axis vertical), triangular rotor orbiting the eccentric shaft:
+     rotor centre at ecc·(cos θ, sin θ) in (y, z), rotor turned by θ/3, each rotor fires once per shaft turn. */
+  class RotaryLayout extends EngineLayout {
+    static label(n) { return n + '-ROTOR'; }
+    constructor(e, n) {
+      super(e, n);
+      this.pitch = 0.62;                                  // rotor housing + side housing
+      this.R = 0.72; this.ecc = 0.105; this.wall = 0.16;  // generating radius, eccentricity (~R/7 like a 13B), wall
+      this.hz = this.R + this.wall - this.ecc;            // housing half width (engine z) ...
+      this.hy = this.R + this.wall + this.ecc;            // ... and half height
+    }
+    banks() { return [{ tilt: 0, m: this.n, off: 0, outer: 1, hw: this.hz }]; }
+    cylinders(b) {
+      const out = [];
+      for (let i = 0; i < b.m; i++) {
+        const x = (i - (b.m - 1) / 2) * this.pitch;
+        out.push({ i, x, zo: 0, phase: i * 360 / b.m,   // rotors evenly spread over one shaft turn
+          port: new T.Vector3(x, -0.12, this.hz), intake: new T.Vector3(x, 0.25, -this.hz) });
+      }
+      return out;
+    }
+
+    /* housing bore in the shape plane (shape x -> engine z, shape y -> engine y) */
+    _troch(r, N = 96) {
+      const e = this.ecc, pts = [];
+      for (let k = 0; k < N; k++) { const t = k / N * Math.PI * 2; pts.push(new T.Vector2(e * Math.sin(3 * t) + r * Math.sin(t), e * Math.cos(3 * t) + r * Math.cos(t))); }
+      return pts;
+    }
+    /* extrude a shape along X, centred on x0 (shape x -> +z, so angles run +Y -> +Z like rotation.x) */
+    _extr(shape, depth, x0) {
+      const g = new T.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: 12 });
+      g.rotateY(-Math.PI / 2); g.translate(x0 + depth / 2, 0, 0);
+      return g;
+    }
+
+    buildBank(b) {
+      const e = this.e, M = this.M, grp = b.grp, n = this.n, p = this.pitch, tp = 0.1;
+      const outer = new T.Shape(this._troch(this.R + this.wall));
+      const bore = new T.Shape(this._troch(this.R + this.wall)); bore.holes.push(new T.Path(this._troch(this.R + 0.012)));
+      for (let i = 0; i < n; i++) {                       // rotor housings: ghost in cutaway, so the rotors show
+        const h = new T.Mesh(this._extr(bore, p - tp, (i - (n - 1) / 2) * p), M.block); grp.add(h); e._edges(h, grp, 25);
+      }
+      for (let i = 0; i <= n; i++) {                      // side housings between rotors, end housings front and rear
+        const x = (i - n / 2) * p, end = i === 0 || i === n;
+        const sh = new T.Mesh(this._extr(outer, end ? tp + 0.04 : tp, x), end ? M.block : M.head); grp.add(sh);
+        if (end) {
+          e._edges(sh, grp, 25);
+          for (const q of this._troch(this.R + this.wall * 0.5, 12)) {   // tension bolt heads
+            const bolt = new T.Mesh(new T.CylinderGeometry(0.035, 0.035, 0.05, 6), M.steel);
+            bolt.rotation.z = Math.PI / 2; bolt.position.set(x + (i ? -1 : 1) * 0.095, q.y, q.x); grp.add(bolt);
+          }
+        }
+      }
+    }
+
+    /* rotor: flanks flatter than a Reuleaux triangle so it clears the waist of the bore */
+    buildCylinder(b, bi, cd) {
+      const M = this.M, grp = b.grp, R = this.R - 0.012, x = cd.x, f = 0.19 * R;
+      const ap = k => { const a = k * Math.PI * 2 / 3; return [R * Math.sin(a), R * Math.cos(a)]; };
+      const sh = new T.Shape(); sh.moveTo(...ap(0));
+      for (let k = 0; k < 3; k++) {
+        const [x0, y0] = ap(k), [x1, y1] = ap(k + 1), mx = (x0 + x1) / 2, my = (y0 + y1) / 2, ml = Math.hypot(mx, my);
+        sh.quadraticCurveTo(mx / ml * (ml + 2 * f), my / ml * (ml + 2 * f), x1, y1);   // ~circular arc bulging by f
+      }
+      const hole = new T.Path(); hole.absarc(0, 0, 0.26, 0, Math.PI * 2, true); sh.holes.push(hole);
+      const pm = M.piston.clone(), th = this.pitch - 0.18;
+      const rotor = new T.Group(); rotor.position.x = x; grp.add(rotor);
+      rotor.add(new T.Mesh(this._extr(sh, th, 0), pm));
+      const gear = new T.Mesh(new T.TorusGeometry(0.255, 0.025, 6, 36), M.steel); gear.rotation.y = Math.PI / 2; rotor.add(gear);
+      for (let k = 0; k < 3; k++) {                       // apex seals
+        const [u, v] = ap(k), seal = new T.Mesh(new T.BoxGeometry(th + 0.02, 0.035, 0.035), M.steel);
+        seal.position.set(0, v, u); seal.rotation.x = k * Math.PI * 2 / 3; rotor.add(seal);
+      }
+      // spark plug on the intake side, low
+      const coil = new T.Mesh(new T.CylinderGeometry(0.06, 0.06, 0.16, 10), M.dark);
+      coil.rotation.x = Math.PI / 2; coil.position.set(x, -0.4, -this.hz - 0.08); grp.add(coil);
+      const coilGlow = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 0.03, 8), M.spark.clone());
+      coilGlow.rotation.x = Math.PI / 2; coilGlow.position.set(x, -0.4, -this.hz - 0.17); grp.add(coilGlow);
+      return { bank: b, bi, i: cd.i, x, zo: 0, phase: cd.phase, period: 360, piston: rotor, rod: null, pm, coilGlow, port: cd.port, intake: cd.intake, prevCycle: 0 };
+    }
+    animate(c, cyc, crank) {
+      const th = (crank - c.phase) * DEG, e = this.ecc;  // crank wraps at 720 deg: th/3 jumps 240 deg, same look
+      c.piston.position.set(c.x, e * Math.cos(th), e * Math.sin(th));
+      c.piston.rotation.x = th / 3;
+      c.throwG.rotation.x = th;
+    }
+
+    buildCase() {
+      const e = this.e, pan = new T.Mesh(e._roundBox(this.len - 0.2, 0.36, this.hz * 1.5, 0.08), this.M.dark2);
+      pan.position.set(0, -this.hy - 0.1, 0); pan.castShadow = true; this.eng.add(pan);
+    }
+    buildCrank(cyls) {
+      const e = this.e, M = this.M, eng = this.eng;
+      const shaft = new T.Group(); eng.add(shaft); e.spin(shaft, 1);
+      const main = new T.Mesh(new T.CylinderGeometry(0.11, 0.11, this.len + 0.3, 16), M.steel); main.rotation.z = Math.PI / 2; shaft.add(main);
+      cyls.forEach(c => {                                 // eccentric journal under each rotor
+        const g = new T.Group(); g.position.x = c.x; eng.add(g); c.throwG = g;
+        const lobe = new T.Mesh(new T.CylinderGeometry(0.21, 0.21, this.pitch - 0.2, 20), M.steel);
+        lobe.rotation.z = Math.PI / 2; lobe.position.y = this.ecc; g.add(lobe);
+      });
+    }
+
+    plenum() { return { pos: new T.Vector3(-0.05, this.hy + 0.3, 0), size: [this.len - 0.25, 0.36, 0.62] }; }
+    plenumMat() { return this.M.cover; }                 // no valve covers here: the accent goes on the intake
+    runnerPath(a, outDir, b) {                            // out of the side port, round the housing, up to the plenum
+      return [a, a.clone().addScaledVector(outDir, 0.22), new T.Vector3(a.x, this.hy * 0.9, -this.hz - 0.12), b];
+    }
+    frontTopY() { return this.hy - 0.2; }
+    coverD() { return 0.55; }
+    topY() { return this.hy + 0.75; }
+    turboMount() {
+      const s = clamp(0.55 + 0.25 * this.n, 0.8, 1.6);    // a 2-rotor gets a proper-size turbo
+      return { s, tx: this.frontX + 0.1 + 0.3 * s, tz: this.hz + 0.35 + 0.2 * s, gap: 0.85 * s, sides: [1], inline: true };
+    }
+  }
+  RotaryLayout.id = 'rotary';
+
   EngineLayout.turbos = true;    // which forced induction a layout can carry (see Induction.effective)
   EngineLayout.blower = true;
-  const LAYOUTS = { inline: InlineLayout, v: VLayout, boxer: BoxerLayout, w: WLayout, radial: RadialLayout };
+  const LAYOUTS = { inline: InlineLayout, v: VLayout, boxer: BoxerLayout, w: WLayout, radial: RadialLayout, rotary: RotaryLayout };
   window.EngineLayouts = Object.assign({}, LAYOUTS, {
     MAX_CYL,
     base: EngineLayout,

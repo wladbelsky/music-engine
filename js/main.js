@@ -134,7 +134,7 @@
     $('dv-img').onchange = e => { const f = e.target.files[0]; if (f) { prop('customimage', URL.createObjectURL(f)); prop('background', 'custom'); $('dv-bg').value = 'custom'; } };
     $('dv-cut').onchange = e => prop('cutaway', e.target.checked);
     $('dv-dbg').onchange = e => prop('debug', e.target.checked);
-    // hidden panel leaves a small "Dev" button in the corner; D toggles it too
+    // hidden panel leaves a small "Settings" button in the corner; D toggles it too
     const showPanel = on => { panel.style.display = on ? 'block' : 'none'; $('dv-show').style.display = on ? 'none' : 'block'; };
     $('dv-hide').onclick = () => showPanel(false);
     $('dv-show').onclick = () => showPanel(true);

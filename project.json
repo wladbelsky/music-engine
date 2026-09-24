@@ -50,6 +50,10 @@
           {
             "label": "Radial",
             "value": "radial"
+          },
+          {
+            "label": "Rotary (Wankel)",
+            "value": "rotary"
           }
         ],
         "order": 5

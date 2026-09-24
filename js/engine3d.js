@@ -294,7 +294,7 @@
       banks.forEach((b, bi) => {
         const grp = new T.Group(); grp.rotation.x = b.tilt * DEG; eng.add(grp); b.grp = grp;
         lay.buildBank(b, bi);
-        lay.cylinders(b, bi).forEach(cd => cyls.push(this._cylinder(b, bi, cd, lay)));
+        lay.cylinders(b, bi).forEach(cd => cyls.push(lay.buildCylinder(b, bi, cd)));
       });
       eng.updateMatrixWorld(true);
 
@@ -457,7 +457,7 @@
         m.side = on ? T.DoubleSide : T.FrontSide; m.needsUpdate = true;
       }
       (this._edgeList || []).forEach(e => e.visible = on);
-      this.cyls.forEach(c => { c.piston.visible = on; c.rod.visible = on; c.throwG.visible = on; });
+      this.cyls.forEach(c => { for (const o of [c.piston, c.rod, c.throwG]) if (o) o.visible = on; });
       M.liner.visible = on;
       this.root.traverse(o => { if (o.isMesh && (o.material === M.block || o.material === M.blowerCase)) { o.castShadow = !on; o.receiveShadow = !on; } });
     }
@@ -544,17 +544,11 @@
       const dCrank = rpm / 60 * 360 * visK * dt;
       this.crank = (this.crank + dCrank) % 720;
       const crank = this.crank;
+      const lay = this.lay;
       this.cyls.forEach(c => {
-        const b = c.bank;
-        // slider-crank; zo = bore offset from the crank plane (W rows), phase = firing offset from the layout
-        const cyc = ((crank - c.phase) % 720 + 720) % 720;
-        const beta = cyc * DEG;
-        const py = CR * Math.cos(beta), pz = CR * Math.sin(beta);
-        const dz = c.zo - pz, dy = Math.sqrt(c.rodL * c.rodL - dz * dz), s = py + dy;
-        c.piston.position.set(c.x, s + 0.08, c.zo);
-        c.rod.position.set(c.x, (s + py) / 2, (pz + c.zo) / 2);
-        c.rod.rotation.x = Math.atan2(dz, dy);
-        c.throwG.rotation.x = (cyc + b.tilt) * DEG;
+        // cyc = position in the firing cycle, normalised to 0..720 (a rotor's cycle is one shaft turn, period 360)
+        const per = c.period || 720, cyc = (((crank - c.phase) % per + per) % per) * 720 / per;
+        lay.animate(c, cyc, crank);                // pistons/rods (slider-crank) or rotors, from the layout
         // combustion glow
         const glow = running && cyc < 80 ? (1 - cyc / 80) : 0;
         c.pm.emissiveIntensity = glow * (0.5 + 2.2 * sim.throttle);
