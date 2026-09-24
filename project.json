@@ -1,7 +1,7 @@
 {
   "file": "index.html",
   "preview": "preview.jpg",
-  "title": "Engine Revs — audio reactive",
+  "title": "Music Engine — audio reactive",
   "type": "web",
   "description": "An engine that revs up to the music: BPM detection, exhaust flames, a tachometer and warning lamps.",
   "tags": [
@@ -19,42 +19,11 @@
       },
       "cylinders": {
         "text": "Number of cylinders",
-        "type": "combo",
-        "value": "8",
-        "options": [
-          {
-            "label": "2",
-            "value": "2"
-          },
-          {
-            "label": "3",
-            "value": "3"
-          },
-          {
-            "label": "4",
-            "value": "4"
-          },
-          {
-            "label": "5",
-            "value": "5"
-          },
-          {
-            "label": "6",
-            "value": "6"
-          },
-          {
-            "label": "8",
-            "value": "8"
-          },
-          {
-            "label": "10",
-            "value": "10"
-          },
-          {
-            "label": "12",
-            "value": "12"
-          }
-        ],
+        "type": "slider",
+        "value": 8,
+        "min": 1,
+        "max": 32,
+        "editable": true,
         "order": 4
       },
       "layout": {
@@ -73,12 +42,24 @@
           {
             "label": "Boxer",
             "value": "boxer"
+          },
+          {
+            "label": "W",
+            "value": "w"
+          },
+          {
+            "label": "Radial",
+            "value": "radial"
+          },
+          {
+            "label": "Rotary (Wankel)",
+            "value": "rotary"
           }
         ],
         "order": 5
       },
       "turbos": {
-        "text": "Turbochargers",
+        "text": "Forced induction",
         "type": "combo",
         "value": "1",
         "options": [
@@ -87,19 +68,28 @@
             "value": "0"
           },
           {
-            "label": "1",
+            "label": "Turbo",
             "value": "1"
           },
           {
-            "label": "2 (twin)",
+            "label": "Twin turbo",
             "value": "2"
           },
           {
-            "label": "4 (quad)",
+            "label": "Quad turbo",
             "value": "4"
+          },
+          {
+            "label": "Supercharger (Roots blower)",
+            "value": "sc"
+          },
+          {
+            "label": "Twincharged (blower + twin turbo)",
+            "value": "sc2"
           }
         ],
-        "order": 6
+        "order": 6,
+        "condition": "layout.value != 'radial'"
       },
       "cutaway": {
         "text": "Cutaway block (shows pistons)",

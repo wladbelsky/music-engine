@@ -6,7 +6,7 @@
   const IS_WE = typeof window.wallpaperRegisterAudioListener === 'function';
 
   const S = {
-    cylinders: 8, layout: 'v', turbos: 1, cutaway: true,
+    cylinders: 8, layout: 'v', induction: Induction.parse('1'), cutaway: true,
     accent: [0.75, 0.08, 0.06], dashColor: [1, 0.35, 0.1],
     background: 'garage', bgcolor: [0.12, 0.13, 0.16], customimage: '', bgdim: 0.2,
     sensitivity: 1, sway: 1, redline: 7000, flameThr: 0.62, stallDelay: 3, animSpeed: 1,
@@ -24,20 +24,20 @@
 
   const hex = c => '#' + c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('');
   const parseColor = s => s.split(' ').map(Number);
-  const engineLabel = () => {
-    let n = S.cylinders; if (S.layout !== 'inline' && n % 2) n++;
-    const tt = ['', ' TURBO', ' TWIN TURBO', '', ' QUAD TURBO'][S.turbos] || '';
-    return (S.layout === 'inline' ? 'I' + n : S.layout === 'boxer' ? 'BOXER ' + n : 'V' + n) + tt;
-  };
+  const layoutCls = () => EngineLayouts.get(S.layout);
+  const induction = () => Induction.effective(S.induction, layoutCls()); // what this layout can carry
+  const engineLabel = () => { const L = layoutCls(); return L.label(L.normCyl(S.cylinders)) + Induction.suffix(induction()); };
 
   function applySettings() {
     audio.gain = S.sensitivity;
-    sim.settings.redline = S.redline; sim.settings.turbos = S.turbos; sim.settings.flameThr = S.flameThr; sim.settings.stallDelay = S.stallDelay;
+    const ind = induction();
+    sim.settings.redline = S.redline; sim.settings.turbos = ind.turbos; sim.settings.blower = ind.blower; sim.settings.flameThr = S.flameThr; sim.settings.stallDelay = S.stallDelay;
     eng3d.setAccent(new THREE.Color(S.accent[0], S.accent[1], S.accent[2]));
     eng3d.setCutaway(S.cutaway);
     eng3d.sway = S.sway;
     dash.set({ redline: S.redline, color: hex(S.dashColor), label: engineLabel(), showBpm: S.showBpm, showControls: S.showControls });
     $('debug').style.display = S.debug ? 'block' : 'none';
+    if (!IS_WE) $('dv-turbo').disabled = !Induction.supported(layoutCls()); // e.g. radial: always naturally aspirated
   }
 
   /* ---------- Wallpaper Engine property listener ---------- */
@@ -45,9 +45,12 @@
     applyUserProperties(p) {
       const v = k => p[k] !== undefined ? p[k].value : undefined;
       let bgChanged = false, rebuild = false, q = false;
-      if (v('cylinders') !== undefined) { S.cylinders = parseInt(v('cylinders'), 10) || 8; rebuild = true; }
+      if (v('cylinders') !== undefined) { // editable slider (was a combo of strings): clamp, the layout rounds it
+        const c = Math.round(Number(v('cylinders')));
+        S.cylinders = isFinite(c) ? Math.max(1, Math.min(EngineLayouts.MAX_CYL, c)) : 8; rebuild = true;
+      }
       if (v('layout') !== undefined) { S.layout = v('layout'); rebuild = true; }
-      if (v('turbos') !== undefined) { const nt = parseInt(v('turbos'), 10); S.turbos = [0, 1, 2, 4].includes(nt) ? nt : 1; rebuild = true; }
+      if (v('turbos') !== undefined) { S.induction = Induction.parse(v('turbos')); rebuild = true; }
       if (v('cutaway') !== undefined) S.cutaway = !!v('cutaway');
       if (v('accentcolor') !== undefined) S.accent = parseColor(v('accentcolor'));
       if (v('dashcolor') !== undefined) S.dashColor = parseColor(v('dashcolor'));
@@ -131,7 +134,13 @@
     $('dv-img').onchange = e => { const f = e.target.files[0]; if (f) { prop('customimage', URL.createObjectURL(f)); prop('background', 'custom'); $('dv-bg').value = 'custom'; } };
     $('dv-cut').onchange = e => prop('cutaway', e.target.checked);
     $('dv-dbg').onchange = e => prop('debug', e.target.checked);
-    $('dv-hide').onclick = () => panel.style.display = 'none';
+    // hidden panel leaves a small "Settings" button in the corner; D toggles it too
+    const showPanel = on => { panel.style.display = on ? 'block' : 'none'; $('dv-show').style.display = on ? 'none' : 'block'; };
+    $('dv-hide').onclick = () => showPanel(false);
+    $('dv-show').onclick = () => showPanel(true);
+    window.addEventListener('keydown', e => {
+      if (e.code === 'KeyD' && !(e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName))) showPanel(panel.style.display === 'none');
+    });
     if (qs.get('demo')) devSrc = new DemoSource(onAudio);
   }
 
@@ -144,7 +153,7 @@
   eng3d.setQuality(S.quality);
   bg.set({ preset: S.background, bgcolor: S.bgcolor, dim: S.bgdim });
   window.wallpaperPropertyListener.applyUserProperties(init);
-  if (!IS_WE) { $('dv-cyl').value = String(S.cylinders); $('dv-layout').value = S.layout; $('dv-turbo').value = String(S.turbos); $('dv-bg').value = S.background; }
+  if (!IS_WE) { $('dv-cyl').value = String(S.cylinders); $('dv-layout').value = S.layout; $('dv-turbo').value = S.induction.key; $('dv-bg').value = S.background; }
 
   /* ---------- loop ---------- */
   // exactly one rAF chain: WE may send setPaused(false) without a pause before it, or pause+unpause
@@ -158,7 +167,7 @@
     if (S.fps > 0 && now - last < 1000 / S.fps - 2) return;
     const dt = Math.min(0.1, Math.max(0.001, (now - last) / 1000)); last = now;
     const t = now / 1000;
-    if (needRebuild) { needRebuild = false; eng3d.build(S.cylinders, S.layout, S.turbos); eng3d.setCutaway(S.cutaway); eng3d.resize(window.innerWidth, window.innerHeight); dash.set({ label: engineLabel() }); }
+    if (needRebuild) { needRebuild = false; eng3d.build(S.cylinders, S.layout, S.induction); eng3d.setCutaway(S.cutaway); eng3d.resize(window.innerWidth, window.innerHeight); dash.set({ label: engineLabel() }); }
     audio.tick(t);
     sim.update(dt, audio, t);
     eng3d.update(dt, sim, S.animSpeed, S.quality);

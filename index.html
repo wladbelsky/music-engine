@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Engine Revs</title>
+<title>Music Engine</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
@@ -14,7 +14,10 @@
   #devpanel { position: absolute; left: 10px; top: 10px; display: none; padding: 10px; background: rgba(12,13,15,.85);
     color: #ccd; font: 13px "Segoe UI", Arial, sans-serif; border: 1px solid #2a2d31; border-radius: 8px; z-index: 5; }
   #devpanel b { color: #fff; } #devpanel .row { margin: 6px 0; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-  #devpanel button, #devpanel select { background: #1d2024; color: #dde; border: 1px solid #3a3f45; border-radius: 4px; padding: 3px 8px; }
+  #dv-show { position: absolute; left: 10px; top: 10px; display: none; z-index: 5; padding: 3px 9px; opacity: .55;
+    background: rgba(12,13,15,.85); color: #ccd; font: 12px "Segoe UI", Arial, sans-serif; border: 1px solid #2a2d31; border-radius: 6px; cursor: pointer; }
+  #dv-show:hover { opacity: 1; }
+  #devpanel button, #devpanel select, #devpanel input[type=number] { background: #1d2024; color: #dde; border: 1px solid #3a3f45; border-radius: 4px; padding: 3px 8px; }
 </style>
 </head>
 <body>
@@ -24,27 +27,30 @@
 <canvas id="dash"></canvas>
 <pre id="debug"></pre>
 
+<button id="dv-show" title="Show settings (D)">Settings ▸</button>
 <div id="devpanel">
-  <b>Dev mode</b> (this panel is hidden in Wallpaper Engine)
+  <b>Settings</b>
   <div class="row">Audio:
     <button id="dv-demo">Demo beat</button><button id="dv-mic">Microphone</button>
     <label>File <input id="dv-file" type="file" accept="audio/*"></label><button id="dv-stop">Stop</button></div>
   <div class="row">Engine:
-    <select id="dv-layout"><option value="inline">Inline</option><option value="v">V</option><option value="boxer">Boxer</option></select>
-    <select id="dv-cyl"><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option selected>8</option><option>10</option><option>12</option></select>
-    <select id="dv-turbo" title="Turbos"><option value="0">no turbo</option><option value="1" selected>1 turbo</option><option value="2">2 turbos</option><option value="4">4 turbos</option></select>
+    <select id="dv-layout"><option value="inline">Inline</option><option value="v">V</option><option value="boxer">Boxer</option><option value="w">W</option><option value="radial">Radial</option><option value="rotary">Rotary</option></select>
+    <input id="dv-cyl" type="number" min="1" max="32" value="8" title="Cylinders" style="width:4em">
+    <select id="dv-turbo" title="Forced induction"><option value="0">none</option><option value="1" selected>turbo</option><option value="2">twin turbo</option><option value="4">quad turbo</option><option value="sc">supercharger</option><option value="sc2">twincharged</option></select>
     <label><input id="dv-cut" type="checkbox" checked> cutaway</label>
     <label><input id="dv-dbg" type="checkbox"> debug</label></div>
   <div class="row">Background:
     <select id="dv-bg"><option value="garage">Garage</option><option value="carbon">Carbon</option><option value="gradient">Gradient</option><option value="custom">Custom image</option></select>
     <label>image <input id="dv-img" type="file" accept="image/*"></label>
-    <button id="dv-hide">Hide</button></div>
+    <button id="dv-hide" title="Hide (D toggles)">Hide</button></div>
 </div>
 
 <script src="js/three.min.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/sim.js"></script>
 <script src="js/engine3d.js"></script>
+<script src="js/layouts.js"></script>
+<script src="js/induction.js"></script>
 <script src="js/dash.js"></script>
 <script src="js/bg.js"></script>
 <script src="js/main.js"></script>
