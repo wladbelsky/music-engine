@@ -136,29 +136,64 @@
       }
     }
 
-    /* bug-catcher scoop: the opening slopes from the low front lip up to the back, so the camera
-       (above, in front) looks into it: grille bars over dark interior and throttle butterflies */
+    /* butterfly injector hat ("shotgun" scoop): a polished stadium-shaped mouth facing forward and a bit up,
+       three big round butterflies in a row on one cross shaft, a linkage lever outside. They open with the
+       throttle (update). The butterflies use the valve cover colour. */
     _scoop(e, g, top) {
-      const M = e.mats, s = new T.Group(); s.position.set(0.05, top, 0); g.add(s);
-      const w = 0.74, h = 0.56, d = 0.56, hf = h * 0.3;
-      const flange = new T.Mesh(new T.BoxGeometry(w + 0.08, 0.05, d + 0.08), M.blower); flange.position.y = 0.025; s.add(flange);
-      const prof = new T.Shape(); prof.moveTo(-w / 2, 0); prof.lineTo(w / 2, 0); prof.lineTo(w / 2, hf); prof.lineTo(-w / 2, h); prof.lineTo(-w / 2, 0);
-      const sg = new T.ExtrudeGeometry(prof, { depth: 0.035, bevelEnabled: false }); sg.translate(0, 0, -0.0175);
-      for (const sz of [-1, 1]) { const side = new T.Mesh(sg, M.blower); side.position.z = sz * d / 2; s.add(side); }
-      const front = new T.Mesh(new T.BoxGeometry(0.035, hf, d), M.blower); front.position.set(w / 2, hf / 2, 0); s.add(front);
-      const back = new T.Mesh(new T.BoxGeometry(0.035, h, d), M.blower); back.position.set(-w / 2, h / 2, 0); s.add(back);
-      const floor = new T.Mesh(new T.PlaneGeometry(w - 0.04, d - 0.04), M.dark); floor.rotation.x = -Math.PI / 2; floor.position.y = 0.055; s.add(floor);
-      for (let k = 0; k < 4; k++) {            // throttle butterflies seen through the mouth
-        const bf = new T.Mesh(new T.CylinderGeometry(0.085, 0.085, 0.014, 16), M.steel);
-        bf.position.set((k % 2 ? 0.14 : -0.1), 0.1, (k < 2 ? -1 : 1) * 0.13); bf.rotation.z = 0.45; s.add(bf);
+      const M = e.mats;
+      const stadium = (w, h) => {               // rounded-end rectangle in the shape's XY plane (X -> engine z)
+        const r = h / 2, sh = new T.Shape();
+        sh.moveTo(-w / 2 + r, -r); sh.lineTo(w / 2 - r, -r); sh.absarc(w / 2 - r, 0, r, -Math.PI / 2, Math.PI / 2, false);
+        sh.lineTo(-w / 2 + r, r); sh.absarc(-w / 2 + r, 0, r, Math.PI / 2, Math.PI * 1.5, false);
+        return sh;
+      };
+      // shape XY + extrusion Z  ->  engine z/y + extrusion running back from the mouth plane (x = 0)
+      const alongX = (geo, depth, x0) => { geo.rotateY(Math.PI / 2); geo.translate(x0 - depth, 0, 0); return geo; };
+      // proportions as on a real hat: the three butterflies almost touch, the mouth is one disc tall
+      const rb = 0.15, sp = 0.32, Hm = 2 * rb + 0.03, Wm = 2 * sp + Hm, wall = 0.05, Lh = 0.5, zs = [-sp, 0, sp];
+      // neck from the blower top up into the hat
+      const neck = new T.Mesh(e._roundBox(0.5, 0.44, 0.7, 0.1), M.blower); neck.position.set(0.0, top + 0.2, 0); g.add(neck);
+      const hat = new T.Group(); hat.position.set(0.28, top + 0.5, 0); hat.rotation.z = 0.28; g.add(hat);
+      // hollow body: outer stadium with the inner one as a hole, rolled edges
+      const body = stadium(Wm + 2 * wall, Hm + 2 * wall); body.holes.push(stadium(Wm, Hm));
+      hat.add(new T.Mesh(alongX(new T.ExtrudeGeometry(body, { depth: Lh, bevelEnabled: true, bevelSize: 0.014, bevelThickness: 0.014, bevelSegments: 2, curveSegments: 20 }), Lh, 0), M.blower));
+      hat.add(new T.Mesh(alongX(new T.ShapeGeometry(stadium(Wm + 2 * wall, Hm + 2 * wall), 20), 0, -Lh), M.blower)); // back cap
+      // throttle plate with three bores, set back a little inside the mouth
+      const px = -0.05, plate = stadium(Wm, Hm);
+      for (const z of zs) { const hole = new T.Path(); hole.absarc(z, 0, rb + 0.006, 0, Math.PI * 2, true); plate.holes.push(hole); }
+      hat.add(new T.Mesh(alongX(new T.ExtrudeGeometry(plate, { depth: 0.03, bevelEnabled: false, curveSegments: 24 }), 0.03, px), M.blower));
+      const boreMat = M.dark.clone(); boreMat.side = T.DoubleSide;
+      this.flaps = []; this.open = 0;
+      for (const z of zs) {
+        const bore = new T.Mesh(new T.CylinderGeometry(rb + 0.006, rb + 0.006, 0.28, 28, 1, true), boreMat);
+        bore.rotation.z = Math.PI / 2; bore.position.set(px - 0.03 - 0.14, 0, z); hat.add(bore);
+        const piv = new T.Group(); piv.position.set(px - 0.015, 0, z); hat.add(piv);
+        const disc = new T.Mesh(new T.CylinderGeometry(rb, rb, 0.014, 32), M.cover); disc.rotation.z = Math.PI / 2; piv.add(disc);
+        for (const dz of [-0.05, 0.05]) {          // the two screws holding the butterfly on the shaft
+          const sc = new T.Mesh(new T.CylinderGeometry(0.012, 0.012, 0.012, 8), M.steel);
+          sc.rotation.z = Math.PI / 2; sc.position.set(0.012, 0, dz); piv.add(sc);
+        }
+        this.flaps.push(piv);
       }
-      // rim and grille across the sloped opening
-      const bar = (a, b, r) => s.add(new T.Mesh(new T.TubeGeometry(new T.LineCurve3(a, b), 1, r, 8, false), M.blower));
-      for (const sz of [-1, 1]) bar(new T.Vector3(w / 2, hf, sz * d / 2), new T.Vector3(-w / 2, h, sz * d / 2), 0.025);
-      for (let k = 0; k <= 5; k++) {
-        const u = k / 5, x = w / 2 - u * w, y = hf + u * (h - hf);
-        bar(new T.Vector3(x, y, -d / 2), new T.Vector3(x, y, d / 2), k % 5 ? 0.009 : 0.025);
-      }
+      // cross shaft through all three, poking out of the side, with the linkage lever on it
+      const shaft = new T.Mesh(new T.CylinderGeometry(0.014, 0.014, Wm + 2 * wall + 0.12, 8), M.steel);
+      shaft.rotation.x = Math.PI / 2; shaft.position.set(px, 0, 0); hat.add(shaft);
+      const lever = new T.Group(); lever.position.set(px, 0, Wm / 2 + wall + 0.06); hat.add(lever); this.flaps.push(lever);
+      const arm = new T.Mesh(new T.BoxGeometry(0.03, 0.2, 0.02), M.steel); arm.position.y = -0.08; lever.add(arm);
+      const hub = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 0.035, 12), M.steel); hub.rotation.x = Math.PI / 2; lever.add(hub);
+      const rod = new T.Mesh(new T.CylinderGeometry(0.01, 0.01, 0.48, 6), M.steel);
+      rod.position.set(px - 0.04, -0.4, Wm / 2 + wall + 0.08); rod.rotation.z = 0.25; hat.add(rod);
+    }
+
+    /* butterflies follow the throttle (music load or the pedal), closed when the engine isn't running */
+    update(dt, sim) {
+      if (!this.flaps || !this.flaps.length) return;
+      const running = sim.state === 'running' || sim.state === 'stalling';
+      const tgt = running ? clamp(sim.throttle * 1.15, 0, 1) : 0;
+      this.open += (tgt - this.open) * (1 - Math.exp(-dt / 0.06));
+      if (!isFinite(this.open)) this.open = 0;
+      const a = Math.pow(this.open, 0.8) * 85 * Math.PI / 180;
+      for (const f of this.flaps) f.rotation.z = a;
     }
   }
 

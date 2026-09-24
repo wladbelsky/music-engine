@@ -575,6 +575,7 @@
         else if (e.type === 'start') this.rock = 1;
       }
       this.flames.update(dt); this.smoke.update(dt);
+      this.parts.forEach(p => p.update && p.update(dt, sim));
 
       // header heat glow
       const heatT = clamp(sim.flame * 0.7 + Math.max(0, rpm / Math.max(500, sim.settings.redline || 7000) - 0.55) * 0.6 + Math.max(0, sim.temp - 100) / 40, 0, 1);

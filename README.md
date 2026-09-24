@@ -22,7 +22,7 @@ A web wallpaper with a 3D engine. The engine revs up to the music, and on the mo
 - **Number of cylinders**: 1–32. The layout rounds it up where needed: V and boxer to an even number, W to a multiple of 4 (8 minimum), radial to an odd number per row with up to 9 per row (5 → 5, 8 → 9, 14 → 2 rows of 7, 18 → 2 × 9, 28+ → 4 × 7).
 - **Forced induction**: none, turbo, twin turbo, quad turbo, supercharger (Roots blower) or twincharged (blower + twin turbos).
   - Turbo size follows the engine (a V12 gets bigger turbos than a V8); twin and quad setups use the same size as a single. Boost comes with lag and needs revs; lifting off gives the blow-off valve hiss.
-  - The Roots blower sits on the intake with a scoop on top and is belt-driven from the crank; its rotors show in cutaway mode. Boost is instant and grows with RPM, and there is no blow-off valve.
+  - The Roots blower sits on the intake and is belt-driven from the crank; its rotors show in cutaway mode. On top is a butterfly injector hat: three round butterflies (in the valve cover colour) that open with the throttle, so they follow the pedal and loud parts of the music. Boost is instant and grows with RPM, and there is no blow-off valve.
   - Twincharged: the blower gives boost right away, the turbos take over higher up and blow into a hat on the blower.
   - None: an air filter, and the boost gauge shows manifold vacuum.
   - A radial has no turbos (turbo options act as none); "supercharger" there means the gear-driven supercharger in the rear housing.
