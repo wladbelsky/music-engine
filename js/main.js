@@ -33,16 +33,20 @@
   const parseColor = s => s.split(' ').map(Number);
   const layoutCls = () => EngineLayouts.get(S.layout);
   const induction = () => Induction.effective(S.induction, layoutCls()); // what this layout can carry
+  const kind = () => layoutCls().kind || 'piston';                       // piston | steam | jet
+  // steam and jet run the sim on a fixed internal scale; the dash shows their own units (js/dash.js)
+  const redline = () => kind() === 'piston' ? S.redline : 7000;
   const engineLabel = () => { const L = layoutCls(); return L.label(L.normCyl(S.cylinders)) + Induction.suffix(induction()); };
 
   function applySettings() {
     audio.gain = S.sensitivity;
     const ind = induction();
-    sim.settings.redline = S.redline; sim.settings.turbos = ind.turbos; sim.settings.blower = ind.blower; sim.settings.flameThr = S.flameThr; sim.settings.stallDelay = S.stallDelay;
+    sim.settings.kind = kind();
+    sim.settings.redline = redline(); sim.settings.turbos = ind.turbos; sim.settings.blower = ind.blower; sim.settings.flameThr = S.flameThr; sim.settings.stallDelay = S.stallDelay;
     eng3d.setAccent(new THREE.Color(S.accent[0], S.accent[1], S.accent[2]));
     eng3d.setCutaway(S.cutaway);
     eng3d.sway = S.sway;
-    dash.set({ redline: S.redline, color: hex(S.dashColor), label: engineLabel(), showBpm: S.showBpm, showControls: S.showControls, showRadio: S.showRadio });
+    dash.set({ kind: kind(), redline: redline(), color: hex(S.dashColor), label: engineLabel(), showBpm: S.showBpm, showControls: S.showControls, showRadio: S.showRadio });
     $('debug').style.display = S.debug ? 'block' : 'none';
     if (!IS_WE) $('dv-turbo').disabled = !Induction.supported(layoutCls()); // e.g. radial: always naturally aspirated
   }

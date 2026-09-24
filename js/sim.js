@@ -26,6 +26,22 @@
     }
   }
 
+  /* The right-hand small gauge of the other engine kinds uses the same slot (sim.boost), in its own units. */
+  class SteamPressure {               // boiler pressure, bar: the fire raises it, the engine draws it down
+    constructor() { this.v = 0; this.rise = 2.2; this.fall = 3.5; }
+    target(sim, red) {
+      const draw = sim.throttle * clamp(sim.rpm / red, 0, 1.1);
+      return 10 + 6 * sim.flame + 1.6 * clamp(sim.pw - 0.4, 0, 0.6) - 1.6 * draw;   // strong peaks reach the safety valve
+    }
+    rest(sim) { return sim.state === 'off' ? 0 : 7.5; }   // a banked fire keeps some pressure up
+  }
+  class JetEgt {                      // exhaust gas temperature, x100 deg C
+    constructor() { this.v = 0; this.rise = 0.35; this.fall = 1.4; }
+    target(sim) { return 4.4 + 2.3 * sim.throttle + 1.9 * sim.flame; }
+    rest(sim) { return sim.state === 'cranking' ? 1.2 + 4 * clamp(sim.stateT - 0.5, 0, 0.4) : 0.25; } // light-off
+  }
+  const MAX_BOOST = { piston: 1.6, steam: 14, jet: 8.5 };  // overboost lamp at 0.93 of this
+
   class EngineSim {
     constructor() {
       this.state = 'off';            // off | lamptest | cranking | running | stalling | stalled
@@ -41,17 +57,23 @@
       this.limiter = false; this._limT = 0;
       this.lowT = 0; this.ceT = 0; this.obT = 0;
       this.warn = {};
-      this.settings = { redline: 7000, stallDelay: 3, flameThr: 0.62, turbos: 1, blower: false };
+      this.settings = { redline: 7000, stallDelay: 3, flameThr: 0.62, turbos: 1, blower: false, kind: 'piston' };
+      this.pw = 0; this._ventT = -99;
       this._srcKey = '';
     }
 
     _sources() {
-      const s = this.settings, key = (s.turbos | 0) + '|' + !!s.blower;
+      const s = this.settings, kind = MAX_BOOST[s.kind] ? s.kind : 'piston', key = kind + '|' + (s.turbos | 0) + '|' + !!s.blower;
       if (key !== this._srcKey) {
         this._srcKey = key; const src = [];
-        if (s.blower) src.push(new RootsBoost(1.1));
-        if (s.turbos > 0) src.push(new TurboBoost(this.maxBoost));
-        if (!src.length) src.push(new VacuumOnly());
+        this.maxBoost = MAX_BOOST[kind];
+        if (kind === 'steam') src.push(new SteamPressure());
+        else if (kind === 'jet') src.push(new JetEgt());
+        else {
+          if (s.blower) src.push(new RootsBoost(1.1));
+          if (s.turbos > 0) src.push(new TurboBoost(this.maxBoost));
+          if (!src.length) src.push(new VacuumOnly());
+        }
         src.forEach(b => b.v = this.boost);
         this._src = src;
       }
@@ -128,7 +150,7 @@
       this.rpm += (target - this.rpm) * (1 - Math.exp(-dt * k));
       if (this.rpm < 1) this.rpm = 0;
 
-      const pw = Math.max(a.power, this.pedal * 0.95);
+      const pw = this.pw = Math.max(a.power, this.pedal * 0.95);
       // throttle & decel detection
       const thr = this.state === 'running' ? clamp((target - IDLE) / Math.max(250, red - IDLE), 0, 1) : 0;
       this.throttle += (thr - this.throttle) * (1 - Math.exp(-dt / 0.08));
@@ -145,12 +167,14 @@
       // boost: max over the sources (twincharged = blower down low, turbos take over higher up)
       let boost = -Infinity;
       for (const b of this._sources()) {
-        const bt = this.state !== 'running' ? 0 : b.target(this, red);
+        const bt = this.state !== 'running' ? (b.rest ? b.rest(this) : 0) : b.target(this, red);
         b.v += (bt - b.v) * (1 - Math.exp(-dt / (bt > b.v ? b.rise : b.fall)));
         if (!isFinite(b.v)) b.v = 0;
         boost = Math.max(boost, b.v);
       }
       this.boost = boost;
+      // steam: the safety valve lifts near the top of the gauge
+      if (s.kind === 'steam' && this.boost > this.maxBoost * 0.97 && t - this._ventT > 3) { this._ventT = t; this.emit('vent', 1); for (const b of this._src) b.v -= 1.2; } // blowing off drops the pressure
 
       // temperature
       const run = this.rpm > 300;

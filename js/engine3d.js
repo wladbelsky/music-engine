@@ -184,10 +184,10 @@
           c[k] = r * 1.05; c[k + 1] = g * 0.95; c[k + 2] = b; c[k + 3] = a * 0.8;
           this.size[i] = this.s0[i] * (0.55 + 1.7 * u);
         } else {
-          const base = this.kind[i] === 2 ? 0.85 : 0.22; // 2 = BOV vapor, else smoke
+          const kd4 = kd === 4, base = kd === 2 ? 0.85 : kd4 ? 0.93 : 0.22; // 2 = BOV vapor, 4 = steam, else smoke
           c[k] = base; c[k + 1] = base; c[k + 2] = base * 1.05;
-          c[k + 3] = (this.kind[i] === 2 ? 0.35 : 0.42) * Math.sin(Math.PI * Math.min(1, u * 1.3)) ;
-          this.size[i] = this.s0[i] * (0.5 + 2.2 * u);
+          c[k + 3] = (kd === 2 ? 0.35 : kd4 ? 0.5 : 0.42) * Math.sin(Math.PI * Math.min(1, u * 1.3)) * (kd4 ? 1 - 0.6 * u : 1);
+          this.size[i] = this.s0[i] * (0.5 + (kd4 ? 3.2 : 2.2) * u);
         }
       }
       this.aPos.needsUpdate = true; this.aCol.needsUpdate = true; this.aSize.needsUpdate = true;
@@ -215,7 +215,7 @@
       this.pxScale = { value: 500 };
       this.noise = makeNoiseTexture(256);
       this.flames = new ParticleSystem(900, true, this.pxScale, this.noise);
-      this.smoke = new ParticleSystem(500, false, this.pxScale, this.noise);
+      this.smoke = new ParticleSystem(800, false, this.pxScale, this.noise);
       this.time = 0;
       this.scene.add(this.flames.points, this.smoke.points);
 
@@ -305,7 +305,7 @@
       this.parts = window.Induction.parts(this.ind);
       this.parts.forEach(p => p.build(this, lay, plen));
       lay.buildRear();
-      cyls.forEach(c => this._stack(c, lay.stackPath(c)));
+      lay.buildExhaust(cyls);
       lay.finish();
 
       // center & ground
@@ -390,6 +390,8 @@
         turboHot: std(0x6b5e55, 0.9, 0.4, { emissive: new T.Color(1.0, 0.3, 0.05), emissiveIntensity: 0 }),
         blower: std(0xc4c8ce, 0.95, 0.28),
         blowerCase: std(0xb4b8be, 0.95, 0.3),   // ghosts in cutaway mode so the rotors show
+        brass: std(0xc8a24a, 1.0, 0.3),
+        fire: std(0x2a1208, 0.2, 0.8, { emissive: new T.Color(1.0, 0.42, 0.1), emissiveIntensity: 0 }), // firebox door, combustor cans
         edge: new T.LineBasicMaterial({ color: 0x9aa3ad, transparent: true, opacity: 0.35 }),
       };
     }
@@ -491,6 +493,7 @@
       const w = this.w, h = this.h, cam = this.camera;
       const landscape = w / h >= 1.25;
       const box = this.box.clone(); box.max.y += 1.1; // headroom for flames
+      if (this.lay) this.lay.frameBox(box);            // e.g. the afterburner plume
       if (this.lay && this.lay.framePad) box.expandByScalar(this.lay.framePad); // flames in every direction (radial)
       const center = box.getCenter(new T.Vector3());
       const radius = box.getSize(new T.Vector3()).length() / 2;
@@ -548,7 +551,7 @@
       const rpm = sim.rpm;
       const running = sim.state === 'running' || sim.state === 'stalling';
       // crank (visual speed scaled down to avoid aliasing)
-      const visK = 0.085 * animSpeed;
+      const visK = 0.085 * animSpeed * (this.lay.animK || 1);
       const dCrank = rpm / 60 * 360 * visK * dt;
       this.crank = (this.crank + dCrank) % 720;
       this.crankTotal += dCrank;                   // unwrapped, for counting firings (see below)
@@ -567,10 +570,10 @@
         // combustion glow; with big steps sampling cyc < 80 would strobe, so use the counted firing instead
         const step = dCrank / per * 720;
         const glow = running ? Math.max(cyc < 80 ? 1 - cyc / 80 : 0, step > 80 ? c.fireGlow : 0) : 0;
-        c.pm.emissiveIntensity = glow * (0.5 + 2.2 * sim.throttle);
-        c.coilGlow.material.color.setRGB(0.2 + glow * 1.5, 0.1 + glow * 0.9, 0.05 + glow * 1.8);
-        // exhaust valve / port opening -> pulse of flame
-        if (rpm > 200) for (let k = 0; k < opened; k++) this._pulse(c, sim);
+        if (c.pm) c.pm.emissiveIntensity = glow * (0.5 + 2.2 * sim.throttle);   // no combustion glow on a steam piston
+        if (c.coilGlow) c.coilGlow.material.color.setRGB(0.2 + glow * 1.5, 0.1 + glow * 0.9, 0.05 + glow * 1.8);
+        // exhaust valve / port opening -> pulse of flame (steam: a chuff)
+        if (rpm > 200) for (let k = 0; k < opened; k++) lay.exhaustPulse(c, sim);
       });
       // accumulated per part, so ratios != 1 don't jump when the 720 deg crank angle wraps
       this.spinners.forEach(s => { s.a = (s.a + dCrank * s.ratio) % 360; s.obj.rotation.x = s.a * DEG + s.off; });
@@ -578,6 +581,7 @@
 
       // events
       for (const e of sim.takeEvents()) {
+        if (lay.fxEvent(e, sim)) continue;         // steam / jet handle their own
         if (e.type === 'backfire') this._backfire(e.k);
         else if (e.type === 'smoke') this.stacks.forEach(c => this._smoke(c.tipW || c.tip, c.dirW || c.dir, 3 + 4 * e.k, 0));
         else if (e.type === 'bov') this.bovs.forEach(p => { for (let i = 0; i < 26 / this.bovs.length + 4; i++) this.smoke.spawn(p.x, p.y + (this.baseY || 0), p.z, 0.8 + Math.random() * 1.5, 0.6 + Math.random(), (Math.random() - 0.3) * 1.2 * Math.sign(p.z || 1), 0.5 + Math.random() * 0.4, 0.25, 2); });
@@ -595,13 +599,12 @@
 
       // flame light
       this.flash *= Math.exp(-dt / 0.08);
-      const tipC = this._tipCenter();
-      this.flameLight.position.copy(tipC).add(new T.Vector3(0, 0.4, 0));
-      this.flameLight.intensity = (sim.flame * 2.2 + this.flash * 4) * (0.85 + Math.random() * 0.3);
-
       // vibration / camera shake
       this._sway(dt, sim);
-      this._jets(dt, sim, quality);
+      const gp = lay.glowPoint();
+      if (gp) this.flameLight.position.copy(gp).add(new T.Vector3(0, 0.4, 0));
+      this.flameLight.intensity = gp ? (sim.flame * 2.2 + this.flash * 4) * (0.85 + Math.random() * 0.3) : 0;
+      lay.updateFx(dt, sim, quality);             // flame jets, or the layout's own effects
       this.shake *= Math.exp(-dt / 0.12);
       if (this.camBase) {
         this.camera.position.copy(this.camBase);
@@ -611,7 +614,7 @@
 
     _sway(dt, sim) {
       const TAU = Math.PI * 2, rpm = sim.rpm, red = Math.max(500, sim.settings.redline || 7000);
-      const rn = clamp(rpm / red, 0, 1.1), on = rpm > 60, k = this.sway;
+      const rn = clamp(rpm / red, 0, 1.1), on = rpm > 60, k = this.sway * (this.lay.swayK ?? 1);
       // torque reaction: block leans against crank rotation under load
       this.lean += ((on ? sim.throttle : 0) * 0.05 - this.lean) * (1 - Math.exp(-dt / 0.25));
       // vibration amplitude grows with rpm
@@ -625,7 +628,7 @@
       let roll = this.lean * k + A * (0.9 * Math.sin(this.ph1) + 0.3 * Math.sin(this.ph2));
       let pitch = A * (0.35 * Math.sin(this.ph1 * 0.71 + 1.3) + 0.18 * Math.sin(this.ph3));
       let bounce = A * 0.9 * Math.sin(this.ph2 * 1.13) + A * 0.4 * Math.sin(this.ph3);
-      if (on && rpm < 1400) roll += 0.006 * k * (Math.sin(this.phI) + 0.5 * Math.sin(this.phI * 2.3 + 0.7)) * (1 - rpm / 1400);
+      if (on && rpm < 1400 && !this.lay.smooth) roll += 0.006 * k * (Math.sin(this.phI) + 0.5 * Math.sin(this.phI * 2.3 + 0.7)) * (1 - rpm / 1400);
       roll += (sim.kick / red) * 0.03 * k;                              // beat jolts
       if (sim.state === 'stalling') { roll += (Math.random() - 0.5) * 0.025 * k; pitch += (Math.random() - 0.5) * 0.01 * k; }
       if (sim.state === 'cranking') roll += Math.sin(sim.stateT * 38) * 0.012 * k;
@@ -700,8 +703,9 @@
     }
 
     glowScreen() { // screen position of flame area for the 2D glow overlay
-      if (!this.stacks || !this.stacks.length) return null;
-      const v = this._tipCenter().add(new T.Vector3(0, 0.5, 0)).project(this.camera);
+      const gp = this.lay && this.lay.glowPoint();
+      if (!gp) return null;
+      const v = gp.clone().add(new T.Vector3(0, 0.5, 0)).project(this.camera);
       return { x: (v.x + 1) / 2 * this.w, y: (1 - v.y) / 2 * this.h };
     }
 
@@ -710,5 +714,6 @@
 
   // shared with js/layouts.js and js/induction.js
   Engine3D.GEO = { P, CR, ROD, BORE, DECK, DEG, clamp, firingOrder };
+  Engine3D.FX = { addBlend, FIRE_RAMP };   // for the layouts' own flame shaders (js/jet.js)
   window.Engine3D = Engine3D;
 })();

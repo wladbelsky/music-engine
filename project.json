@@ -18,7 +18,7 @@
         "order": 1
       },
       "cylinders": {
-        "text": "Number of cylinders",
+        "text": "Number of cylinders (rotary: rotors, turbojet: combustor cans)",
         "type": "slider",
         "value": 8,
         "min": 1,
@@ -54,6 +54,14 @@
           {
             "label": "Rotary (Wankel)",
             "value": "rotary"
+          },
+          {
+            "label": "Steam engine (mill engine + boiler)",
+            "value": "steam"
+          },
+          {
+            "label": "Turbojet (afterburner)",
+            "value": "jet"
           }
         ],
         "order": 6
@@ -89,7 +97,7 @@
           }
         ],
         "order": 7,
-        "condition": "layout.value != 'radial'"
+        "condition": "layout.value != 'radial' && layout.value != 'steam' && layout.value != 'jet'"
       },
       "cutaway": {
         "text": "Cutaway block (shows pistons)",
@@ -168,6 +176,7 @@
       },
       "redline": {
         "text": "Rev limiter (RPM)",
+        "condition": "layout.value != 'steam' && layout.value != 'jet'",
         "type": "slider",
         "value": 7000,
         "min": 5000,
