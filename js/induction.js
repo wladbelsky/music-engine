@@ -206,8 +206,9 @@
       const k = String(v === undefined ? '' : v).trim().toLowerCase(), key = OPTIONS[k] ? k : '1';
       return Object.assign({ key }, OPTIONS[key]);
     },
-    /* what the layout can actually carry (a radial has no turbos) */
-    effective(cfg, L) { return { key: cfg.key, turbos: L.turbos ? cfg.turbos : 0, blower: !!cfg.blower }; },
+    /* what the layout can actually carry (a radial carries nothing: naturally aspirated, vacuum on the gauge) */
+    effective(cfg, L) { return { key: cfg.key, turbos: L.turbos ? cfg.turbos : 0, blower: L.blower ? !!cfg.blower : false }; },
+    supported(L) { return !!(L.turbos || L.blower); },
     suffix(cfg) {
       if (cfg.blower) return cfg.turbos ? ' TWINCHARGED' : ' SUPERCHARGED';
       return ['', ' TURBO', ' TWIN TURBO', '', ' QUAD TURBO'][cfg.turbos] || '';

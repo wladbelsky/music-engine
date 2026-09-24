@@ -37,6 +37,7 @@
     eng3d.sway = S.sway;
     dash.set({ redline: S.redline, color: hex(S.dashColor), label: engineLabel(), showBpm: S.showBpm, showControls: S.showControls });
     $('debug').style.display = S.debug ? 'block' : 'none';
+    if (!IS_WE) $('dv-turbo').disabled = !Induction.supported(layoutCls()); // e.g. radial: always naturally aspirated
   }
 
   /* ---------- Wallpaper Engine property listener ---------- */

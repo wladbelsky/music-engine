@@ -279,7 +279,7 @@
       this.frontX = this.rowX(0) + 0.6; this.rearX = this.rowX(this.rows - 1) - 0.6;
       this.len = this.frontX - this.rearX;
       this.xh = this.rearX - 0.45;                       // rear induction housing
-      this.rh = 0.5 + 0.35 * this.lift + (this.e.ind.blower ? 0.14 : 0);
+      this.rh = 0.5 + 0.35 * this.lift;
     }
     cylinders(b) {
       const D = DECK + this.lift, x = b.off;
@@ -327,14 +327,10 @@
     }
 
     buildIntake(cyls) {
-      const e = this.e, M = this.M, eng = this.eng, xh = this.xh, rh = this.rh, sc = e.ind.blower;
-      // rear housing: the gear-driven supercharger on a blown radial, a plain induction case otherwise
-      const hsg = new T.Mesh(new T.CylinderGeometry(rh, rh, 0.6, 36), sc ? M.blower : M.dark2);
+      const e = this.e, M = this.M, eng = this.eng, xh = this.xh, rh = this.rh;
+      // rear induction housing feeding every cylinder
+      const hsg = new T.Mesh(new T.CylinderGeometry(rh, rh, 0.6, 36), M.dark2);
       hsg.rotation.z = Math.PI / 2; hsg.position.x = xh; eng.add(hsg);
-      if (sc) for (const dx of [-0.2, 0, 0.2]) {
-        const rib = new T.Mesh(new T.TorusGeometry(rh + 0.01, 0.018, 6, 40), M.blower);
-        rib.rotation.y = Math.PI / 2; rib.position.x = xh + dx; eng.add(rib);
-      }
       cyls.forEach(c => {
         const t = c.bank.tilt * DEG, rv = new T.Vector3(0, Math.cos(t), Math.sin(t));
         const port = e._toEng(c.bank, c.intake);
@@ -346,8 +342,8 @@
         eng.add(tube);
       });
       // carburettor air scoop on top of the housing
-      const sh = 0.55 + (sc ? 0.1 : 0);
-      const scoop = new T.Mesh(e._roundBox(0.5, sh, 0.38, 0.07), sc ? M.blower : M.dark2);
+      const sh = 0.55;
+      const scoop = new T.Mesh(e._roundBox(0.5, sh, 0.38, 0.07), M.dark2);
       scoop.position.set(xh - 0.05, rh + sh / 2 - 0.05, 0); eng.add(scoop);
       const mouth = new T.Mesh(new T.PlaneGeometry(0.3, sh * 0.6), M.dark);
       mouth.rotation.y = Math.PI / 2; mouth.position.set(xh + 0.21, rh + sh * 0.55, 0); eng.add(mouth);
@@ -398,9 +394,11 @@
     }
   }
   RadialLayout.id = 'radial';
-  RadialLayout.turbos = false;   // turbo options are ignored; "Supercharger" spins the rear housing
+  RadialLayout.turbos = false;   // no forced induction on the radial: every option acts as none
+  RadialLayout.blower = false;
 
-  EngineLayout.turbos = true;
+  EngineLayout.turbos = true;    // which forced induction a layout can carry (see Induction.effective)
+  EngineLayout.blower = true;
   const LAYOUTS = { inline: InlineLayout, v: VLayout, boxer: BoxerLayout, w: WLayout, radial: RadialLayout };
   window.EngineLayouts = Object.assign({}, LAYOUTS, {
     MAX_CYL,
