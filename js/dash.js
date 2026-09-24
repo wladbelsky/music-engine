@@ -361,6 +361,10 @@
         g.font = `700 ${D.h * 0.5}px "Segoe UI", Arial, sans-serif`;
         g.textAlign = 'left'; g.fillText(unit, D.x + D.w + fp * 1.8, D.y + D.h / 2);
         if (D.pre) { g.textAlign = 'right'; g.fillText('TRIP', D.x - fp * 1.8, D.y + D.h / 2); }
+        // cylinder shading for the drums (depends only on the row), made once for the live canvas
+        const sh = D.shade = this.ctx.createLinearGradient(0, D.y, 0, D.y + D.h);
+        sh.addColorStop(0, 'rgba(0,0,0,0.85)'); sh.addColorStop(0.3, 'rgba(0,0,0,0.1)'); sh.addColorStop(0.45, 'rgba(255,255,255,0.06)');
+        sh.addColorStop(0.7, 'rgba(0,0,0,0.12)'); sh.addColorStop(1, 'rgba(0,0,0,0.9)');
       }
     }
 
@@ -373,19 +377,16 @@
         const p = Math.pow(10, i), x = D.x + (D.n - 1 - i) * D.cw;
         const dig = Math.floor(v / p) % 10;
         const roll = i === 0 ? v - Math.floor(v) : Math.max(0, (v - Math.floor(v / p) * p) - (p - 1));
-        g.save(); g.beginPath(); g.rect(x + 0.5, D.y, D.cw - 1, h); g.clip();
         g.fillStyle = i === 0 ? '#7a0f0c' : '#101113'; g.fillRect(x, D.y, D.cw, h);
         g.fillStyle = i === 0 ? '#fff4ee' : '#e9ecef';
+        if (roll <= 0) { g.fillText(String(dig), x + D.cw / 2, D.y + h / 2); continue; }
+        g.save(); g.beginPath(); g.rect(x, D.y, D.cw, h); g.clip();   // only a turning drum needs the clip
         const yc = D.y + h / 2 - roll * h;
         g.fillText(String(dig), x + D.cw / 2, yc);
         g.fillText(String((dig + 1) % 10), x + D.cw / 2, yc + h);
-        // cylinder shading: the drum curves away at the top and bottom
-        const gr = g.createLinearGradient(0, D.y, 0, D.y + h);
-        gr.addColorStop(0, 'rgba(0,0,0,0.85)'); gr.addColorStop(0.3, 'rgba(0,0,0,0.1)'); gr.addColorStop(0.45, 'rgba(255,255,255,0.06)');
-        gr.addColorStop(0.7, 'rgba(0,0,0,0.12)'); gr.addColorStop(1, 'rgba(0,0,0,0.9)');
-        g.fillStyle = gr; g.fillRect(x, D.y, D.cw, h);
         g.restore();
       }
+      g.fillStyle = D.shade; g.fillRect(D.x, D.y, D.w, h);           // cylinder shading: drums curve away top and bottom
       g.fillStyle = 'rgba(0,0,0,0.9)';                             // gaps between the drums
       for (let i = 1; i < D.n; i++) g.fillRect(D.x + i * D.cw - 0.75, D.y, 1.5, h);
       g.restore();

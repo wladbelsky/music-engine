@@ -82,7 +82,7 @@
       if (v('flamethreshold') !== undefined) S.flameThr = v('flamethreshold') / 100;
       if (v('stalldelay') !== undefined) S.stallDelay = v('stalldelay');
       if (v('animspeed') !== undefined) S.animSpeed = v('animspeed') / 100;
-      if (v('sway') !== undefined) S.sway = v('sway') / 100;
+      if (v('sway') !== undefined) { const w = Number(v('sway')) / 100; S.sway = isFinite(w) ? Math.max(0, w) : 1; } // editable: junk → default
       if (v('quality') !== undefined) { S.quality = v('quality'); q = true; }
       if (v('showbpm') !== undefined) S.showBpm = !!v('showbpm');
       if (v('debug') !== undefined) S.debug = !!v('debug');
@@ -104,6 +104,7 @@
     sim.ignition = !sim.ignition; raw.ignition = sim.ignition;
     if (!IS_WE) { remember('ignition', sim.ignition); syncPanel(); }
   };
+  const onPanel = e => !!(e.target && e.target.closest && e.target.closest('#devpanel, #dv-show')); // panel controls can sit over the key
   const press = (x, y) => {
     const hit = dash.hitTest(x, y);
     if (hit === 'key') toggleIgnition();
@@ -112,11 +113,11 @@
     return !!hit;
   };
   const release = () => { sim.pedalIn = false; };
-  window.addEventListener('mousedown', e => { if (e.button === 0) press(e.clientX, e.clientY); });
+  window.addEventListener('mousedown', e => { if (e.button === 0 && !onPanel(e)) press(e.clientX, e.clientY); });
   window.addEventListener('mouseup', release);
   window.addEventListener('blur', release);
   document.addEventListener('mouseleave', release);
-  window.addEventListener('touchstart', e => { const t = e.changedTouches[0]; if (press(t.clientX, t.clientY)) e.preventDefault(); }, { passive: false });
+  window.addEventListener('touchstart', e => { if (onPanel(e)) return; const t = e.changedTouches[0]; if (press(t.clientX, t.clientY)) e.preventDefault(); }, { passive: false });
   window.addEventListener('touchend', release);
   window.addEventListener('keydown', e => {
     if (e.target && /INPUT|SELECT|BUTTON/.test(e.target.tagName)) return;
@@ -172,9 +173,10 @@
   ];
   const toRgb = h => [1, 3, 5].map(i => (parseInt(h.slice(i, i + 2), 16) / 255).toFixed(3)).join(' ');
 
-  function buildPanel(prop) {
+  function buildPanel(apply) {
     const root = $('dv-props'), el = (tag, a = {}) => Object.assign(document.createElement(tag), a);
     const ctl = {};
+    const prop = (k, v, keep = true, src = null) => { apply(k, v, keep); syncPanel(src); }; // show what was applied (clamped / fallback)
     for (const [group, items] of PANEL) {
       const row = el('div', { className: 'row' }); row.append(group + ':');
       for (const it of items) {
@@ -183,14 +185,14 @@
         if (it.t === 'select') { c = el('select', { id }); for (const [v, txt] of it.o) c.append(el('option', { value: v, textContent: txt })); c.onchange = () => prop(it.k, c.value, !(it.k === 'background' && c.value === 'custom')); } // the image itself can't be kept
         else if (it.t === 'bool') { c = el('input', { id, type: 'checkbox' }); c.onchange = () => prop(it.k, c.checked); }
         else if (it.t === 'number') { c = el('input', { id, type: 'number', min: it.min, max: it.max, style: 'width:4em' }); c.onchange = () => prop(it.k, Number(c.value)); }
-        else if (it.t === 'color') { c = el('input', { id, type: 'color' }); c.oninput = () => prop(it.k, toRgb(c.value)); }
+        else if (it.t === 'color') { c = el('input', { id, type: 'color' }); c.oninput = () => prop(it.k, toRgb(c.value), true, c); }
         else if (it.t === 'file') {
           c = el('input', { id, type: 'file', accept: 'image/*' });
-          c.onchange = () => { const f = c.files[0]; if (f) { prop('customimage', URL.createObjectURL(f), false); prop('background', 'custom', false); syncPanel(); } };
+          c.onchange = () => { const f = c.files[0]; if (f) { prop('customimage', URL.createObjectURL(f), false); prop('background', 'custom', false); } };
         } else { // range + live value
           c = el('input', { id, type: 'range', min: it.min, max: it.max, step: it.step || 1, style: 'width:7em' });
           const out = el('span', { className: 'val' }); c.out = out;
-          c.oninput = () => { out.textContent = c.value; prop(it.k, Number(c.value)); };
+          c.oninput = () => prop(it.k, Number(c.value), true, c);
         }
         ctl[it.k] = { it, c };
         if (it.t === 'bool') lab.append(c, ' ' + it.l); else lab.append(it.l ? it.l + ' ' : '', c);
@@ -199,17 +201,18 @@
       }
       root.append(row);
     }
-    syncPanel = () => {
+    // controls show the applied value: clamped numbers, and the fallback for junk select values
+    const applied = { layout: () => layoutCls().id, turbos: () => S.induction.key, odounits: () => S.odoUnits, background: () => S.background, quality: () => S.quality, cylinders: () => S.cylinders, redline: () => S.redline, ignition: () => sim.ignition };
+    syncPanel = (skip = null) => {
       for (const k in ctl) {
-        const { it, c } = ctl[k], v = raw[k] !== undefined ? raw[k] : it.d;
-        if (it.t === 'file') continue;
+        const { it, c } = ctl[k];
+        if (it.t === 'file' || c === skip) { if (c.out) c.out.textContent = k === 'redline' ? S.redline : c.value; continue; }
+        const v = applied[k] ? applied[k]() : raw[k] !== undefined ? raw[k] : it.d;
         if (it.t === 'bool') c.checked = !!v;
         else if (it.t === 'color') c.value = hex(parseColor(String(v)));
-        else if (it.t === 'select') c.value = k === 'turbos' ? S.induction.key : String(v);
-        else { c.value = String(v); if (c.out) c.out.textContent = c.value; }
+        else if (it.t === 'select') c.value = it.o.some(o => o[0] === String(v)) ? String(v) : it.d;
+        else { c.value = String(v); if (c.out) c.out.textContent = k === 'redline' ? S.redline : c.value; }
       }
-      ctl.ignition.c.checked = sim.ignition;
-      ctl.cylinders.c.value = String(S.cylinders); ctl.redline.c.value = String(S.redline); ctl.redline.c.out.textContent = String(S.redline);
     };
   }
 
@@ -269,12 +272,12 @@
     if (paused) return;
     rafId = requestAnimationFrame(loop);
     if (S.fps > 0 && now - last < 1000 / S.fps - 2) return;
-    const dt = Math.min(0.1, Math.max(0.001, (now - last) / 1000)); last = now;
+    const step = Math.max(0, (now - last) / 1000), dt = Math.min(0.1, Math.max(0.001, step)); last = now;
     const t = now / 1000;
     if (needRebuild) { needRebuild = false; eng3d.build(S.cylinders, S.layout, S.induction); eng3d.setCutaway(S.cutaway); eng3d.resize(window.innerWidth, window.innerHeight); dash.set({ label: engineLabel() }); }
     audio.tick(t);
     sim.update(dt, audio, t);
-    odo.update(dt, sim, now);
+    odo.update(Math.min(step, 1), sim, now); // real time (low FPS caps), but not a whole hidden-tab gap
     eng3d.update(dt, sim, S.animSpeed, S.quality);
     eng3d.render();
     dash.draw(sim, audio, dt, t, media, odo);
