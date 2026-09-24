@@ -58,9 +58,11 @@ state = await pg.evaluate("__dbg.sim.state")   # __dbg = {audio, sim, eng3d, das
 - **Refactor regression:** `?ignition=false` with the `bg` and `dash` canvases hidden gives a deterministic engine frame (only turbo wheels move, they spin from boost even when off); diff against screenshots from before the change.
 - Before finishing, check JS syntax: `node -e "new Function(fs.readFileSync(f,'utf8'))"`, and that there are no `pageerror`s.
 
-## Delivering to the user
-The working copy is on the user's PC at `C:\Users\Vladislavb\PycharmProjects\EngineRevs`. After changes, remind them to re-import `index.html` into WE (WE keeps its own copy of the project). Update `preview.jpg` (1280×720) when the visuals change.
-
 ## Ideas / not done yet
-- Tune thresholds on real music (the user hasn't run it in WE yet).
-- Possibly a fire sprite sheet for the fireballs if the user provides one.
+- **Autotests + GitHub CI** (planned for a separate branch once the current work is merged):
+  - unit tests on `node:test` loading the plain scripts into a `vm` (BPM detection, sim state machine, boost sources, `normCyl`/`label`/`Induction` rules, `project.json` consistency);
+  - Playwright + SwiftShader e2e over every layout × induction option (no errors/NaN, part counts, engine in frame and off the dash, flames from the stack tips, butterflies, cutaway, rotor apex check, junk WE values, one rAF chain);
+  - golden screenshots of the engine only (ignition off, bg/dash hidden), with Playwright pinned to the sandbox's Chromium build;
+  - a GitHub Actions workflow with a manual job to regenerate the baselines;
+  - for deterministic stills, stop the turbo wheels when the engine is off (they spin from boost now).
+- **Odometer** on the dash: a mileage counter (rolling digits) that accumulates from rpm while the engine runs, kept between sessions (e.g. `localStorage`).
