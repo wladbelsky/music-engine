@@ -17,8 +17,10 @@
     // should the radio show the track (vs AUX)?
     active(t) { return this.available && !(this.state === 'stopped' && t - this.stopT > STOP_HOLD); }
 
+    clear() { this._clear(); this.state = null; this._el = null; }
+
     onStatus(e) {
-      if (e && e.enabled === false) { this._clear(); this.state = null; }
+      if (e && e.enabled === false) this.clear();
     }
 
     onProps(e) {
@@ -41,7 +43,18 @@
       this.state = st;
     }
 
-    // dev panel / tests
+    // browser: a local audio file picked in the settings panel ("Artist - Title.mp3" → artist + title)
+    fromFile(name, el) {
+      const base = String(name || '').replace(/\.[^.]+$/, '').replace(/_/g, ' ').trim();
+      const m = base.match(/^(.+?)\s+[-\u2013\u2014]\s+(.+)$/);
+      this.onProps(m ? { artist: m[1], title: m[2] } : { title: base });
+      this.state = el && el.paused ? 'paused' : 'playing'; this._el = el;
+      // only the current file's element counts: the old one's queued 'pause' may arrive after a new pick
+      const on = st => () => { if (this._el === el) this.state = st; };
+      if (el) { el.addEventListener('play', on('playing')); el.addEventListener('pause', on('paused')); }
+    }
+
+    // tests
     mock(artist, title) { this.onProps({ artist, title }); this.state = 'playing'; }
     mockState(s) { if (s === 'stopped' && this.state !== 'stopped') this.stopT = this._now(); this.state = s; }
   }

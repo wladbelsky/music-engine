@@ -24,6 +24,11 @@
   let paused = false, needRebuild = true;
   const MIN_REDLINE = 500, MAX_REDLINE = 15000;
 
+  // browser only: the settings panel choices survive a reload (WE keeps its own property values)
+  const STORE = 'music-engine.settings';
+  const saved = (() => { if (IS_WE) return {}; try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) { return {}; } })();
+  const remember = (k, v) => { saved[k] = v; try { localStorage.setItem(STORE, JSON.stringify(saved)); } catch (e) { /* private mode etc. */ } };
+
   const hex = c => '#' + c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('');
   const parseColor = s => s.split(' ').map(Number);
   const layoutCls = () => EngineLayouts.get(S.layout);
@@ -130,25 +135,20 @@
 
   function setupDev() {
     const panel = $('devpanel'); panel.style.display = 'block';
-    const stopSrc = () => { if (devSrc && devSrc.stop) devSrc.stop(); if (devSrc && devSrc.id) clearInterval(devSrc.id); if (devSrc && devSrc.el) devSrc.el.pause(); devSrc = null; };
+    const stopSrc = () => { if (devSrc && devSrc.stop) devSrc.stop(); if (devSrc && devSrc.id) clearInterval(devSrc.id); if (devSrc && devSrc.el) devSrc.el.pause(); devSrc = null; media.clear(); };
     $('dv-demo').onclick = () => { stopSrc(); devSrc = new DemoSource(onAudio); };
     $('dv-mic').onclick = async () => { stopSrc(); const s = new WebAudioSource(onAudio); try { await s.startMic(); devSrc = s; } catch (e) { alert('Microphone unavailable: ' + e.message); } };
-    $('dv-file').onchange = e => { const f = e.target.files[0]; if (!f) return; stopSrc(); const s = new WebAudioSource(onAudio); s.startFile(f); devSrc = s; };
+    $('dv-file').onchange = e => { const f = e.target.files[0]; if (!f) return; stopSrc(); const s = new WebAudioSource(onAudio); s.startFile(f); devSrc = s; media.fromFile(f.name, s.el); };
     $('dv-stop').onclick = stopSrc;
-    const prop = (k, val) => window.wallpaperPropertyListener.applyUserProperties({ [k]: { value: val } });
+    const prop = (k, val, keep = true) => { window.wallpaperPropertyListener.applyUserProperties({ [k]: { value: val } }); if (keep) remember(k, val); };
     $('dv-cyl').onchange = e => prop('cylinders', e.target.value);
     $('dv-layout').onchange = e => prop('layout', e.target.value);
     $('dv-turbo').onchange = e => prop('turbos', e.target.value);
-    $('dv-bg').onchange = e => prop('background', e.target.value);
-    $('dv-img').onchange = e => { const f = e.target.files[0]; if (f) { prop('customimage', URL.createObjectURL(f)); prop('background', 'custom'); $('dv-bg').value = 'custom'; } };
+    $('dv-bg').onchange = e => prop('background', e.target.value, e.target.value !== 'custom'); // the image itself can't be kept
+    $('dv-img').onchange = e => { const f = e.target.files[0]; if (f) { prop('customimage', URL.createObjectURL(f), false); prop('background', 'custom', false); $('dv-bg').value = 'custom'; } };
     $('dv-cut').onchange = e => prop('cutaway', e.target.checked);
     $('dv-dbg').onchange = e => prop('debug', e.target.checked);
     $('dv-radio').onchange = e => prop('showradio', e.target.checked);
-    const songs = [['Daft Punk', 'Around the World'], ['Кино', 'Группа крови'], ['Justice', 'Genesis'], ['Rammstein', 'Sonne']];
-    $('dv-track').onclick = () => { const s = songs[media.trackNo % songs.length]; media.mock(s[0], s[1]); };
-    $('dv-play').onclick = () => media.mockState('playing');
-    $('dv-pause').onclick = () => media.mockState('paused');
-    $('dv-mstop').onclick = () => media.mockState('stopped');
     // hidden panel leaves a small "Settings" button in the corner; D toggles it too
     const showPanel = on => { panel.style.display = on ? 'block' : 'none'; $('dv-show').style.display = on ? 'none' : 'block'; };
     $('dv-hide').onclick = () => showPanel(false);
@@ -159,8 +159,9 @@
     if (qs.get('demo')) devSrc = new DemoSource(onAudio);
   }
 
-  /* ---------- initial state (URL overrides for testing) ---------- */
+  /* ---------- initial state: saved panel settings, then URL overrides (testing) ---------- */
   const init = {};
+  for (const k in saved) init[k] = { value: saved[k] };
   for (const [k, v] of qs.entries()) if (!['demo'].includes(k)) init[k] = { value: isNaN(v) ? (v === 'true' ? true : v === 'false' ? false : v) : Number(v) };
   if (init.cylinders) init.cylinders.value = String(init.cylinders.value);
   if (init.turbos) init.turbos.value = String(init.turbos.value);
@@ -168,7 +169,7 @@
   eng3d.setQuality(S.quality);
   bg.set({ preset: S.background, bgcolor: S.bgcolor, dim: S.bgdim });
   window.wallpaperPropertyListener.applyUserProperties(init);
-  if (!IS_WE) { $('dv-cyl').value = String(S.cylinders); $('dv-layout').value = S.layout; $('dv-turbo').value = S.induction.key; $('dv-bg').value = S.background; $('dv-radio').checked = S.showRadio; }
+  if (!IS_WE) { $('dv-cyl').value = String(S.cylinders); $('dv-layout').value = S.layout; $('dv-turbo').value = S.induction.key; $('dv-bg').value = S.background; $('dv-radio').checked = S.showRadio; $('dv-cut').checked = S.cutaway; $('dv-dbg').checked = S.debug; }
 
   /* ---------- loop ---------- */
   // exactly one rAF chain: WE may send setPaused(false) without a pause before it, or pause+unpause
