@@ -2,17 +2,9 @@
 
 A web wallpaper with a 3D engine. The engine revs up to the music, and on the most powerful moments flames shoot out of the exhaust. On the right is a dashboard: tachometer, temperature, boost, warning lamps, an ignition key and a throttle pedal.
 
+**[Get it on Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3806831743)**
+
 ![preview](preview.jpg)
-
-## Installation
-
-1. Wallpaper Engine → **Create Wallpaper** → select `index.html` from this folder. WE will copy the project into its `myprojects` folder.
-   - Alternatively, copy the `EngineRevs` folder into `…\steamapps\common\wallpaper_engine\projects\myprojects\` and restart WE.
-2. If the engine settings don't show up in the WE properties panel, replace `project.json` in the WE project folder with this file and restart WE.
-3. For the wallpaper to react to sound, audio capture from the output device must be enabled in the WE settings.
-4. The key and pedal respond to the mouse only if WE passes mouse input to the wallpaper: mouse input must be allowed in the WE settings. Clicks on desktop icons are not passed to the wallpaper.
-
-> After changing files in this folder, import `index.html` again: WE works with its own copy of the project.
 
 ## Controls
 
