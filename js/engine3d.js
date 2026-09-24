@@ -8,6 +8,7 @@
 
   // geometry constants (1 unit ~ 10 cm)
   const P = 1.0, CR = 0.34, ROD = 1.05, BORE = 0.36, DECK = 1.65;
+  const FLOOR_GAP = 0.012;  // lowest engine point above the floor while it rocks (rest clearance is 0.02)
   const FIT_RIGHT = 0.14; // landscape: rightmost engine part in NDC (= the old inline 8), keeps it off the dash
 
   const FIRING = {
@@ -222,7 +223,7 @@
       this.accent = new T.Color(0.75, 0.08, 0.06);
       this.cutaway = true; this.quality = 'high';
       this.crank = 0; this.crankTotal = 0; this.heat = 0; this.flash = 0; this.rock = 0;
-      this.sway = 1; this.lean = 0; this.vibA = 0; this.ph1 = 0; this.ph2 = 0; this.ph3 = 0; this.phI = 0;
+      this._rotM = new T.Matrix4(); this.sway = 1; this.lean = 0; this.vibA = 0; this.ph1 = 0; this.ph2 = 0; this.ph3 = 0; this.phI = 0;
       this.root = null;
       this.w = 1; this.h = 1;
     }
@@ -311,6 +312,7 @@
       // center & ground
       eng.updateMatrixWorld(true);
       const box = new T.Box3().setFromObject(eng);
+      this.foot = this._footPoints(eng, box);
       eng.position.y = -box.min.y + 0.02;
       root.updateMatrixWorld(true);
       this.box = new T.Box3().setFromObject(eng);
@@ -326,6 +328,25 @@
       this.scene.add(root);
       this._applyCutaway();
       this._frame();
+    }
+
+    /* the lowest vertex per (x, z) cell, engine-local: a small rolled/pitched block can't put anything else lower,
+       so _sway keeps these above the floor instead of letting the rocking engine sink through it */
+    _footPoints(eng, box) {
+      const N = 32, sx = Math.max(1e-6, box.max.x - box.min.x) / N, sz = Math.max(1e-6, box.max.z - box.min.z) / N;
+      const low = new Float32Array(N * N * 3).fill(NaN), v = new T.Vector3();
+      eng.traverse(o => {
+        if (!o.isMesh || !o.geometry.attributes.position) return;
+        const pos = o.geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+          v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);  // eng is at the origin, unrotated, here
+          const c = Math.min(N - 1, Math.floor((v.x - box.min.x) / sx)) * N + Math.min(N - 1, Math.floor((v.z - box.min.z) / sz));
+          if (!(low[c * 3 + 1] <= v.y)) { low[c * 3] = v.x; low[c * 3 + 1] = v.y; low[c * 3 + 2] = v.z; }
+        }
+      });
+      const pts = [];
+      for (let c = 0; c < N * N; c++) if (low[c * 3 + 1] === low[c * 3 + 1]) pts.push(low[c * 3], low[c * 3 + 1], low[c * 3 + 2]);
+      return new Float32Array(pts);
     }
 
     /* one cylinder: liner, piston, rod, coil (bank-local). cd = {i, x, zo, phase, port?, intake?} from the layout */
@@ -632,7 +653,16 @@
       this.rock *= Math.exp(-dt / 0.35);
       roll += Math.sin(performance.now() / 45) * this.rock * 0.035 * k;
       this.eng.rotation.set(roll, 0, pitch);
-      this.eng.position.set(0, (this.baseY || 0) + bounce * 0.6, 0);
+      // rest on the floor: the lowest foot point after the rotation stays at the grounding clearance or above
+      let y = (this.baseY || 0) + bounce * 0.6;
+      const f = this.foot;
+      if (f && f.length) {
+        const e = this._rotM.makeRotationFromEuler(this.eng.rotation).elements;
+        let lo = Infinity;
+        for (let i = 0; i < f.length; i += 3) { const wy = e[1] * f[i] + e[5] * f[i + 1] + e[9] * f[i + 2]; if (wy < lo) lo = wy; }
+        y = Math.max(y, FLOOR_GAP - lo);
+      }
+      this.eng.position.set(0, y, 0);
       this.eng.updateMatrixWorld(true);
       const q = this.eng.quaternion;
       this.stacks.forEach(c => { c.tipW = this.eng.localToWorld(c.tip.clone()); c.dirW = c.dir.clone().applyQuaternion(q); });
