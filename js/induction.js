@@ -149,8 +149,8 @@
         sh.lineTo(-w / 2 + r, r); sh.absarc(-w / 2 + r, 0, r, Math.PI / 2, Math.PI * 1.5, false);
         return sh;
       };
-      // shape XY + extrusion Z  ->  engine z/y + extrusion running back from the mouth plane (x = 0)
-      const alongX = (geo, depth, x0) => { geo.rotateY(Math.PI / 2); geo.translate(x0 - depth, 0, 0); return geo; };
+      // shape XY + extrusion  ->  engine z/y + extrusion running back from the mouth plane (x = 0)
+      const alongX = (geo, depth, x0) => e._alongX(geo, depth, x0);
       // proportions as on a real hat: the three butterflies almost touch, the mouth is one disc tall
       const rb = 0.15, sp = 0.32, Hm = 2 * rb + 0.03, Wm = 2 * sp + Hm, wall = 0.05, Lh = 0.5, zs = [-sp, 0, sp];
       // neck from the blower top up into the hat

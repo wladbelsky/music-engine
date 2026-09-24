@@ -283,7 +283,7 @@
       const root = this.root = new T.Group();
       const eng = this.eng = new T.Group(); root.add(eng);
       this.mats = this._materials();
-      this.spinners = []; this.compressors = []; this.bovs = []; this.stacks = [];
+      this.spinners = []; this.compressors = []; this.bovs = []; this.stacks = []; this._edgeGeo = new Map();
       const lay = this.lay = new L(this, n);
 
       // banks and cylinders
@@ -345,7 +345,8 @@
       // exhaust / intake ports (bank-local)
       const port = cd.port || new T.Vector3(x, D + 0.2, b.outer * (b.hw + 0.02));
       const intake = cd.intake || new T.Vector3(x, D + 0.2, -b.outer * (b.hw + 0.02));
-      return { bank: b, bi, i: cd.i, x, zo, rodL, phase: cd.phase, piston, rod, pm, coilGlow, port, intake, prevCycle: 0 };
+      // moving: the parts only shown in cutaway (the layout's buildCrank adds the throw)
+      return { bank: b, bi, i: cd.i, x, zo, rodL, phase: cd.phase, piston, rod, moving: [piston, rod], pm, coilGlow, port, intake, prevCycle: 0 };
     }
 
     /* pulley group spinning about the crank axis at `ratio` x crank speed */
@@ -394,11 +395,18 @@
     }
 
     _edges(mesh, parent, thresholdDeg) {
-      const e = new T.LineSegments(new T.EdgesGeometry(mesh.geometry, thresholdDeg), this.mats.edge);
+      // one EdgesGeometry per source geometry (layouts share geometry between identical parts)
+      const key = mesh.geometry.uuid + '|' + thresholdDeg, cache = this._edgeGeo || (this._edgeGeo = new Map());
+      if (!cache.has(key)) cache.set(key, new T.EdgesGeometry(mesh.geometry, thresholdDeg));
+      const e = new T.LineSegments(cache.get(key), this.mats.edge);
       e.position.copy(mesh.position); e.rotation.copy(mesh.rotation); parent.add(e);
       (this._edgeList = this._edgeList || []).push(e);
       mesh.userData.ghost = true;
     }
+
+    /* run a shape extrusion along engine X: shape x -> +z, shape y -> y, the extrusion occupies
+       [xFront - depth, xFront] (angles in the shape run +Y -> +Z, the same way as rotation.x) */
+    _alongX(geo, depth, xFront) { geo.rotateY(-Math.PI / 2); geo.translate(xFront, 0, 0); return geo; }
 
     _roundBox(w, h, d, r) {
       const shape = new T.Shape(); const x = -d / 2, y = -h / 2;
@@ -457,7 +465,7 @@
         m.side = on ? T.DoubleSide : T.FrontSide; m.needsUpdate = true;
       }
       (this._edgeList || []).forEach(e => e.visible = on);
-      this.cyls.forEach(c => { for (const o of [c.piston, c.rod, c.throwG]) if (o) o.visible = on; });
+      this.cyls.forEach(c => c.moving.forEach(o => { o.visible = on; }));
       M.liner.visible = on;
       this.root.traverse(o => { if (o.isMesh && (o.material === M.block || o.material === M.blowerCase)) { o.castShadow = !on; o.receiveShadow = !on; } });
     }

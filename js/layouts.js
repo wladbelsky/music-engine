@@ -15,6 +15,7 @@
   // any input -> integer 1..MAX_CYL (non-numeric -> 8)
   const cap = n => { const v = Math.round(Number(n)); return isFinite(v) ? clamp(v, 1, MAX_CYL) : 8; };
   const evenUp = n => Math.max(2, n + (n % 2));
+  const ROTOR_TDC = 270;   // rotary: shaft angle at which a rotor face is at TDC on the spark plug side
 
   class EngineLayout {
     static normCyl(n) { return cap(n); }
@@ -96,12 +97,15 @@
       pan.position.set(-0.1, this.panY, 0); pan.castShadow = true; this.eng.add(pan);
     }
 
+    /* crank / eccentric shaft along X, turning with the crank */
+    _mainShaft(len, x = 0) {
+      const shaft = new T.Group(); this.eng.add(shaft); this.e.spin(shaft, 1);
+      const main = new T.Mesh(new T.CylinderGeometry(0.11, 0.11, len, 16), this.M.steel);
+      main.rotation.z = Math.PI / 2; main.position.x = x; shaft.add(main);
+    }
     buildCrank(cyls) {
-      const e = this.e, M = this.M, eng = this.eng;
-      const shaft = new T.Group(); eng.add(shaft); e.spin(shaft, 1);
-      const main = new T.Mesh(new T.CylinderGeometry(0.11, 0.11, this.len + 0.3, 16), M.steel);
-      main.rotation.z = Math.PI / 2; shaft.add(main);
-      cyls.forEach(c => { c.throwG = this._throw(c.x); });
+      this._mainShaft(this.len + 0.3);
+      cyls.forEach(c => { c.throwG = this._throw(c.x); c.moving.push(c.throwG); });
     }
     _throw(x) {
       const M = this.M, throwG = new T.Group(); throwG.position.x = x; this.eng.add(throwG);
@@ -332,13 +336,10 @@
     }
 
     buildCrank(cyls) {
-      const e = this.e, M = this.M, eng = this.eng;
-      const shaft = new T.Group(); eng.add(shaft); e.spin(shaft, 1);
-      const main = new T.Mesh(new T.CylinderGeometry(0.11, 0.11, this.len + 1.2, 16), M.steel);
-      main.rotation.z = Math.PI / 2; main.position.x = 0.3; shaft.add(main);
+      this._mainShaft(this.len + 1.2, 0.3);                // runs forward into the prop hub
       const throws = [];
       for (let r = 0; r < this.rows; r++) throws.push(this._throw(this.rowX(r)));
-      cyls.forEach(c => { c.throwG = throws[c.bank.row]; }); // master-rod style: the whole row on one pin
+      cyls.forEach(c => { c.throwG = throws[c.bank.row]; c.moving.push(c.throwG); }); // master-rod style: the whole row on one pin
     }
 
     buildIntake(cyls) {
@@ -429,7 +430,7 @@
       const out = [];
       for (let i = 0; i < b.m; i++) {
         const x = (i - (b.m - 1) / 2) * this.pitch;
-        out.push({ i, x, zo: 0, phase: i * 360 / b.m,   // rotors evenly spread over one shaft turn
+        out.push({ i, x, zo: 0, phase: i * 360 / b.m,   // firing: rotors evenly spread over one shaft turn
           port: new T.Vector3(x, -0.12, this.hz), intake: new T.Vector3(x, 0.25, -this.hz) });
       }
       return out;
@@ -441,36 +442,34 @@
       for (let k = 0; k < N; k++) { const t = k / N * Math.PI * 2; pts.push(new T.Vector2(e * Math.sin(3 * t) + r * Math.sin(t), e * Math.cos(3 * t) + r * Math.cos(t))); }
       return pts;
     }
-    /* extrude a shape along X, centred on x0 (shape x -> +z, so angles run +Y -> +Z like rotation.x) */
-    _extr(shape, depth, x0) {
-      const g = new T.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: 12 });
-      g.rotateY(-Math.PI / 2); g.translate(x0 + depth / 2, 0, 0);
-      return g;
-    }
+    /* a shape extruded along X, centred on x = 0; identical parts share it and only move (mesh.position.x) */
+    _slab(shape, depth) { return this.e._alongX(new T.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: 12 }), depth, depth / 2); }
 
     buildBank(b) {
       const e = this.e, M = this.M, grp = b.grp, n = this.n, p = this.pitch, tp = 0.1;
-      const outer = new T.Shape(this._troch(this.R + this.wall));
-      const bore = new T.Shape(this._troch(this.R + this.wall)); bore.holes.push(new T.Path(this._troch(this.R + 0.012)));
-      for (let i = 0; i < n; i++) {                       // rotor housings: ghost in cutaway, so the rotors show
-        const h = new T.Mesh(this._extr(bore, p - tp, (i - (n - 1) / 2) * p), M.block); grp.add(h); e._edges(h, grp, 25);
-      }
-      for (let i = 0; i <= n; i++) {                      // side housings between rotors, end housings front and rear
-        const x = (i - n / 2) * p, end = i === 0 || i === n;
-        const sh = new T.Mesh(this._extr(outer, end ? tp + 0.04 : tp, x), end ? M.block : M.head); grp.add(sh);
-        if (end) {
-          e._edges(sh, grp, 25);
-          for (const q of this._troch(this.R + this.wall * 0.5, 12)) {   // tension bolt heads
-            const bolt = new T.Mesh(new T.CylinderGeometry(0.035, 0.035, 0.05, 6), M.steel);
-            bolt.rotation.z = Math.PI / 2; bolt.position.set(x + (i ? -1 : 1) * 0.095, q.y, q.x); grp.add(bolt);
-          }
+      const troch = r => new T.Shape(this._troch(r)), ro = this.R + this.wall;
+      const ring = troch(ro); ring.holes.push(new T.Path(this._troch(this.R + 0.012)));
+      const housingG = this._slab(ring, p - tp), endG = this._slab(troch(ro), tp + 0.04), sideG = this._slab(ring, tp);
+      const boltG = new T.CylinderGeometry(0.035, 0.035, 0.05, 6), bolts = this._troch(this.R + this.wall * 0.5, 12);
+      const add = (geo, mat, x, edges) => { const m = new T.Mesh(geo, mat); m.position.x = x; grp.add(m); if (edges) e._edges(m, grp, 25); };
+      for (let i = 0; i < n; i++) add(housingG, M.block, (i - (n - 1) / 2) * p, true);   // rotor housings ghost in cutaway
+      for (let i = 0; i <= n; i++) {
+        const x = (i - n / 2) * p;
+        if (i > 0 && i < n) { add(sideG, M.head, x, false); continue; }   // side housings between rotors: rings, the rotors show through
+        add(endG, M.block, x, true);                                        // end housings, front and rear
+        const out = i ? 1 : -1;                                             // bolt heads on the outer face
+        for (const q of bolts) {
+          const bolt = new T.Mesh(boltG, M.steel);
+          bolt.rotation.z = Math.PI / 2; bolt.position.set(x + out * 0.095, q.y, q.x); grp.add(bolt);
         }
       }
     }
 
     /* rotor: flanks flatter than a Reuleaux triangle so it clears the waist of the bore */
-    buildCylinder(b, bi, cd) {
-      const M = this.M, grp = b.grp, R = this.R - 0.012, x = cd.x, f = 0.19 * R;
+    /* geometry shared by all rotors, built on first use */
+    _rotorGeo() {
+      if (this._rg) return this._rg;
+      const R = this.R - 0.012, f = 0.19 * R, th = this.pitch - 0.18;
       const ap = k => { const a = k * Math.PI * 2 / 3; return [R * Math.sin(a), R * Math.cos(a)]; };
       const sh = new T.Shape(); sh.moveTo(...ap(0));
       for (let k = 0; k < 3; k++) {
@@ -478,25 +477,33 @@
         sh.quadraticCurveTo(mx / ml * (ml + 2 * f), my / ml * (ml + 2 * f), x1, y1);   // ~circular arc bulging by f
       }
       const hole = new T.Path(); hole.absarc(0, 0, 0.26, 0, Math.PI * 2, true); sh.holes.push(hole);
-      const pm = M.piston.clone(), th = this.pitch - 0.18;
+      return (this._rg = {
+        ap, body: this._slab(sh, th), gear: new T.TorusGeometry(0.255, 0.025, 6, 36), seal: new T.BoxGeometry(th + 0.02, 0.035, 0.035),
+        coil: new T.CylinderGeometry(0.06, 0.06, 0.16, 10), glow: new T.CylinderGeometry(0.03, 0.03, 0.03, 8),
+      });
+    }
+    /* rotor: flanks flatter than a Reuleaux triangle so it clears the waist of the bore */
+    buildCylinder(b, bi, cd) {
+      const M = this.M, grp = b.grp, x = cd.x, G = this._rotorGeo(), pm = M.piston.clone();
       const rotor = new T.Group(); rotor.position.x = x; grp.add(rotor);
-      rotor.add(new T.Mesh(this._extr(sh, th, 0), pm));
-      const gear = new T.Mesh(new T.TorusGeometry(0.255, 0.025, 6, 36), M.steel); gear.rotation.y = Math.PI / 2; rotor.add(gear);
+      rotor.add(new T.Mesh(G.body, pm));
+      const gear = new T.Mesh(G.gear, M.steel); gear.rotation.y = Math.PI / 2; rotor.add(gear);
       for (let k = 0; k < 3; k++) {                       // apex seals
-        const [u, v] = ap(k), seal = new T.Mesh(new T.BoxGeometry(th + 0.02, 0.035, 0.035), M.steel);
+        const [u, v] = G.ap(k), seal = new T.Mesh(G.seal, M.steel);
         seal.position.set(0, v, u); seal.rotation.x = k * Math.PI * 2 / 3; rotor.add(seal);
       }
-      // spark plug on the intake side, low
-      const coil = new T.Mesh(new T.CylinderGeometry(0.06, 0.06, 0.16, 10), M.dark);
+      // spark plug on the -z side, low
+      const coil = new T.Mesh(G.coil, M.dark);
       coil.rotation.x = Math.PI / 2; coil.position.set(x, -0.4, -this.hz - 0.08); grp.add(coil);
-      const coilGlow = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 0.03, 8), M.spark.clone());
+      const coilGlow = new T.Mesh(G.glow, M.spark.clone());
       coilGlow.rotation.x = Math.PI / 2; coilGlow.position.set(x, -0.4, -this.hz - 0.17); grp.add(coilGlow);
-      return { bank: b, bi, i: cd.i, x, zo: 0, phase: cd.phase, period: 360, piston: rotor, rod: null, pm, coilGlow, port: cd.port, intake: cd.intake, prevCycle: 0 };
+      return { bank: b, bi, i: cd.i, x, zo: 0, phase: cd.phase, period: 360, rotor, moving: [rotor], pm, coilGlow, port: cd.port, intake: cd.intake, prevCycle: 0 };
     }
+    /* cyc 0 (combustion) = a face at TDC on the plug side (-z): the rotor centre points there at shaft angle 270 */
     animate(c, cyc, crank) {
-      const th = (crank - c.phase) * DEG, e = this.ecc;  // crank wraps at 720 deg: th/3 jumps 240 deg, same look
-      c.piston.position.set(c.x, e * Math.cos(th), e * Math.sin(th));
-      c.piston.rotation.x = th / 3;
+      const th = (crank - c.phase + ROTOR_TDC) * DEG, e = this.ecc; // crank wraps at 720: th/3 jumps 240 deg, same look
+      c.rotor.position.set(c.x, e * Math.cos(th), e * Math.sin(th));
+      c.rotor.rotation.x = th / 3;
       c.throwG.rotation.x = th;
     }
 
@@ -505,12 +512,12 @@
       pan.position.set(0, -this.hy - 0.1, 0); pan.castShadow = true; this.eng.add(pan);
     }
     buildCrank(cyls) {
-      const e = this.e, M = this.M, eng = this.eng;
-      const shaft = new T.Group(); eng.add(shaft); e.spin(shaft, 1);
-      const main = new T.Mesh(new T.CylinderGeometry(0.11, 0.11, this.len + 0.3, 16), M.steel); main.rotation.z = Math.PI / 2; shaft.add(main);
+      const M = this.M, eng = this.eng;
+      this._mainShaft(this.len + 0.3);
+      const lobeG = new T.CylinderGeometry(0.21, 0.21, this.pitch - 0.2, 20);
       cyls.forEach(c => {                                 // eccentric journal under each rotor
-        const g = new T.Group(); g.position.x = c.x; eng.add(g); c.throwG = g;
-        const lobe = new T.Mesh(new T.CylinderGeometry(0.21, 0.21, this.pitch - 0.2, 20), M.steel);
+        const g = new T.Group(); g.position.x = c.x; eng.add(g); c.throwG = g; c.moving.push(g);
+        const lobe = new T.Mesh(lobeG, M.steel);
         lobe.rotation.z = Math.PI / 2; lobe.position.y = this.ecc; g.add(lobe);
       });
     }
