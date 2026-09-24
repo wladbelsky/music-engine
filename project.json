@@ -3,6 +3,7 @@
   "preview": "preview.jpg",
   "title": "Music Engine — audio reactive",
   "type": "web",
+  "workshopid": "3806831743",
   "description": "An engine that revs up to the music: BPM detection, exhaust flames, a tachometer and warning lamps.",
   "tags": [
     "Vehicle",
