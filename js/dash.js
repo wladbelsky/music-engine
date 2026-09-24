@@ -42,8 +42,11 @@
 
     _layout() {
       const w = this.w, h = this.h;
-      if (w / h >= 1.25) { this.R = Math.min(0.155 * w, 0.24 * h); this.cx = 0.76 * w; this.cy = (this.showRadio ? 0.36 : 0.385) * h; }
-      else { this.R = Math.min(0.28 * w, 0.14 * h); this.cx = 0.5 * w; this.cy = 0.64 * h; }
+      // with the radio the cluster gets a bit smaller and higher, so the radio stays clear of the Windows
+      // taskbar (WE tells the wallpaper nothing about it): bottom edge at about 0.94h
+      const rad = this.showRadio;
+      if (w / h >= 1.25) { this.R = Math.min(0.155 * w, (rad ? 0.232 : 0.24) * h); this.cx = 0.76 * w; this.cy = (rad ? 0.35 : 0.385) * h; }
+      else { this.R = Math.min(0.28 * w, (rad ? 0.13 : 0.14) * h); this.cx = 0.5 * w; this.cy = (rad ? 0.615 : 0.64) * h; }
       this.maxRpm = Math.ceil((this.redline + 1000) / 1000) * 1000;
     }
 
@@ -331,8 +334,8 @@
 
     /* ---------- car radio: decorative volume knob + VFD "now playing" display ---------- */
     _radioStatic(g, x, top, W) {
-      const R = this.R, H = R * 0.32, y = top + R * 0.08;
-      if (y + H + R * 0.02 > this.h) return;                 // no room (portrait): no radio
+      const R = this.R, H = R * 0.32, y = top + R * 0.07;
+      if (y + H > this.h * 0.955) return;                    // would sit under the taskbar: no radio
       const cy = y + H / 2, rnd = seeded(97);
       const RD = this.radio = {
         x, y, w: W, h: H,
@@ -444,7 +447,8 @@
       }
       const mw = mx1 - mx0;
       if (mw > fs) {
-        g.save(); g.beginPath(); g.rect(mx0, G.y, mw, G.h); g.clip();
+        const bx0 = mx0 - fs * 0.45, bx1 = mx1 + fs * 0.3;      // a little room for the glow next to the icon / TRK
+        g.save(); g.beginPath(); g.rect(bx0, G.y, bx1 - bx0, G.h); g.clip();
         if (!has) {                                          // no track info: mini spectrum analyzer
           const cols = Math.max(4, Math.floor(mw / (fs * 0.42))), cw = mw / cols, bh = G.h * 0.62, b = audio.bands;
           const litP = new Path2D(), offP = new Path2D();   // one fill each: glow only on the lit segments
@@ -467,19 +471,30 @@
           if (txt !== this.mText) { this.mText = txt; this.scroll = 0; this.scrollHold = 1.5; }
           const tw = g.measureText(txt).width;
           const playing = media.state !== 'paused' && media.state !== 'stopped';   // null = no playback event yet: like playing (▶)
-          const show = media.state !== 'paused' || Math.floor(t * 2) % 2 === 0;
-          if (tw <= mw) { if (show) { g.textAlign = 'center'; g.fillText(txt, mx0 + mw / 2, my); } }
+          if (tw <= mw) { g.textAlign = 'center'; g.fillText(txt, mx0 + mw / 2, my); }
           else {
             const gap = g.measureText('   •   ').width, L = tw + gap;
             if (playing) {
               if (this.scrollHold > 0) this.scrollHold -= dt;
               else { this.scroll += dt * R * 0.25; if (this.scroll >= L) { this.scroll -= L; this.scrollHold = 1.5; } }
             }
-            if (show) {
-              const x = mx0 - this.scroll;
-              g.fillText(txt + '   \u2022   ', x, my);
-              if (x + L < mx0 + mw) g.fillText(txt, x + L, my);           // wrap-around copy only when it's visible
-            }
+            // text + glow go to an offscreen strip that fades out at both ends (a hard clip cut the glow off)
+            const d = this.dpr, bw = bx1 - bx0, c = this._mq || (this._mq = document.createElement('canvas')), q = c.getContext('2d');
+            const pw = Math.ceil(bw * d), ph = Math.ceil(G.h * d);
+            if (c.width !== pw || c.height !== ph) { c.width = pw; c.height = ph; }
+            q.setTransform(d, 0, 0, d, -bx0 * d, -G.y * d); q.clearRect(bx0, G.y, bw, G.h);
+            q.font = g.font; q.textAlign = 'left'; q.textBaseline = 'middle';
+            q.fillStyle = col; q.shadowColor = col; q.shadowBlur = fs * 0.45;
+            const x = mx0 - this.scroll;
+            q.fillText(txt + '   \u2022   ', x, my);
+            if (x + L < bx1) q.fillText(txt, x + L, my);                  // wrap-around copy only when it's visible
+            // opaque from just past mx0 (the first letter at rest stays whole) to 0.6 fs before mx1, zero at the ends
+            const m = q.createLinearGradient(bx0, 0, bx1, 0), at = v => clamp((v - bx0) / bw, 0, 1);
+            m.addColorStop(at(mx0 - fs * 0.35), 'rgba(0,0,0,0)'); m.addColorStop(at(mx0 + fs * 0.1), '#000');
+            m.addColorStop(at(mx1 - fs * 0.6), '#000'); m.addColorStop(at(mx1 + fs * 0.05), 'rgba(0,0,0,0)');
+            q.shadowBlur = 0; q.globalCompositeOperation = 'destination-in'; q.fillStyle = m; q.fillRect(bx0, G.y, bw, G.h);
+            q.globalCompositeOperation = 'source-over';
+            g.shadowBlur = 0; g.drawImage(c, bx0, G.y, bw, G.h);
           }
         }
         g.restore();

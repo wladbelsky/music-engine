@@ -18,7 +18,7 @@ A web wallpaper with a 3D engine. The engine revs up to the music, and on the mo
 
 - **Ignition on**: key position at startup.
 - **Show key and throttle pedal**.
-- **Car radio**: a 1-DIN head unit under the lamps. It shows the current track as a scrolling line (▶/❚❚/■, track number, clock). The data comes from WE's media integration, which you enable in **WE settings → Media integration**; it works with any player that shows up in the Windows media overlay (Spotify, browsers, AIMP…). Without track info the display shows `AUX` and a small spectrum analyzer. The volume knob is decorative: its LED ring works as a level meter. The radio runs off the ignition.
+- **Car radio** (off by default): a 1-DIN head unit under the lamps. It shows the current track as a scrolling line (▶/❚❚/■, track number, clock). The data comes from WE's media integration, which you enable in **WE settings → Media integration**; it works with any player that shows up in the Windows media overlay (Spotify, browsers, AIMP…). Without track info the display shows `AUX` and a small spectrum analyzer. The volume knob is decorative: its LED ring works as a level meter. The radio runs off the ignition.
 - **Layout**: inline, V, boxer, W (two narrow VR banks with staggered cylinders, like the VW W12 / Bugatti W16), radial (an aircraft star engine on a stand, flames from short stubs all round) or rotary (Wankel: triangular rotors orbit the eccentric shaft inside epitrochoid housings, visible in cutaway mode; one exhaust stack per rotor).
 - **Number of cylinders**: 1–32. The layout rounds it up where needed: V and boxer to an even number, W to a multiple of 4 (8 minimum), radial to an odd number per row with up to 9 per row (5 → 5, 8 → 9, 14 → 2 rows of 7, 18 → 2 × 9, 28+ → 4 × 7). For the rotary the number is the rotor count (2 = like a 13B, 3 = 20B, 4 = 26B).
 - **Forced induction**: none, turbo, twin turbo, quad turbo, supercharger (Roots blower) or twincharged (blower + twin turbos).
@@ -57,7 +57,7 @@ A web wallpaper with a 3D engine. The engine revs up to the music, and on the mo
 
 ## Testing without Wallpaper Engine
 
-Open `index.html` in Chrome. A **Settings** panel will appear: demo beat, microphone, audio file, engine and background selection. **Hide** leaves a small **Settings** button in the top-left corner to bring it back; `D` toggles the panel too. The radio is off by default in the browser: tick `Radio: show` (or add `?showradio=true`) and use the fake track / play / pause / stop buttons.
+Open `index.html` in Chrome. A **Settings** panel will appear: demo beat, microphone, audio file, engine and background selection. **Hide** leaves a small **Settings** button in the top-left corner to bring it back; `D` toggles the panel too. The radio is off by default: tick `Radio: show` (or add `?showradio=true`) and use the fake track / play / pause / stop buttons.
 The microphone requires a local server:
 
 ```

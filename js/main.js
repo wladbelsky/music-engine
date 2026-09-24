@@ -11,7 +11,7 @@
     background: 'garage', bgcolor: [0.12, 0.13, 0.16], customimage: '', bgdim: 0.2,
     sensitivity: 1, sway: 1, redline: 7000, flameThr: 0.62, stallDelay: 3, animSpeed: 1,
     quality: 'high', showBpm: true, debug: false, fps: 0, showControls: true,
-    showRadio: IS_WE,                 // on in WE, off by default in a plain browser (?showradio=true)
+    showRadio: false,                 // off by default (WE property / ?showradio=true / dev panel)
   };
 
   const audio = new AudioAnalyzer();

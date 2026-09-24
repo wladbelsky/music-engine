@@ -259,7 +259,7 @@
         "order": 4,
         "text": "Car radio (now playing; enable Media integration in WE settings)",
         "type": "bool",
-        "value": true
+        "value": false
       }
     }
   }
