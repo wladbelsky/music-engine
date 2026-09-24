@@ -173,7 +173,7 @@
       if (t - this.lastPush > 0.35) {
         this.silentTime = Math.max(this.silentTime, t - this.lastPush);
         this.shortLoud *= 0.9; this.intensity *= 0.95; this.power *= 0.95;
-        this.level = 0;
+        this.level = 0; this.bands.fill(0);
       }
       this._lastTick = t;
     }

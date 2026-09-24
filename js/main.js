@@ -11,6 +11,7 @@
     background: 'garage', bgcolor: [0.12, 0.13, 0.16], customimage: '', bgdim: 0.2,
     sensitivity: 1, sway: 1, redline: 7000, flameThr: 0.62, stallDelay: 3, animSpeed: 1,
     quality: 'high', showBpm: true, debug: false, fps: 0, showControls: true,
+    showRadio: IS_WE,                 // on in WE, off by default in a plain browser (?showradio=true)
   };
 
   const audio = new AudioAnalyzer();
@@ -18,6 +19,7 @@
   const eng3d = new Engine3D($('gl'));
   const dash = new Dash($('dash'));
   const bg = new Background($('bg'));
+  const media = new MediaInfo();
   const glow = $('glow');
   let paused = false, needRebuild = true;
   const MIN_REDLINE = 500, MAX_REDLINE = 15000;
@@ -36,7 +38,7 @@
     eng3d.setAccent(new THREE.Color(S.accent[0], S.accent[1], S.accent[2]));
     eng3d.setCutaway(S.cutaway);
     eng3d.sway = S.sway;
-    dash.set({ redline: S.redline, color: hex(S.dashColor), label: engineLabel(), showBpm: S.showBpm, showControls: S.showControls });
+    dash.set({ redline: S.redline, color: hex(S.dashColor), label: engineLabel(), showBpm: S.showBpm, showControls: S.showControls, showRadio: S.showRadio });
     $('debug').style.display = S.debug ? 'block' : 'none';
   }
 
@@ -73,6 +75,7 @@
       if (v('debug') !== undefined) S.debug = !!v('debug');
       if (v('ignition') !== undefined) sim.ignition = !!v('ignition');
       if (v('showcontrols') !== undefined) S.showControls = !!v('showcontrols');
+      if (v('showradio') !== undefined) S.showRadio = !!v('showradio');
       if (bgChanged) bg.set({ preset: S.background, bgcolor: S.bgcolor, dim: S.bgdim });
       if (rebuild) needRebuild = true;
       if (q) eng3d.setQuality(S.quality);
@@ -115,6 +118,12 @@
   let devSrc = null;
   if (IS_WE) window.wallpaperRegisterAudioListener(onAudio);
   else setupDev();
+  // media integration (now playing): register right away, like the audio listener
+  for (const [fn, cb] of [['wallpaperRegisterMediaStatusListener', e => media.onStatus(e)],
+    ['wallpaperRegisterMediaPropertiesListener', e => media.onProps(e)],
+    ['wallpaperRegisterMediaPlaybackListener', e => media.onPlayback(e)]]) {
+    if (typeof window[fn] === 'function') window[fn](cb);
+  }
 
   function setupDev() {
     const panel = $('devpanel'); panel.style.display = 'block';
@@ -131,6 +140,12 @@
     $('dv-img').onchange = e => { const f = e.target.files[0]; if (f) { prop('customimage', URL.createObjectURL(f)); prop('background', 'custom'); $('dv-bg').value = 'custom'; } };
     $('dv-cut').onchange = e => prop('cutaway', e.target.checked);
     $('dv-dbg').onchange = e => prop('debug', e.target.checked);
+    $('dv-radio').onchange = e => prop('showradio', e.target.checked);
+    const songs = [['Daft Punk', 'Around the World'], ['Кино', 'Группа крови'], ['Justice', 'Genesis'], ['Rammstein', 'Sonne']];
+    $('dv-track').onclick = () => { const s = songs[media.trackNo % songs.length]; media.mock(s[0], s[1]); };
+    $('dv-play').onclick = () => media.mockState('playing');
+    $('dv-pause').onclick = () => media.mockState('paused');
+    $('dv-mstop').onclick = () => media.mockState('stopped');
     $('dv-hide').onclick = () => panel.style.display = 'none';
     if (qs.get('demo')) devSrc = new DemoSource(onAudio);
   }
@@ -144,7 +159,7 @@
   eng3d.setQuality(S.quality);
   bg.set({ preset: S.background, bgcolor: S.bgcolor, dim: S.bgdim });
   window.wallpaperPropertyListener.applyUserProperties(init);
-  if (!IS_WE) { $('dv-cyl').value = String(S.cylinders); $('dv-layout').value = S.layout; $('dv-turbo').value = String(S.turbos); $('dv-bg').value = S.background; }
+  if (!IS_WE) { $('dv-cyl').value = String(S.cylinders); $('dv-layout').value = S.layout; $('dv-turbo').value = String(S.turbos); $('dv-bg').value = S.background; $('dv-radio').checked = S.showRadio; }
 
   /* ---------- loop ---------- */
   // exactly one rAF chain: WE may send setPaused(false) without a pause before it, or pause+unpause
@@ -163,7 +178,7 @@
     sim.update(dt, audio, t);
     eng3d.update(dt, sim, S.animSpeed, S.quality);
     eng3d.render();
-    dash.draw(sim, audio, dt, t);
+    dash.draw(sim, audio, dt, t, media);
     // warm glow on the background around the exhaust
     const gp = eng3d.glowScreen();
     const gi = Math.min(1, sim.flame * 0.8 + eng3d.flash * 0.6);
@@ -186,5 +201,5 @@
   }
 
   startLoop();
-  window.__dbg = { audio, sim, eng3d, dash, S };
+  window.__dbg = { audio, sim, eng3d, dash, media, S };
 })();

@@ -1,6 +1,6 @@
 # Engine Revs: audio-reactive wallpaper for Wallpaper Engine
 
-A web wallpaper with a 3D engine. The engine revs up to the music, and on the most powerful moments flames shoot out of the exhaust. On the right is a dashboard: tachometer, temperature, boost, warning lamps, an ignition key and a throttle pedal.
+A web wallpaper with a 3D engine. The engine revs up to the music, and on the most powerful moments flames shoot out of the exhaust. On the right is a dashboard: tachometer, temperature, boost, warning lamps, an ignition key, a throttle pedal and a car radio that shows what's playing.
 
 **[Get it on Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3806831743)**
 
@@ -18,6 +18,7 @@ A web wallpaper with a 3D engine. The engine revs up to the music, and on the mo
 
 - **Ignition on**: key position at startup.
 - **Show key and throttle pedal**.
+- **Car radio**: a 1-DIN head unit under the lamps. It shows the current track as a scrolling line (▶/❚❚/■, track number, clock). The data comes from WE's media integration, which you enable in **WE settings → Media integration**; it works with any player that shows up in the Windows media overlay (Spotify, browsers, AIMP…). Without track info the display shows `AUX` and a small spectrum analyzer. The volume knob is decorative: its LED ring works as a level meter. The radio runs off the ignition.
 - **Number of cylinders** (2–12) and **Layout**: inline, V, boxer. For V and boxer an odd number is rounded up.
 - **Turbochargers**: none, 1, 2 (twin) or 4 (quad). Turbo size follows the engine (a V12 gets bigger turbos than a V8); twin and quad setups use the same size as a single. Without turbos the engine gets an air filter, the boost gauge shows manifold vacuum and there is no blow-off valve.
 - **Cutaway block**: a semi-transparent block that shows the pistons, connecting rods and crankshaft.
@@ -50,7 +51,7 @@ A web wallpaper with a 3D engine. The engine revs up to the music, and on the mo
 
 ## Testing without Wallpaper Engine
 
-Open `index.html` in Chrome. A dev panel will appear: demo beat, microphone, audio file, engine and background selection.
+Open `index.html` in Chrome. A dev panel will appear: demo beat, microphone, audio file, engine and background selection. The radio is off by default in the browser: tick `Radio: show` (or add `?showradio=true`) and use the fake track / play / pause / stop buttons.
 The microphone requires a local server:
 
 ```
