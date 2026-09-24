@@ -1,4 +1,4 @@
-# Engine Revs: audio-reactive wallpaper for Wallpaper Engine
+# Music Engine: audio-reactive wallpaper for Wallpaper Engine
 
 A web wallpaper with a 3D engine. The engine revs up to the music, and on the most powerful moments flames shoot out of the exhaust. On the right is a dashboard: tachometer, temperature, boost, warning lamps, an ignition key and a throttle pedal.
 

@@ -1,7 +1,7 @@
 {
   "file": "index.html",
   "preview": "preview.jpg",
-  "title": "Engine Revs — audio reactive",
+  "title": "Music Engine — audio reactive",
   "type": "web",
   "description": "An engine that revs up to the music: BPM detection, exhaust flames, a tachometer and warning lamps.",
   "tags": [

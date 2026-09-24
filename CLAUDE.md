@@ -1,4 +1,4 @@
-# CLAUDE.md: Engine Revs (web wallpaper for Wallpaper Engine)
+# CLAUDE.md: Music Engine (web wallpaper for Wallpaper Engine)
 
 Context for Claude Code / Claude when working on this project.
 
@@ -48,7 +48,7 @@ Each file is an IIFE exporting a class to `window`.
 Headless Chromium + SwiftShader (the sandbox has Playwright, browsers in `/opt/pw-browsers`):
 ```python
 b = await p.chromium.launch(args=["--use-gl=angle","--use-angle=swiftshader","--enable-unsafe-swiftshader"])
-await pg.goto("file:///…/EngineRevs/index.html?demo=1&layout=v&cylinders=8&debug=true")
+await pg.goto("file:///…/music-engine/index.html?demo=1&layout=v&cylinders=8&debug=true")
 await pg.evaluate("document.getElementById('devpanel').style.display='none'")
 state = await pg.evaluate("__dbg.sim.state")   # __dbg = {audio, sim, eng3d, dash, S}
 ```
