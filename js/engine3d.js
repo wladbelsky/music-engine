@@ -552,7 +552,8 @@
       // long engines (inline 32, V32...) reach under the dash with the sphere fit: back off until the
       // projected parts stay left of FIT_RIGHT
       for (let it = 0; landscape && it < 4; it++) {
-        const c0 = center.clone().project(cam), k = (this._extent().maxX - c0.x) / (FIT_RIGHT - c0.x);
+        const fr = Math.min(FIT_RIGHT, this.lay && this.lay.fitRight !== undefined ? this.lay.fitRight : FIT_RIGHT); // jet: lower, see js/jet.js
+        const c0 = center.clone().project(cam), k = (this._extent().maxX - c0.x) / (fr - c0.x);
         if (!(k > 1.005)) break;
         dist *= k;
         cam.position.copy(center).addScaledVector(this.camDir, dist); cam.lookAt(center);
@@ -585,6 +586,7 @@
     /* ------------------------------------------------------------ frame */
     update(dt, sim, animSpeed, quality) {
       if (!this.root) return;
+      this.animSpeed = animSpeed;
       // one NaN in these accumulators (e.g. from a bad setting) would hide the engine for good
       for (const k of ['crank', 'crankTotal', 'heat', 'flash', 'rock', 'lean', 'vibA', 'ph1', 'ph2', 'ph3', 'phI', 'lift']) if (!isFinite(this[k])) this[k] = 0;
       if (!isFinite(this.mountY)) this.mountY = this.baseY || 0;

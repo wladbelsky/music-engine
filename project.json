@@ -18,7 +18,7 @@
         "order": 1
       },
       "cylinders": {
-        "text": "Number of cylinders (rotary: rotors, turbojet: combustor cans)",
+        "text": "Number of cylinders",
         "type": "slider",
         "value": 8,
         "min": 1,
@@ -56,11 +56,11 @@
             "value": "rotary"
           },
           {
-            "label": "Steam engine (mill engine + boiler)",
+            "label": "Steam",
             "value": "steam"
           },
           {
-            "label": "Turbojet (afterburner)",
+            "label": "Turbojet",
             "value": "jet"
           }
         ],
@@ -88,11 +88,11 @@
             "value": "4"
           },
           {
-            "label": "Supercharger (Roots blower)",
+            "label": "Supercharger",
             "value": "sc"
           },
           {
-            "label": "Twincharged (blower + twin turbo)",
+            "label": "Twincharged",
             "value": "sc2"
           }
         ],
@@ -266,7 +266,7 @@
       },
       "showradio": {
         "order": 4,
-        "text": "Car radio (now playing; enable Media integration in WE settings)",
+        "text": "Car radio",
         "type": "bool",
         "value": false
       },

@@ -67,6 +67,8 @@
       super(e, n);
       this.airFilter = false;
       this.animK = 0.6;                   // a fast spool, but slow enough to see the blades at idle
+      this.fitRight = 0.0;                // the intake is low, at the height of the small gauges and lamps: stay clear of them
+      this.spool = 0;
       this.swayK = 0.35; this.smooth = true;
       this.I = 0; this.burst = 0; this.open = 0; this.burn = 0; this.acc = 0;
     }
@@ -136,7 +138,7 @@
 
     /* the spool: shaft, compressor, turbine; cans are static */
     buildCrank() {
-      const e = this.e, M = this.M, rot = this.rot = new T.Group(); this.J.add(rot); e.spin(rot, 1);
+      const e = this.e, M = this.M, rot = this.rot = new T.Group(); this.J.add(rot);   // turned in updateFx, not a spinner
       const shaft = this._mesh(new T.CylinderGeometry(0.09, 0.09, X_C0 - X_T1 + 0.3, 12), M.steel, rot); shaft.rotation.z = Math.PI / 2; shaft.position.x = (X_C0 + X_T1) / 2;
       // compressor drum (lathe) and stages
       this._latheX([[X_C0 + 0.05, 0.15], [X_C0, hubR(X_C0)], [X_C1, hubR(X_C1)], [X_C1 - 0.05, 0.15]], M.steel, 36, rot);
@@ -146,7 +148,9 @@
         const x = X_C0 - 0.08 - s * (X_C0 - X_C1 - 0.12) / (STAGES - 1), r0 = hubR(x), r1 = casingR(x) - 0.03;
         this._blades(x, r0, r1, 20 + s, 0.11 - 0.004 * s, 0.6, this.bladeMat, rot);
         if (s % 2 === 0 && s < STAGES - 1) this._blades(x - 0.1, r0 + 0.02, r1 - 0.01, 22, 0.07, -0.5, statorMat);   // stators, on the casing
-        const blur = this._mesh(new T.RingGeometry(r0, r1, 40), this.blurMat); blur.rotation.y = Math.PI / 2; blur.position.x = x; this.blurs.push(blur);
+        // the first stage (seen down the intake) blurs less, so its blades keep showing
+        if (s === 0) this.blurMat0 = this.blurMat.clone();
+        const blur = this._mesh(new T.RingGeometry(r0, r1, 40), s === 0 ? this.blurMat0 : this.blurMat); blur.rotation.y = Math.PI / 2; blur.position.x = x; this.blurs.push(blur);
       }
       // inlet guide vanes
       this._blades(X_C0 + 0.1, hubR(X_C0) - 0.1, casingR(X_C0) - 0.02, 20, 0.12, 0.15, M.dark2);
@@ -278,9 +282,16 @@
       // exit glow: dark at rest, warm with dry thrust, white-hot with reheat
       const g = run ? 0.12 + 0.35 * sim.throttle + 1.2 * I : this.burn * 0.3;
       this.exitMat.color.setRGB(1.0 * g, 0.45 * g + 0.2 * I, 0.15 * g + 0.35 * I);
-      // spool blur discs
-      const revs = sim.rpm / 60 * 0.085 * this.animK;
+      // spool: at most 0.4 of a blade pitch per frame, whatever the fps, so the blades always visibly run forward
+      // (a free-running spool strobes: a step near a whole number of pitches looks frozen or backwards);
+      // anything faster is shown by the blur discs
+      const w = sim.rpm / 60 * Math.PI * 2 * 0.085 * this.animK * (e.animSpeed || 1);
+      this.spool = (this.spool + Math.min(w * dt, 0.4 * Math.PI * 2 / 20)) % (Math.PI * 2);
+      if (!isFinite(this.spool)) this.spool = 0;
+      this.rot.rotation.x = this.spool;
+      const revs = w / (Math.PI * 2);
       this.blurMat.opacity = clamp((revs - 1.2) / 4, 0, 0.5);
+      this.blurMat0.opacity = clamp((revs - 1.2) / 4, 0, 0.3);
       this.blurs.forEach(b => { b.visible = this.blurMat.opacity > 0.01; });
       // plume
       const u = this.plume.material.uniforms;

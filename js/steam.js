@@ -24,7 +24,7 @@
   const DZ = -1, Z = z => DZ * z;  // the cylinders lie towards -Z: crank, rods and flywheel face the camera
 
   class SteamLayout extends L.base {
-    static normCyl(n) { const v = Math.round(Number(n)); return isFinite(v) ? clamp(v, 1, 4) : 2; }
+    static normCyl(n) { const v = Math.round(Number(n)); return isFinite(v) ? clamp(v, 1, 8) : 2; }
     static label(n) { return 'STEAM ' + (['', 'SINGLE', 'TWIN'][n] || n + '-CYL'); }
 
     constructor(e, n) {
@@ -33,6 +33,7 @@
       this.airFilter = false;
       this.animK = 200 / 7000 / 0.085;   // the shaft turns at the rpm the dash shows (200 at the redline)
       this.swayK = 0.2; this.smooth = true;   // a heavy engine on a foundation
+      this.fitRight = 0.02;              // the front corner (cranks, plinth) is low, level with the small gauges
       this.acc = { smoke: 0, spark: 0, drain: 0, vent: 0 };
       this.vent = 0; this.fireK = 0;
     }
