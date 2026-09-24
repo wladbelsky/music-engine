@@ -1,0 +1,4 @@
+# local tooling downloads (never ship them with the wallpaper)
+*.whl
+__pycache__/
+node_modules/

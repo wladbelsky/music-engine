@@ -1,4 +1,4 @@
-/* 2D instrument cluster: tachometer, temp, boost, shift lights, warning lamps. */
+/* 2D instrument cluster: tachometer, temp, boost, shift lights, warning lamps, car radio. */
 (function () {
   'use strict';
   const TAU = Math.PI * 2;
@@ -25,6 +25,7 @@
       this.showBpm = true; this.needle = 0; this.tempN = 70; this.boostN = 0;
       this.lampLvl = {}; LAMPS.forEach(l => this.lampLvl[l.key] = 0);
       this.showControls = true; this.keyAng = -50; this.pedalN = 0; this.pedalHover = false;
+      this.showRadio = false; this.radio = null; this.vu = 0; this.scroll = 0; this.scrollHold = 1.5; this.mText = ''; this.spec = [];
     }
 
     resize(w, h, dpr) {
@@ -35,14 +36,17 @@
     }
     set(opts) {
       let dirty = false;
-      for (const k of ['redline', 'color', 'label', 'showBpm', 'showControls']) if (opts[k] !== undefined && opts[k] !== this[k]) { this[k] = opts[k]; dirty = true; }
+      for (const k of ['redline', 'color', 'label', 'showBpm', 'showControls', 'showRadio']) if (opts[k] !== undefined && opts[k] !== this[k]) { this[k] = opts[k]; dirty = true; }
       if (dirty && this.w) this._static();
     }
 
     _layout() {
       const w = this.w, h = this.h;
-      if (w / h >= 1.25) { this.R = Math.min(0.155 * w, 0.24 * h); this.cx = 0.76 * w; this.cy = 0.385 * h; }
-      else { this.R = Math.min(0.28 * w, 0.14 * h); this.cx = 0.5 * w; this.cy = 0.64 * h; }
+      // with the radio the cluster gets a bit smaller and higher, so the radio stays clear of the Windows
+      // taskbar (WE tells the wallpaper nothing about it): bottom edge at about 0.94h
+      const rad = this.showRadio;
+      if (w / h >= 1.25) { this.R = Math.min(0.155 * w, (rad ? 0.232 : 0.24) * h); this.cx = 0.76 * w; this.cy = (rad ? 0.35 : 0.385) * h; }
+      else { this.R = Math.min(0.28 * w, (rad ? 0.13 : 0.14) * h); this.cx = 0.5 * w; this.cy = (rad ? 0.615 : 0.64) * h; }
       this.maxRpm = Math.ceil((this.redline + 1000) / 1000) * 1000;
     }
 
@@ -98,6 +102,8 @@
       g.font = `800 ${fs0}px "Segoe UI", Arial, sans-serif`;
       this.lampRects.forEach(L => { const tw = L.pw - L.ph * 0.95, m = g.measureText(L.l.text).width; if (m > tw) fs = Math.min(fs, fs0 * tw / m); });
       this.lampRects.forEach((L, i) => { L.fs = fs; this._plate(g, L, i); this._lampBezel(g, L); });
+      this.radio = null;
+      if (this.showRadio) this._radioStatic(g, x0, y0 + 2 * cellH + gapY, totalW);
       // shift light housing
       const n = 10, sp = R * 0.19;
       this.shift = []; for (let i = 0; i < n; i++) this.shift.push({ x: cx + (i - (n - 1) / 2) * sp, y: cy - R * 1.22 });
@@ -326,6 +332,180 @@
       g.restore();
     }
 
+    /* ---------- car radio: decorative volume knob + VFD "now playing" display ---------- */
+    _radioStatic(g, x, top, W) {
+      const R = this.R, H = R * 0.32, y = top + R * 0.07;
+      if (y + H > this.h * 0.955) return;                    // would sit under the taskbar: no radio
+      const cy = y + H / 2, rnd = seeded(97);
+      const RD = this.radio = {
+        x, y, w: W, h: H,
+        knob: { x: x + R * 0.27, y: cy, r: R * 0.105 },
+        glass: { x: x + R * 0.45, y: y + R * 0.055, w: W - R * 0.6, h: H - R * 0.11 },
+      };
+      // faceplate: black with a chrome trim
+      g.save(); g.shadowColor = 'rgba(0,0,0,0.75)'; g.shadowBlur = H * 0.35; g.shadowOffsetY = H * 0.08;
+      this._rr(g, x, y, W, H, H * 0.14); g.fillStyle = '#16181b'; g.fill(); g.restore();
+      let gr = g.createLinearGradient(0, y, 0, y + H);
+      gr.addColorStop(0, '#e4e7ea'); gr.addColorStop(0.45, '#7a8087'); gr.addColorStop(1, '#2b2e32');
+      g.strokeStyle = gr; g.lineWidth = H * 0.06; this._rr(g, x, y, W, H, H * 0.14); g.stroke();
+      const ix = x + H * 0.05, iy = y + H * 0.05, iw = W - H * 0.1, ih = H - H * 0.1;
+      g.save(); this._rr(g, ix, iy, iw, ih, H * 0.1); g.clip();
+      gr = g.createLinearGradient(0, iy, 0, iy + ih);
+      gr.addColorStop(0, '#2c3035'); gr.addColorStop(0.5, '#17191c'); gr.addColorStop(1, '#0c0d0f');
+      g.fillStyle = gr; g.fillRect(ix, iy, iw, ih);
+      for (let k = 0; k < ih * 1.2; k++) {                  // brushed finish
+        const yy = iy + rnd() * ih;
+        g.strokeStyle = rnd() < 0.5 ? `rgba(255,255,255,${0.02 + rnd() * 0.03})` : `rgba(0,0,0,${0.1 + rnd() * 0.1})`;
+        g.lineWidth = 0.6; g.beginPath(); g.moveTo(ix + rnd() * iw * 0.3, yy); g.lineTo(ix + iw * (0.6 + rnd() * 0.4), yy); g.stroke();
+      }
+      g.restore();
+      for (const sx of [x + R * 0.075, x + W - R * 0.075]) this._screw(g, sx, cy, R * 0.024, rnd() * Math.PI);
+
+      // volume knob: knurled chrome ring + dark cap
+      const K = RD.knob, kr = K.r;
+      g.save();
+      g.fillStyle = 'rgba(0,0,0,0.6)'; g.beginPath(); g.arc(K.x + kr * 0.06, K.y + kr * 0.14, kr * 1.06, 0, TAU); g.fill();
+      gr = g.createLinearGradient(K.x - kr, K.y - kr, K.x + kr, K.y + kr);
+      gr.addColorStop(0, '#f2f4f6'); gr.addColorStop(0.45, '#8b9197'); gr.addColorStop(0.55, '#5c6268'); gr.addColorStop(1, '#c3c8cd');
+      g.fillStyle = gr; g.beginPath(); g.arc(K.x, K.y, kr, 0, TAU); g.fill();
+      for (let i = 0; i < 44; i++) {                         // knurling
+        const a = i / 44 * TAU;
+        g.strokeStyle = i % 2 ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.35)'; g.lineWidth = Math.max(0.6, kr * 0.035);
+        g.beginPath(); g.moveTo(K.x + Math.cos(a) * kr * 0.8, K.y + Math.sin(a) * kr * 0.8); g.lineTo(K.x + Math.cos(a) * kr * 0.98, K.y + Math.sin(a) * kr * 0.98); g.stroke();
+      }
+      gr = g.createLinearGradient(K.x, K.y - kr, K.x, K.y + kr);
+      gr.addColorStop(0, '#454a50'); gr.addColorStop(1, '#0d0e10');
+      g.fillStyle = gr; g.beginPath(); g.arc(K.x, K.y, kr * 0.74, 0, TAU); g.fill();
+      g.strokeStyle = 'rgba(0,0,0,0.7)'; g.lineWidth = 1; g.stroke();
+      g.fillStyle = 'rgba(255,255,255,0.12)';
+      g.beginPath(); g.ellipse(K.x - kr * 0.22, K.y - kr * 0.3, kr * 0.36, kr * 0.16, -0.5, 0, TAU); g.fill();
+      g.restore();
+
+      // VFD glass: recessed, with a faint dot matrix
+      const G = RD.glass;
+      this._rr(g, G.x, G.y, G.w, G.h, G.h * 0.12); g.fillStyle = '#040605'; g.fill();
+      g.strokeStyle = 'rgba(0,0,0,0.9)'; g.lineWidth = 2; g.stroke();
+      g.strokeStyle = 'rgba(255,255,255,0.1)'; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(G.x + G.h * 0.12, G.y + G.h + 1); g.lineTo(G.x + G.w - G.h * 0.12, G.y + G.h + 1); g.stroke();
+      const [cr, cg, cb] = rgbOf(this.color), st = Math.max(2.2, R * 0.016);
+      g.save(); this._rr(g, G.x, G.y, G.w, G.h, G.h * 0.12); g.clip();
+      g.fillStyle = `rgba(${cr},${cg},${cb},0.07)`;
+      for (let yy = G.y + st / 2; yy < G.y + G.h; yy += st) for (let xx = G.x + st / 2; xx < G.x + G.w; xx += st) g.fillRect(xx, yy, 1, 1);
+      g.restore();
+    }
+
+    _radioDraw(g, sim, audio, media, dt, t) {
+      const RD = this.radio, R = this.R, on = sim.state !== 'off', col = this.color;
+      const [cr, cg, cb] = rgbOf(col);
+      // VU ring around the knob (fast attack, slow release)
+      const lv = on ? clamp(audio.level / audio.peak, 0, 1) : 0;
+      this.vu += (lv - this.vu) * (1 - Math.exp(-dt * (lv > this.vu ? 25 : 3)));
+      const K = RD.knob, n = 11, a0 = 0.75 * Math.PI, sw = 1.5 * Math.PI, lit = this.vu * n;
+      g.save();
+      for (let i = 0; i < n; i++) {
+        const a = a0 + sw * i / (n - 1), f = on ? clamp(lit - i, 0, 1) : 0;
+        const px = K.x + Math.cos(a) * K.r * 1.24, py = K.y + Math.sin(a) * K.r * 1.24, rr = R * 0.011;
+        const c = i === n - 1 ? [255, 51, 34] : [cr, cg, cb];
+        g.shadowBlur = f > 0 ? rr * 4 * f : 0; g.shadowColor = `rgb(${c})`;
+        g.fillStyle = `rgba(${c},${0.12 + 0.88 * f})`;
+        g.beginPath(); g.arc(px, py, rr, 0, TAU); g.fill();
+      }
+      g.restore();
+      // pointer at ~2 o'clock, trembling a little on peaks
+      const pa = -0.65 + (on ? Math.sin(t * 37) * 0.04 * this.vu * this.vu : 0);
+      g.save(); g.lineCap = 'round'; g.strokeStyle = '#e8ebef'; g.lineWidth = K.r * 0.1;
+      g.beginPath(); g.moveTo(K.x + Math.cos(pa) * K.r * 0.28, K.y + Math.sin(pa) * K.r * 0.28); g.lineTo(K.x + Math.cos(pa) * K.r * 0.62, K.y + Math.sin(pa) * K.r * 0.62); g.stroke();
+      g.restore();
+      if (!on) { this.vu = 0; return; }                     // radio runs off the ignition
+
+      const G = RD.glass, fs = G.h * 0.5, my = G.y + G.h / 2, pad = G.h * 0.3;
+      const has = !!(media && media.active(t));
+      g.save(); this._rr(g, G.x, G.y, G.w, G.h, G.h * 0.12); g.clip();
+      g.fillStyle = col; g.shadowColor = col; g.shadowBlur = fs * 0.45;
+      g.textBaseline = 'middle';
+      const font = k => `700 ${fs * k}px Consolas, "Courier New", monospace`;
+      // right: track number + clock (colon blinks)
+      const d = new Date(), p2 = v => String(v).padStart(2, '0');
+      g.font = font(1); g.textAlign = 'right';
+      const clock = p2(d.getHours()) + (d.getMilliseconds() < 500 ? ':' : ' ') + p2(d.getMinutes());
+      const xr = G.x + G.w - pad; g.fillText(clock, xr, my);
+      let mx1 = xr - g.measureText('00:00').width - fs * 0.7;
+      if (has) {
+        g.font = font(0.62); const trk = 'TRK ' + p2(media.trackNo % 100);
+        g.fillText(trk, mx1, my); mx1 -= g.measureText(trk).width + fs * 0.7;
+      }
+      // left: play state icon or AUX
+      let mx0 = G.x + pad;
+      if (!has) { g.font = font(0.62); g.textAlign = 'left'; g.fillText('AUX', mx0, my); mx0 += g.measureText('AUX').width + fs * 0.7; }
+      else {
+        const s = fs * 0.62, ix = mx0, iy = my - s / 2;
+        g.beginPath();
+        if (media.state === 'paused') { g.rect(ix, iy, s * 0.32, s); g.rect(ix + s * 0.58, iy, s * 0.32, s); }
+        else if (media.state === 'stopped') g.rect(ix, iy + s * 0.05, s * 0.9, s * 0.9);
+        else { g.moveTo(ix, iy); g.lineTo(ix + s * 0.9, my); g.lineTo(ix, iy + s); g.closePath(); }
+        g.fill(); mx0 += s + fs * 0.7;
+      }
+      const mw = mx1 - mx0;
+      if (mw > fs) {
+        const bx0 = mx0 - fs * 0.45, bx1 = mx1 + fs * 0.3;      // a little room for the glow next to the icon / TRK
+        g.save(); g.beginPath(); g.rect(bx0, G.y, bx1 - bx0, G.h); g.clip();
+        if (!has) {                                          // no track info: mini spectrum analyzer
+          const cols = Math.max(4, Math.floor(mw / (fs * 0.42))), cw = mw / cols, bh = G.h * 0.62, b = audio.bands;
+          const litP = new Path2D(), offP = new Path2D();   // one fill each: glow only on the lit segments
+          for (let i = 0; i < cols; i++) {
+            const i0 = Math.floor(Math.pow(i / cols, 1.6) * 60), i1 = Math.max(i0 + 1, Math.floor(Math.pow((i + 1) / cols, 1.6) * 60));
+            let v = 0; for (let j = i0; j < i1; j++) v = Math.max(v, b[j]);
+            v = clamp(Math.sqrt(v / audio.peak) * 0.9, 0, 1);  // AGC-relative, like the VU ring
+            const sp = this.spec[i] || 0; this.spec[i] = v > sp ? v : sp * Math.exp(-dt * 5);
+            const segs = Math.round(this.spec[i] * 6);
+            for (let k = 0; k < 6; k++)
+              (k < segs ? litP : offP).rect(mx0 + i * cw + cw * 0.15, my + bh / 2 - (k + 1) * bh / 6 + bh * 0.03, cw * 0.7, bh / 6 - bh * 0.06);
+          }
+          g.fill(litP);
+          g.shadowBlur = 0; g.globalAlpha = 0.1; g.fill(offP); g.globalAlpha = 1;
+        } else {
+          const fresh = media.trackNo > 1 && t - media.changeT < 1.2;
+          const txt = fresh ? 'TRACK ' + p2(media.trackNo % 100)
+            : (media.artist ? media.artist + ' — ' + media.title : media.title).toUpperCase();
+          g.font = font(1); g.textAlign = 'left';
+          if (txt !== this.mText) { this.mText = txt; this.scroll = 0; this.scrollHold = 1.5; }
+          const tw = g.measureText(txt).width;
+          const playing = media.state !== 'paused' && media.state !== 'stopped';   // null = no playback event yet: like playing (▶)
+          if (tw <= mw) { g.textAlign = 'center'; g.fillText(txt, mx0 + mw / 2, my); }
+          else {
+            const gap = g.measureText('   •   ').width, L = tw + gap;
+            if (playing) {
+              if (this.scrollHold > 0) this.scrollHold -= dt;
+              else { this.scroll += dt * R * 0.25; if (this.scroll >= L) { this.scroll -= L; this.scrollHold = 1.5; } }
+            }
+            // text + glow go to an offscreen strip that fades out at both ends (a hard clip cut the glow off)
+            const d = this.dpr, bw = bx1 - bx0, c = this._mq || (this._mq = document.createElement('canvas')), q = c.getContext('2d');
+            const pw = Math.ceil(bw * d), ph = Math.ceil(G.h * d);
+            if (c.width !== pw || c.height !== ph) { c.width = pw; c.height = ph; }
+            q.setTransform(d, 0, 0, d, -bx0 * d, -G.y * d); q.clearRect(bx0, G.y, bw, G.h);
+            q.font = g.font; q.textAlign = 'left'; q.textBaseline = 'middle';
+            q.fillStyle = col; q.shadowColor = col; q.shadowBlur = fs * 0.45;
+            const x = mx0 - this.scroll;
+            q.fillText(txt + '   \u2022   ', x, my);
+            if (x + L < bx1) q.fillText(txt, x + L, my);                  // wrap-around copy only when it's visible
+            // opaque from just past mx0 (the first letter at rest stays whole) to 0.6 fs before mx1, zero at the ends
+            const m = q.createLinearGradient(bx0, 0, bx1, 0), at = v => clamp((v - bx0) / bw, 0, 1);
+            m.addColorStop(at(mx0 - fs * 0.35), 'rgba(0,0,0,0)'); m.addColorStop(at(mx0 + fs * 0.1), '#000');
+            m.addColorStop(at(mx1 - fs * 0.6), '#000'); m.addColorStop(at(mx1 + fs * 0.05), 'rgba(0,0,0,0)');
+            q.shadowBlur = 0; q.globalCompositeOperation = 'destination-in'; q.fillStyle = m; q.fillRect(bx0, G.y, bw, G.h);
+            q.globalCompositeOperation = 'source-over';
+            g.shadowBlur = 0; g.drawImage(c, bx0, G.y, bw, G.h);
+          }
+        }
+        g.restore();
+      }
+      g.restore();
+      // glass reflection
+      const gr = g.createLinearGradient(0, G.y, 0, G.y + G.h);
+      gr.addColorStop(0, 'rgba(255,255,255,0.07)'); gr.addColorStop(0.45, 'rgba(255,255,255,0.02)'); gr.addColorStop(0.5, 'rgba(255,255,255,0)');
+      g.fillStyle = gr; this._rr(g, G.x, G.y, G.w, G.h, G.h * 0.12); g.fill();
+    }
+
     hitTest(x, y) {
       if (!this.showControls || !this.keyC) return null;
       const K = this.keyC, P = this.pedalR;
@@ -353,7 +533,7 @@
       g.restore();
     }
 
-    draw(sim, audio, dt, t) {
+    draw(sim, audio, dt, t, media) {
       const g = this.ctx, d = this.dpr, R = this.R, cx = this.cx, cy = this.cy;
       g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, this.c.width, this.c.height);
       g.drawImage(this.st, 0, 0);
@@ -420,6 +600,7 @@
         const lv = this.lampLvl[L.l.key] += ((on ? 1 : 0) - this.lampLvl[L.l.key]) * (1 - Math.exp(-dt * 25));
         this._lens(g, L, lv);
       });
+      if (this.radio) this._radioDraw(g, sim, audio, media, dt, t);
       if (this.showControls) { this._keyDraw(g, this.keyC, sim, dt); this._pedalDraw(g, this.pedalR, sim, dt); }
     }
   }
