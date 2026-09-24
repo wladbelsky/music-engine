@@ -15,6 +15,9 @@
   // any input -> integer 1..MAX_CYL (non-numeric -> 8)
   const cap = n => { const v = Math.round(Number(n)); return isFinite(v) ? clamp(v, 1, MAX_CYL) : 8; };
   const evenUp = n => Math.max(2, n + (n % 2));
+  // turbo size: the block's height and width don't depend on the cylinder count, only its length does, so the
+  // turbo hardly does either (V2 1.3, V8 1.4, V12 1.5, capped at 1.6); twin/quad turbos keep the single's size
+  const turboScale = n => clamp(1.25 + n / 48, 1.25, 1.6);
   const ROTOR_TDC = 270;   // rotary: shaft angle at which a rotor face is at TDC on the spark plug side
 
   class EngineLayout {
@@ -54,7 +57,7 @@
     coverD() { return 0.9; }            // timing cover depth
     sidePulleyZ() { return -0.62; }
     topY() { return DECK + 0.95; }      // height the exhaust stacks rise to
-    turboMount() { return null; }       // {s, tx, tz, gap, sides, along: second column along the block (else outward)}
+    turboMount() { return null; }       // {s, tx, tz, gap, sides, along: 2nd column along the block (else outward), maxTop?}
     blowerMount(plen) {                 // bottom centre of a Roots blower sitting on the plenum
       if (!plen) return null;
       return { x: plen.pos.x, y: plen.pos.y + plen.size[1] / 2, z: plen.pos.z, len: clamp(this.len * 0.55, 1.1, 3.2) };
@@ -193,9 +196,10 @@
     // with a blower on the intake side the belt runs where the side pulley was
     sidePulleyZ() { return this.e.ind.blower ? 0.62 : -0.62; }
     turboMount() {
-      const s = clamp(this.n / 8, 0.7, 1.6);
+      const s = turboScale(this.n);
       // exhaust side only, clear of the block side; the second turbo goes along the block
-      return { s, tx: this.frontX + 0.1 + 0.3 * s, tz: Math.max(0.8 + 0.4 * (s - 1), 0.58 + 0.39 * s), gap: 0.85 * s, sides: [1], along: true };
+      return { s, tx: this.frontX + 0.1 + 0.3 * s, tz: Math.max(0.8 + 0.4 * (s - 1), 0.58 + 0.39 * s), gap: 0.85 * s, sides: [1], along: true,
+        maxTop: DECK + 0.05 };   // stay below the exhaust ports, the stacks start there
     }
   }
   InlineLayout.id = 'inline';
@@ -221,7 +225,7 @@
     topY() { return Math.cos(this.tilt) * (DECK + 0.9) + 0.4; }
     turboZ(s) { return 1.05 + 0.4 * (s - 1); }
     turboMount() {
-      const s = clamp(this.n / 8, 0.7, 1.6);
+      const s = turboScale(this.n);
       // one per side, camera side first; the second column goes outward
       return { s, tx: this.frontX + 0.1 + 0.3 * s, tz: this.turboZ(s), gap: 0.85 * s, sides: [1, -1], along: false };
     }

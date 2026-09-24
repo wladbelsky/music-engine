@@ -46,12 +46,14 @@
     build(e, lay) {
       const mt = lay.turboMount(); if (!mt || !e.tbPos) return;
       const M = e.mats, nT = this.n, tb = e.tbPos.clone(), { s, tx, tz, gap, sides, along } = mt;
-      const per = nT / sides.length;
+      const per = nT / sides.length, rows = Math.ceil(per / 2);
+      // bottom row at y 0.45; if the top row would reach mt.maxTop (e.g. the exhaust ports), lower the whole set
+      const y0 = Math.min(0.45, (mt.maxTop ?? Infinity) - (rows - 1) * gap - 0.42 * s);
       for (let j = 0; j < per; j++) for (const sg of sides) {
         if (sides.length * j + (sg > 0 ? 0 : 1) >= nT) continue;
         const col = j % 2, row = Math.floor(j / 2);
         // second column: along the block (inline: outward would hide it behind the first) or outward
-        const x = along ? tx - col * gap : tx, y = 0.45 + row * gap, z = sg * (tz + (along ? 0 : col * gap));
+        const x = along ? tx - col * gap : tx, y = y0 + row * gap, z = sg * (tz + (along ? 0 : col * gap));
         const tg = new T.Group(); tg.position.set(x, y, z); tg.scale.setScalar(s); e.eng.add(tg);
         const snail = new T.Mesh(new T.TorusGeometry(0.26, 0.13, 14, 32), M.turbo); snail.rotation.y = Math.PI / 2; tg.add(snail);
         const hot = new T.Mesh(new T.TorusGeometry(0.22, 0.12, 12, 28), M.turboHot); hot.rotation.y = Math.PI / 2; hot.position.x = -0.32; tg.add(hot);
