@@ -221,7 +221,7 @@
 
       this.accent = new T.Color(0.75, 0.08, 0.06);
       this.cutaway = true; this.quality = 'high';
-      this.crank = 0; this.heat = 0; this.flash = 0; this.rock = 0;
+      this.crank = 0; this.crankTotal = 0; this.heat = 0; this.flash = 0; this.rock = 0;
       this.sway = 1; this.lean = 0; this.vibA = 0; this.ph1 = 0; this.ph2 = 0; this.ph3 = 0; this.phI = 0;
       this.root = null;
       this.w = 1; this.h = 1;
@@ -346,7 +346,7 @@
       const port = cd.port || new T.Vector3(x, D + 0.2, b.outer * (b.hw + 0.02));
       const intake = cd.intake || new T.Vector3(x, D + 0.2, -b.outer * (b.hw + 0.02));
       // moving: the parts only shown in cutaway (the layout's buildCrank adds the throw)
-      return { bank: b, bi, i: cd.i, x, zo, rodL, phase: cd.phase, piston, rod, moving: [piston, rod], pm, coilGlow, port, intake, prevCycle: 0 };
+      return { bank: b, bi, i: cd.i, x, zo, rodL, phase: cd.phase, piston, rod, moving: [piston, rod], pm, coilGlow, port, intake };
     }
 
     /* pulley group spinning about the crank axis at `ratio` x crank speed */
@@ -543,7 +543,7 @@
     update(dt, sim, animSpeed, quality) {
       if (!this.root) return;
       // one NaN in these accumulators (e.g. from a bad setting) would hide the engine for good
-      for (const k of ['crank', 'heat', 'flash', 'rock', 'lean', 'vibA', 'ph1', 'ph2', 'ph3', 'phI']) if (!isFinite(this[k])) this[k] = 0;
+      for (const k of ['crank', 'crankTotal', 'heat', 'flash', 'rock', 'lean', 'vibA', 'ph1', 'ph2', 'ph3', 'phI']) if (!isFinite(this[k])) this[k] = 0;
       for (const s of this.spinners) if (!isFinite(s.a)) s.a = 0;
       const rpm = sim.rpm;
       const running = sim.state === 'running' || sim.state === 'stalling';
@@ -551,19 +551,26 @@
       const visK = 0.085 * animSpeed;
       const dCrank = rpm / 60 * 360 * visK * dt;
       this.crank = (this.crank + dCrank) % 720;
+      this.crankTotal += dCrank;                   // unwrapped, for counting firings (see below)
       const crank = this.crank;
       const lay = this.lay;
       this.cyls.forEach(c => {
         // cyc = position in the firing cycle, normalised to 0..720 (a rotor's cycle is one shaft turn, period 360)
         const per = c.period || 720, cyc = (((crank - c.phase) % per + per) % per) * 720 / per;
         lay.animate(c, cyc, crank);                // pistons/rods (slider-crank) or rotors, from the layout
-        // combustion glow
-        const glow = running && cyc < 80 ? (1 - cyc / 80) : 0;
+        // firings (cyc 0) and exhaust openings (cyc 170) since the last frame, counted on the unwrapped crank
+        // angle: a frame step bigger than the cycle window (low fps, high rpm, a rotor's 360 period) can't skip them
+        const u = (this.crankTotal - c.phase) / per, nFire = Math.floor(u), nExh = Math.floor(u - 170 / 720);
+        const fired = c.nFire !== undefined && nFire > c.nFire, opened = c.nExh === undefined ? 0 : Math.min(3, nExh - c.nExh);
+        c.nFire = nFire; c.nExh = nExh;
+        c.fireGlow = fired ? 1 : (c.fireGlow || 0) * Math.exp(-dt / 0.04);
+        // combustion glow; with big steps sampling cyc < 80 would strobe, so use the counted firing instead
+        const step = dCrank / per * 720;
+        const glow = running ? Math.max(cyc < 80 ? 1 - cyc / 80 : 0, step > 80 ? c.fireGlow : 0) : 0;
         c.pm.emissiveIntensity = glow * (0.5 + 2.2 * sim.throttle);
         c.coilGlow.material.color.setRGB(0.2 + glow * 1.5, 0.1 + glow * 0.9, 0.05 + glow * 1.8);
-        // exhaust valve opening -> pulse of flame
-        if (c.prevCycle < 170 && cyc >= 170 && rpm > 200) this._pulse(c, sim);
-        c.prevCycle = cyc;
+        // exhaust valve / port opening -> pulse of flame
+        if (rpm > 200) for (let k = 0; k < opened; k++) this._pulse(c, sim);
       });
       // accumulated per part, so ratios != 1 don't jump when the 720 deg crank angle wraps
       this.spinners.forEach(s => { s.a = (s.a + dCrank * s.ratio) % 360; s.obj.rotation.x = s.a * DEG + s.off; });

@@ -54,7 +54,7 @@
     coverD() { return 0.9; }            // timing cover depth
     sidePulleyZ() { return -0.62; }
     topY() { return DECK + 0.95; }      // height the exhaust stacks rise to
-    turboMount() { return null; }       // {s, tx, tz, gap, sides, inline}
+    turboMount() { return null; }       // {s, tx, tz, gap, sides, along: second column along the block (else outward)}
     blowerMount(plen) {                 // bottom centre of a Roots blower sitting on the plenum
       if (!plen) return null;
       return { x: plen.pos.x, y: plen.pos.y + plen.size[1] / 2, z: plen.pos.z, len: clamp(this.len * 0.55, 1.1, 3.2) };
@@ -195,7 +195,7 @@
     turboMount() {
       const s = clamp(this.n / 8, 0.7, 1.6);
       // exhaust side only, clear of the block side; the second turbo goes along the block
-      return { s, tx: this.frontX + 0.1 + 0.3 * s, tz: Math.max(0.8 + 0.4 * (s - 1), 0.58 + 0.39 * s), gap: 0.85 * s, sides: [1], inline: true };
+      return { s, tx: this.frontX + 0.1 + 0.3 * s, tz: Math.max(0.8 + 0.4 * (s - 1), 0.58 + 0.39 * s), gap: 0.85 * s, sides: [1], along: true };
     }
   }
   InlineLayout.id = 'inline';
@@ -223,7 +223,7 @@
     turboMount() {
       const s = clamp(this.n / 8, 0.7, 1.6);
       // one per side, camera side first; the second column goes outward
-      return { s, tx: this.frontX + 0.1 + 0.3 * s, tz: this.turboZ(s), gap: 0.85 * s, sides: [1, -1], inline: false };
+      return { s, tx: this.frontX + 0.1 + 0.3 * s, tz: this.turboZ(s), gap: 0.85 * s, sides: [1, -1], along: false };
     }
   }
   VLayout.id = 'v';
@@ -430,12 +430,20 @@
       const out = [];
       for (let i = 0; i < b.m; i++) {
         const x = (i - (b.m - 1) / 2) * this.pitch;
+        // like a real Wankel the intake and exhaust are on one side (+z, low and high), the plugs opposite (-z)
         out.push({ i, x, zo: 0, phase: i * 360 / b.m,   // firing: rotors evenly spread over one shaft turn
-          port: new T.Vector3(x, -0.12, this.hz), intake: new T.Vector3(x, 0.25, -this.hz) });
+          port: new T.Vector3(x, -0.12, this.surfZ(-0.12, 1)), intake: new T.Vector3(x, 0.5, this.surfZ(0.5, 1)) });
       }
       return out;
     }
 
+    /* z of the housing's outer surface at height y on one side (side = +1 / -1) */
+    surfZ(y, side) {
+      const pts = this._outer || (this._outer = this._troch(this.R + this.wall, 1440));
+      let z = 0;
+      for (const q of pts) if (Math.sign(q.x) === side && Math.abs(q.y - y) < 0.006) z = Math.max(z, Math.abs(q.x));
+      return side * z;
+    }
     /* housing bore in the shape plane (shape x -> engine z, shape y -> engine y) */
     _troch(r, N = 96) {
       const e = this.ecc, pts = [];
@@ -492,12 +500,16 @@
         const [u, v] = G.ap(k), seal = new T.Mesh(G.seal, M.steel);
         seal.position.set(0, v, u); seal.rotation.x = k * Math.PI * 2 / 3; rotor.add(seal);
       }
-      // spark plug on the -z side, low
-      const coil = new T.Mesh(G.coil, M.dark);
-      coil.rotation.x = Math.PI / 2; coil.position.set(x, -0.4, -this.hz - 0.08); grp.add(coil);
-      const coilGlow = new T.Mesh(G.glow, M.spark.clone());
-      coilGlow.rotation.x = Math.PI / 2; coilGlow.position.set(x, -0.4, -this.hz - 0.17); grp.add(coilGlow);
-      return { bank: b, bi, i: cd.i, x, zo: 0, phase: cd.phase, period: 360, rotor, moving: [rotor], pm, coilGlow, port: cd.port, intake: cd.intake, prevCycle: 0 };
+      // leading and trailing spark plugs on the -z side, opposite the ports, seated on the housing
+      let coilGlow = null;
+      for (const y of [-0.17, 0.17]) {
+        const zs = this.surfZ(y, -1), coil = new T.Mesh(G.coil, M.dark);
+        coil.rotation.x = Math.PI / 2; coil.position.set(x, y, zs - 0.08); grp.add(coil);
+        if (coilGlow) continue;                           // the leading plug carries the ignition glow
+        coilGlow = new T.Mesh(G.glow, M.spark.clone());
+        coilGlow.rotation.x = Math.PI / 2; coilGlow.position.set(x, y, zs - 0.165); grp.add(coilGlow);
+      }
+      return { bank: b, bi, i: cd.i, x, zo: 0, phase: cd.phase, period: 360, rotor, moving: [rotor], pm, coilGlow, port: cd.port, intake: cd.intake };
     }
     /* cyc 0 (combustion) = a face at TDC on the plug side (-z): the rotor centre points there at shaft angle 270 */
     animate(c, cyc, crank) {
@@ -524,15 +536,23 @@
 
     plenum() { return { pos: new T.Vector3(-0.05, this.hy + 0.3, 0), size: [this.len - 0.25, 0.36, 0.62] }; }
     plenumMat() { return this.M.cover; }                 // no valve covers here: the accent goes on the intake
-    runnerPath(a, outDir, b) {                            // out of the side port, round the housing, up to the plenum
-      return [a, a.clone().addScaledVector(outDir, 0.22), new T.Vector3(a.x, this.hy * 0.9, -this.hz - 0.12), b];
+    runnerPath(a, outDir, b) {                            // up the +z flank, round the top edge, into the plenum
+      return [a, new T.Vector3(a.x, a.y + 0.2, a.z + 0.1), new T.Vector3(a.x, this.hy * 0.95, this.hz * 0.75), b];
     }
     frontTopY() { return this.hy - 0.2; }
     coverD() { return 0.55; }
+    buildFront(plen) {
+      super.buildFront(plen);
+      // the narrow cover leaves the accessory pulley in the air: put an alternator behind it on the housing
+      const face = this.n / 2 * this.pitch + 0.07, px = this.frontX + 0.08, L = px - face;
+      const alt = new T.Mesh(new T.CylinderGeometry(0.17, 0.17, L, 18), this.M.dark2);
+      alt.rotation.z = Math.PI / 2; alt.position.set(face + L / 2, 0.55, this.sidePulleyZ()); this.eng.add(alt);
+    }
     topY() { return this.hy + 0.75; }
     turboMount() {
       const s = clamp(0.55 + 0.25 * this.n, 0.8, 1.6);    // a 2-rotor gets a proper-size turbo
-      return { s, tx: this.frontX + 0.1 + 0.3 * s, tz: this.hz + 0.35 + 0.2 * s, gap: 0.85 * s, sides: [1], inline: true };
+      // exhaust side only; the second column goes outward, along the block it would sit on the stacks
+      return { s, tx: this.frontX + 0.1 + 0.3 * s, tz: this.hz + 0.35 + 0.2 * s, gap: 0.85 * s, sides: [1], along: false };
     }
   }
   RotaryLayout.id = 'rotary';
