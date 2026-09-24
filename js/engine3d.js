@@ -8,6 +8,7 @@
 
   // geometry constants (1 unit ~ 10 cm)
   const P = 1.0, CR = 0.34, ROD = 1.05, BORE = 0.36, DECK = 1.65;
+  const FLOOR_GAP = 0.012;  // lowest engine point above the floor while it rocks (rest clearance is 0.02)
   const FIT_RIGHT = 0.14; // landscape: rightmost engine part in NDC (= the old inline 8), keeps it off the dash
 
   const FIRING = {
@@ -222,7 +223,7 @@
       this.accent = new T.Color(0.75, 0.08, 0.06);
       this.cutaway = true; this.quality = 'high';
       this.crank = 0; this.crankTotal = 0; this.heat = 0; this.flash = 0; this.rock = 0;
-      this.sway = 1; this.lean = 0; this.vibA = 0; this.ph1 = 0; this.ph2 = 0; this.ph3 = 0; this.phI = 0;
+      this._rotM = new T.Matrix4(); this._eul = new T.Euler(); this.lift = 0; this.mountY = 0; this.sway = 1; this.lean = 0; this.vibA = 0; this.ph1 = 0; this.ph2 = 0; this.ph3 = 0; this.phI = 0;
       this.root = null;
       this.w = 1; this.h = 1;
     }
@@ -311,11 +312,12 @@
       // center & ground
       eng.updateMatrixWorld(true);
       const box = new T.Box3().setFromObject(eng);
+      this.foot = this._footPoints(eng, box);
       eng.position.y = -box.min.y + 0.02;
       root.updateMatrixWorld(true);
       this.box = new T.Box3().setFromObject(eng);
       this.ground.position.y = 0;
-      this.baseY = eng.position.y;
+      this.baseY = this.mountY = eng.position.y; this.lift = 0;
       // soft contact shadow (works on any background, also on 'low' quality)
       const sz = this.box.getSize(new T.Vector3());
       const cs = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ alphaMap: this._blobTex(), transparent: true, depthWrite: false, color: 0x000000, opacity: 0.6 }));
@@ -326,6 +328,44 @@
       this.scene.add(root);
       this._applyCutaway();
       this._frame();
+    }
+
+    /* the lowest vertex per (x, z) cell, engine-local: a small rolled/pitched block can't put anything else lower,
+       so _sway keeps these above the floor instead of letting the rocking engine sink through it */
+    _footPoints(eng, box) {
+      const N = 32, sx = Math.max(1e-6, box.max.x - box.min.x) / N, sz = Math.max(1e-6, box.max.z - box.min.z) / N;
+      const low = new Float32Array(N * N * 3).fill(NaN), v = new T.Vector3(), bb = new T.Box3();
+      const cutY = box.min.y + 0.5 * (box.max.y - box.min.y);
+      eng.traverse(o => {
+        if (!o.isMesh || !o.geometry.attributes.position) return;
+        // a part whose bottom is in the upper half can't become the lowest point under a few degrees of rock
+        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        if (bb.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld).min.y > cutY) return;
+        const pos = o.geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+          v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);  // eng is at the origin, unrotated, here
+          const c = Math.min(N - 1, Math.floor((v.x - box.min.x) / sx)) * N + Math.min(N - 1, Math.floor((v.z - box.min.z) / sz));
+          if (!(low[c * 3 + 1] <= v.y)) { low[c * 3] = v.x; low[c * 3 + 1] = v.y; low[c * 3 + 2] = v.z; }
+        }
+      });
+      const pts = [];
+      for (let c = 0; c < N * N; c++) if (low[c * 3 + 1] === low[c * 3 + 1]) pts.push(low[c * 3], low[c * 3 + 1], low[c * 3 + 2]);
+      return new Float32Array(pts);
+    }
+
+    // lowest foot point (engine-local, relative to the pivot) after rotating by roll (X) and pitch (Z)
+    _lowest(roll, pitch) {
+      const f = this.foot, e = this._rotM.makeRotationFromEuler(this._eul.set(roll, 0, pitch)).elements;
+      let lo = Infinity;
+      for (let i = 0; i < f.length; i += 3) { const wy = e[1] * f[i] + e[5] * f[i + 1] + e[9] * f[i + 2]; if (wy < lo) lo = wy; }
+      return lo;
+    }
+    // mount height: clearance for the swing the current motion can reach (its envelope, not its phase), so the
+    // engine sits on the floor when still and rises on its mounts only as much as it actually rocks
+    _mountTarget(rEnv, pEnv, bEnv) {
+      if (!this.foot || !this.foot.length) return this.baseY;
+      const lo = Math.min(this._lowest(rEnv, pEnv), this._lowest(rEnv, -pEnv), this._lowest(-rEnv, pEnv), this._lowest(-rEnv, -pEnv));
+      return Math.max(this.baseY, FLOOR_GAP + bEnv - lo);
     }
 
     /* one cylinder: liner, piston, rod, coil (bank-local). cd = {i, x, zo, phase, port?, intake?} from the layout */
@@ -543,7 +583,8 @@
     update(dt, sim, animSpeed, quality) {
       if (!this.root) return;
       // one NaN in these accumulators (e.g. from a bad setting) would hide the engine for good
-      for (const k of ['crank', 'crankTotal', 'heat', 'flash', 'rock', 'lean', 'vibA', 'ph1', 'ph2', 'ph3', 'phI']) if (!isFinite(this[k])) this[k] = 0;
+      for (const k of ['crank', 'crankTotal', 'heat', 'flash', 'rock', 'lean', 'vibA', 'ph1', 'ph2', 'ph3', 'phI', 'lift']) if (!isFinite(this[k])) this[k] = 0;
+      if (!isFinite(this.mountY)) this.mountY = this.baseY || 0;
       for (const s of this.spinners) if (!isFinite(s.a)) s.a = 0;
       const rpm = sim.rpm;
       const running = sim.state === 'running' || sim.state === 'stalling';
@@ -611,7 +652,7 @@
 
     _sway(dt, sim) {
       const TAU = Math.PI * 2, rpm = sim.rpm, red = Math.max(500, sim.settings.redline || 7000);
-      const rn = clamp(rpm / red, 0, 1.1), on = rpm > 60, k = this.sway;
+      const rn = clamp(rpm / red, 0, 1.1), on = rpm > 60, k = isFinite(this.sway) ? Math.max(0, this.sway) : 1;
       // torque reaction: block leans against crank rotation under load
       this.lean += ((on ? sim.throttle : 0) * 0.05 - this.lean) * (1 - Math.exp(-dt / 0.25));
       // vibration amplitude grows with rpm
@@ -632,7 +673,18 @@
       this.rock *= Math.exp(-dt / 0.35);
       roll += Math.sin(performance.now() / 45) * this.rock * 0.035 * k;
       this.eng.rotation.set(roll, 0, pitch);
-      this.eng.position.set(0, (this.baseY || 0) + bounce * 0.6, 0);
+      // the pivot stays the engine's own axis; the mounts hold it up by the clearance its current rocking needs
+      // (envelope of the terms above). A swing past that (random stall jolts) lifts it
+      // at once and lets it settle back slowly, so nothing sinks through the floor
+      let rEnv = Math.abs(this.lean * k) + A * 1.2 + Math.abs(sim.kick / red) * 0.03 * k + this.rock * 0.035 * k;
+      if (on && rpm < 1400) rEnv += 0.009 * k * (1 - rpm / 1400);
+      if (sim.state === 'cranking') rEnv += 0.012 * k;
+      const mt = this._mountTarget(rEnv, A * 0.53, A * 0.78);
+      this.mountY += (mt - this.mountY) * (1 - Math.exp(-dt / 0.12));
+      const y = this.mountY + bounce * 0.6;
+      const need = this.foot ? Math.max(0, FLOOR_GAP - (y + this._lowest(roll, pitch))) : 0;
+      this.lift = need > this.lift ? need : this.lift + (need - this.lift) * (1 - Math.exp(-dt / 0.4));
+      this.eng.position.set(0, y + this.lift, 0);
       this.eng.updateMatrixWorld(true);
       const q = this.eng.quaternion;
       this.stacks.forEach(c => { c.tipW = this.eng.localToWorld(c.tip.clone()); c.dirW = c.dir.clone().applyQuaternion(q); });
