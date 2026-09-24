@@ -12,11 +12,15 @@
   #debug { position: absolute; left: 10px; bottom: 10px; display: none; margin: 0; padding: 8px 10px;
     font: 12px/1.4 Consolas, monospace; color: #9fe; background: rgba(0,0,0,.6); border-radius: 6px; white-space: pre; pointer-events: none; }
   #devpanel { position: absolute; left: 10px; top: 10px; display: none; padding: 10px; background: rgba(12,13,15,.85);
-    color: #ccd; font: 13px "Segoe UI", Arial, sans-serif; border: 1px solid #2a2d31; border-radius: 8px; z-index: 5; }
+    color: #ccd; font: 13px "Segoe UI", Arial, sans-serif; border: 1px solid #2a2d31; border-radius: 8px; z-index: 5;
+    max-width: 560px; max-height: calc(100vh - 42px); overflow: auto; }
   #devpanel b { color: #fff; } #devpanel .row { margin: 6px 0; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   #dv-show { position: absolute; left: 10px; top: 10px; display: none; z-index: 5; padding: 3px 9px; opacity: .55;
     background: rgba(12,13,15,.85); color: #ccd; font: 12px "Segoe UI", Arial, sans-serif; border: 1px solid #2a2d31; border-radius: 6px; cursor: pointer; }
   #dv-show:hover { opacity: 1; }
+  #devpanel .val { display: inline-block; min-width: 2.6em; opacity: .7; }
+  #devpanel input[type=color] { width: 2.2em; height: 1.5em; padding: 0; border: 1px solid #3a3f45; background: none; vertical-align: middle; }
+  #devpanel input[type=range] { vertical-align: middle; }
   #devpanel button, #devpanel select, #devpanel input[type=number] { background: #1d2024; color: #dde; border: 1px solid #3a3f45; border-radius: 4px; padding: 3px 8px; }
 </style>
 </head>
@@ -33,18 +37,11 @@
   <div class="row">Audio:
     <button id="dv-demo">Demo beat</button><button id="dv-mic">Microphone</button>
     <label>File <input id="dv-file" type="file" accept="audio/*"></label><button id="dv-stop">Stop</button></div>
-  <div class="row">Engine:
-    <select id="dv-layout"><option value="inline">Inline</option><option value="v">V</option><option value="boxer">Boxer</option><option value="w">W</option><option value="radial">Radial</option><option value="rotary">Rotary</option></select>
-    <input id="dv-cyl" type="number" min="1" max="32" value="8" title="Cylinders" style="width:4em">
-    <select id="dv-turbo" title="Forced induction"><option value="0">none</option><option value="1" selected>turbo</option><option value="2">twin turbo</option><option value="4">quad turbo</option><option value="sc">supercharger</option><option value="sc2">twincharged</option></select>
-    <label><input id="dv-cut" type="checkbox" checked> cutaway</label>
-    <label><input id="dv-dbg" type="checkbox"> debug</label></div>
-  <div class="row">Background:
-    <select id="dv-bg"><option value="garage">Garage</option><option value="carbon">Carbon</option><option value="gradient">Gradient</option><option value="custom">Custom image</option></select>
-    <label>image <input id="dv-img" type="file" accept="image/*"></label>
+  <div id="dv-props"></div>
+  <div class="row">Odometer:
+    <button id="dv-trip">Reset trip</button><button id="dv-odo0">Reset ODO</button>
+    <button id="dv-reset" title="Forget the saved settings (mileage stays)">Reset settings</button>
     <button id="dv-hide" title="Hide (D toggles)">Hide</button></div>
-  <div class="row">Radio:
-    <label><input id="dv-radio" type="checkbox"> show</label> <span style="opacity:.6">(shows the audio file name)</span></div>
 </div>
 
 <script src="js/three.min.js"></script>
@@ -56,6 +53,7 @@
 <script src="js/dash.js"></script>
 <script src="js/bg.js"></script>
 <script src="js/media.js"></script>
+<script src="js/odometer.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
