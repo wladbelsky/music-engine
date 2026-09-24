@@ -383,7 +383,7 @@
 
     buildFront() {
       const e = this.e, M = this.M, x = this.rowX(0) + 1.05;
-      const hub = new T.Group(); hub.position.x = x; this.eng.add(hub); e.spin(hub, 0.6); // reduction gear
+      const hub = new T.Group(); hub.position.x = x; this.eng.add(hub); e.spin(hub, 0.6, 0, 120); // reduction gear; 3 blades
       const flange = new T.Mesh(new T.CylinderGeometry(0.34, 0.34, 0.08, 32), M.steel); flange.rotation.z = Math.PI / 2; hub.add(flange);
       const dome = new T.Mesh(new T.SphereGeometry(0.3, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), M.cover);
       dome.rotation.z = -Math.PI / 2; dome.position.x = 0.04; hub.add(dome);

@@ -33,7 +33,6 @@
       this.airFilter = false;
       this.animK = 200 / 7000 / 0.085;   // the shaft turns at the rpm the dash shows (200 at the redline)
       this.swayK = 0.2; this.smooth = true;   // a heavy engine on a foundation
-      this.fitRight = 0.02;              // the front corner (cranks, plinth) is low, level with the small gauges
       this.acc = { smoke: 0, spark: 0, drain: 0, vent: 0 };
       this.vent = 0; this.fireK = 0;
     }
@@ -49,8 +48,9 @@
     }
     cylinders(b) {
       const n = this.n;
-      // quartered cranks for a twin, evenly spread otherwise
-      return this.xs.map((x, i) => ({ i, x, zo: 0, phase: i * (n === 2 ? 90 : 360 / n) }));
+      // cranks spread round the turn; double acting = two exhausts per turn, so for an even count the second half is
+      // shifted by 180/n: the chuffs come evenly (twin: 0/270, quartered as usual)
+      return this.xs.map((x, i) => ({ i, x, zo: 0, phase: i * 360 / n + (n % 2 === 0 && i >= n / 2 ? 180 / n : 0) }));
     }
 
     /* ---- small builders (engine space) ---- */
@@ -215,7 +215,7 @@
       this._box(0.3, 0.3, 0.3, M.dark2, gx, H, gz);                                    // bevel box
       this._cylZ(0.05, Math.abs(gz) - 0.15, M.steel, gx, H, gz / 2, null, 10);            // drive from the shaft
       const up = new T.Group(); up.position.set(gx, H + 0.15, gz); up.rotation.z = Math.PI / 2; this.eng.add(up); // local +X = up
-      const sp = new T.Group(); up.add(sp); e.spin(sp, 1.6);
+      const sp = new T.Group(); up.add(sp); e.spin(sp, 1.6, 0, 180);   // two arms
       const len = top - H - 0.15;
       const spindle = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, len, 10), M.steel); spindle.rotation.z = Math.PI / 2; spindle.position.x = len / 2; sp.add(spindle);
       const cap = new T.Mesh(new T.SphereGeometry(0.06, 12, 8), M.brass); cap.position.x = len; sp.add(cap);
@@ -245,7 +245,7 @@
     glowPoint() { return this._w(this.doorL); }
 
     _chuff(k) {                                       // a puff of exhaust steam out of the chimney
-      const e = this.e, tp = this._w(this.tipL), m = Math.round(2 + 3 * k);
+      const e = this.e, tp = this._w(this.tipL), m = Math.max(1, Math.round((2 + 3 * k) * Math.min(1, 3 / this.n))); // fewer per chuff with more cylinders
       for (let i = 0; i < m; i++) e.smoke.spawn(tp.x, tp.y, tp.z,
         (Math.random() - 0.5) * 0.6, 2.2 + 3.5 * k + Math.random(), (Math.random() - 0.5) * 0.6,
         1.3 + Math.random() * 0.9, 0.3 + 0.2 * k + Math.random() * 0.1, 4);
@@ -291,12 +291,11 @@
       for (; acc.spark >= 1; acc.spark--) this._sparks(1, 1);
       // drain cocks blowing while starting from cold
       const draining = sim.state === 'cranking' || (sim.state === 'running' && sim.stateT < 2.5);
-      acc.drain += dt * (draining ? 30 : 0);
-      for (; acc.drain >= 1; acc.drain--) this.e.cyls.forEach(c => c.drains.forEach(p => {
-        if (Math.random() < 0.5) return;
-        const w = this._w(p);
+      acc.drain += dt * (draining ? 30 * Math.min(this.n, 3) : 0);   // puffs/s for the whole engine, a random cock each
+      for (; acc.drain >= 1; acc.drain--) {
+        const c = e.cyls[Math.floor(Math.random() * e.cyls.length)], w = this._w(c.drains[Math.random() < 0.5 ? 0 : 1]);
         e.smoke.spawn(w.x, w.y, w.z, 1.6 + Math.random(), -0.7 - Math.random() * 0.5, (Math.random() - 0.5) * 0.6, 0.7 + Math.random() * 0.5, 0.12, 4);
-      }));
+      }
       // safety valve
       if (this.vent > 0) {
         this.vent -= dt; acc.vent += dt * 70;

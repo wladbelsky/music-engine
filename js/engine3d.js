@@ -9,7 +9,7 @@
   // geometry constants (1 unit ~ 10 cm)
   const P = 1.0, CR = 0.34, ROD = 1.05, BORE = 0.36, DECK = 1.65;
   const FLOOR_GAP = 0.012;  // lowest engine point above the floor while it rocks (rest clearance is 0.02)
-  const FIT_RIGHT = 0.14; // landscape: rightmost engine part in NDC (= the old inline 8), keeps it off the dash
+  const FIT_RIGHT = 0.14; // landscape fallback until the dash reports its areas (Dash.keepOut): rightmost engine part in NDC
 
   const FIRING = {
     1: [0], 2: [0, 1], 3: [0, 2, 1], 4: [0, 2, 3, 1], 5: [0, 1, 3, 4, 2], 6: [0, 4, 2, 5, 1, 3],
@@ -327,6 +327,7 @@
       eng.traverse(o => { if (o.isMesh) { const tr = o.material.transparent; o.castShadow = !tr; o.receiveShadow = !tr; } });
       this.scene.add(root);
       this._applyCutaway();
+      this._fitPts = this._fitPoints();
       this._frame();
     }
 
@@ -400,7 +401,9 @@
       this.eng.add(g); this.spin(g, ratio);
       return g;
     }
-    spin(obj, ratio, off = 0) { this.spinners.push({ obj, ratio, a: 0, off }); obj.rotation.x = off; }
+    /* pitch (deg, optional) = blade/spoke spacing of a part not tied to the crank: its step per frame is capped at
+       0.4 pitch so it never strobes (frozen or running backwards); s.over = the real step in pitches, for blur */
+    spin(obj, ratio, off = 0, pitch = 0) { const s = { obj, ratio, a: 0, off, pitch, over: 0 }; this.spinners.push(s); obj.rotation.x = off; return s; }
 
     _blobTex() {
       if (this._blob) return this._blob;
@@ -548,15 +551,15 @@
       cam.aspect = fullW / fullH;
       // keep vertical fov relative to full height
       cam.setViewOffset(fullW, fullH, shX > 0 ? 2 * shX : 0, shY > 0 ? 0 : 2 * Math.abs(shY), w, h);
-      cam.updateProjectionMatrix();
-      // long engines (inline 32, V32...) reach under the dash with the sphere fit: back off until the
-      // projected parts stay left of FIT_RIGHT
-      for (let it = 0; landscape && it < 4; it++) {
-        const fr = Math.min(FIT_RIGHT, this.lay && this.lay.fitRight !== undefined ? this.lay.fitRight : FIT_RIGHT); // jet: lower, see js/jet.js
-        const c0 = center.clone().project(cam), k = (this._extent().maxX - c0.x) / (fr - c0.x);
-        if (!(k > 1.005)) break;
-        dist *= k;
-        cam.position.copy(center).addScaledVector(this.camDir, dist); cam.lookAt(center);
+      cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+      // long engines (inline 32, W32...) and low front ends (jet, steam) reach into the dash with the sphere fit:
+      // back off until no part covers what the dash draws (bisection: parts near the camera shrink slower than 1/k)
+      const place = d => { cam.position.copy(center).addScaledVector(this.camDir, d); cam.lookAt(center); cam.updateMatrixWorld(); };
+      if (!this._clear(landscape)) {
+        let lo = dist, hi = dist;
+        for (let it = 0; it < 12; it++) { hi *= 1.25; place(hi); if (this._clear(landscape)) break; lo = hi; }
+        for (let it = 0; it < 12; it++) { const mid = (lo + hi) / 2; place(mid); if (this._clear(landscape)) hi = mid; else lo = mid; }
+        dist = hi; place(dist);
       }
       this.camBase = cam.position.clone();
       this.pxScale.value = (fullH * this.renderer.getPixelRatio() / 2) / tanV;
@@ -564,6 +567,47 @@
       const k = this.key; k.target.position.copy(center); k.position.copy(center).add(new T.Vector3(-3, 11, 6));
       const sc = k.shadow.camera; const R = radius * 1.2;
       sc.left = -R; sc.right = R; sc.top = R; sc.bottom = -R; sc.near = 0.5; sc.far = 40; sc.updateProjectionMatrix();
+    }
+
+    /* the dash's covered areas (CSS px, circles {x, y, r} / rects {x, y, w, h}) from Dash.keepOut(); reframes on change */
+    setKeepOut(list) {
+      const key = JSON.stringify(list || []);
+      if (key === this._koKey) return;
+      this._koKey = key; this.keepOut = list || [];
+      this._frame();
+    }
+
+    /* probe points for the fit: 26 points per mesh (bbox corners, edge and face centres), world space at rest */
+    _fitPoints() {
+      const pts = [], v = new T.Vector3();
+      this.eng.updateMatrixWorld(true);
+      this.eng.traverse(o => {
+        if (!o.isMesh) return;
+        const g = o.geometry; if (!g.boundingBox) g.computeBoundingBox();
+        const b = g.boundingBox, X = [b.min.x, (b.min.x + b.max.x) / 2, b.max.x], Y = [b.min.y, (b.min.y + b.max.y) / 2, b.max.y], Z = [b.min.z, (b.min.z + b.max.z) / 2, b.max.z];
+        for (let i = 0; i < 27; i++) {
+          if (i === 13) continue;                        // the centre is inside anyway
+          v.set(X[i % 3], Y[Math.floor(i / 3) % 3], Z[Math.floor(i / 9)]).applyMatrix4(o.matrixWorld);
+          pts.push(v.x, v.y, v.z);
+        }
+      });
+      return new Float32Array(pts);
+    }
+
+    /* true when no probe point lands on the dash (or, before the dash reported its areas, right of FIT_RIGHT) */
+    _clear(landscape) {
+      const P = this._fitPts; if (!P) return true;
+      const cam = this.camera, v = new T.Vector3(), w = this.w, h = this.h, m = 0.012 * w, K = this.keepOut;
+      for (let i = 0; i < P.length; i += 3) {
+        v.set(P[i], P[i + 1], P[i + 2]).project(cam);
+        if (!K) { if (landscape && v.x > FIT_RIGHT) return false; continue; }
+        const x = (v.x + 1) / 2 * w, y = (1 - v.y) / 2 * h;
+        for (const s of K) {
+          if (s.r !== undefined ? Math.hypot(x - s.x, y - s.y) < s.r + m
+            : x > s.x - m && x < s.x + s.w + m && y > s.y - m && y < s.y + s.h + m) return false;
+        }
+      }
+      return true;
     }
 
     /* NDC extent of the engine, from the corners of every mesh's bounding box */
@@ -586,7 +630,6 @@
     /* ------------------------------------------------------------ frame */
     update(dt, sim, animSpeed, quality) {
       if (!this.root) return;
-      this.animSpeed = animSpeed;
       // one NaN in these accumulators (e.g. from a bad setting) would hide the engine for good
       for (const k of ['crank', 'crankTotal', 'heat', 'flash', 'rock', 'lean', 'vibA', 'ph1', 'ph2', 'ph3', 'phI', 'lift']) if (!isFinite(this[k])) this[k] = 0;
       if (!isFinite(this.mountY)) this.mountY = this.baseY || 0;
@@ -619,8 +662,12 @@
         if (rpm > 200) for (let k = 0; k < opened; k++) lay.exhaustPulse(c, sim);
       });
       // accumulated per part, so ratios != 1 don't jump when the 720 deg crank angle wraps
-      this.spinners.forEach(s => { s.a = (s.a + dCrank * s.ratio) % 360; s.obj.rotation.x = s.a * DEG + s.off; });
-      this.compressors.forEach(w => w.rotation.x += dt * Math.max(0, sim.boost + 0.7) * 40);
+      this.spinners.forEach(s => {
+        let d = dCrank * s.ratio;
+        if (s.pitch) { s.over = Math.abs(d) / s.pitch; d = clamp(d, -0.4 * s.pitch, 0.4 * s.pitch); }
+        s.a = (s.a + d) % 360; s.obj.rotation.x = s.a * DEG + s.off;
+      });
+      this.compressors.forEach(w => w.rotation.x += Math.min(dt * Math.max(0, sim.boost + 0.7) * 40, 0.4 * Math.PI / 4)); // 8 blades: no strobing
 
       // events
       for (const e of sim.takeEvents()) {

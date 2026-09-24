@@ -51,6 +51,7 @@
     eng3d.setCutaway(S.cutaway);
     eng3d.sway = S.sway;
     dash.set({ kind: kind(), redline: redline(), color: hex(S.dashColor), label: engineLabel(), showBpm: S.showBpm, showControls: S.showControls, showRadio: S.showRadio, odoUnits: S.odoUnits });
+    eng3d.setKeepOut(dash.keepOut());   // the engine stays clear of what the dash draws (radio, key/pedal, odometer...)
     $('debug').style.display = S.debug ? 'block' : 'none';
     if (!IS_WE && $('dv-turbos')) $('dv-turbos').disabled = !Induction.supported(layoutCls()); // e.g. radial: always naturally aspirated
     if (!IS_WE && $('dv-redline')) $('dv-redline').disabled = kind() !== 'piston';               // steam / jet: fixed internal scale
@@ -86,7 +87,7 @@
       }
       if (v('flamethreshold') !== undefined) S.flameThr = v('flamethreshold') / 100;
       if (v('stalldelay') !== undefined) S.stallDelay = v('stalldelay');
-      if (v('animspeed') !== undefined) S.animSpeed = v('animspeed') / 100;
+      if (v('animspeed') !== undefined) { const a = Number(v('animspeed')) / 100; S.animSpeed = isFinite(a) ? Math.max(0, a) : 1; } // editable: junk → default, never backwards
       if (v('sway') !== undefined) { const w = Number(v('sway')) / 100; S.sway = isFinite(w) ? Math.max(0, w) : 1; } // editable: junk → default
       if (v('quality') !== undefined) { S.quality = v('quality'); q = true; }
       if (v('showbpm') !== undefined) S.showBpm = !!v('showbpm');
@@ -137,7 +138,7 @@
   /* ---------- size ---------- */
   function resize() {
     const w = window.innerWidth, h = window.innerHeight, dpr = Math.min(window.devicePixelRatio || 1, 2);
-    bg.resize(w, h, dpr); dash.resize(w, h, dpr); eng3d.resize(w, h);
+    bg.resize(w, h, dpr); dash.resize(w, h, dpr); eng3d.setKeepOut(dash.keepOut()); eng3d.resize(w, h);
   }
   window.addEventListener('resize', resize);
 

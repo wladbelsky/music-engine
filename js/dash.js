@@ -137,13 +137,15 @@
       g.font = `800 ${fs0}px "Segoe UI", Arial, sans-serif`;
       this.lampRects.forEach(L => { const tw = L.pw - L.ph * 0.95, m = g.measureText(L.l.text).width; if (m > tw) fs = Math.min(fs, fs0 * tw / m); });
       this.lampRects.forEach((L, i) => { L.fs = fs; this._plate(g, L, i); this._lampBezel(g, L); });
+      this.lampBox = { x: x0, y: y0, w: totalW, h: 2 * cellH + gapY };
       this.radio = null;
       if (this.showRadio) this._radioStatic(g, x0, y0 + 2 * cellH + gapY, totalW);
       // shift light housing
       const n = 10, sp = R * 0.19;
       this.shift = []; for (let i = 0; i < n; i++) this.shift.push({ x: cx + (i - (n - 1) / 2) * sp, y: cy - R * 1.22 });
       g.fillStyle = '#0d0e10'; g.strokeStyle = '#2c3035'; g.lineWidth = 2;
-      this._rr(g, cx - n * sp / 2 - sp * 0.2, cy - R * 1.22 - sp * 0.45, n * sp + sp * 0.4, sp * 0.9, sp * 0.45); g.fill(); g.stroke();
+      this.shiftBox = { x: cx - n * sp / 2 - sp * 0.2, y: cy - R * 1.22 - sp * 0.45, w: n * sp + sp * 0.4, h: sp * 0.9 };
+      this._rr(g, this.shiftBox.x, this.shiftBox.y, this.shiftBox.w, this.shiftBox.h, sp * 0.45); g.fill(); g.stroke();
       // ignition key + throttle pedal
       this.keyC = { x: cx - R * 1.5, y: cy - R * 0.93, r: R * 0.27 };
       this.pedalR = { x: cx + R * 1.5 - R * 0.17, y: cy - R * 1.24, w: R * 0.34, h: R * 0.62 };
@@ -597,6 +599,22 @@
       const gr = g.createLinearGradient(0, G.y, 0, G.y + G.h);
       gr.addColorStop(0, 'rgba(255,255,255,0.07)'); gr.addColorStop(0.45, 'rgba(255,255,255,0.02)'); gr.addColorStop(0.5, 'rgba(255,255,255,0)');
       g.fillStyle = gr; this._rr(g, G.x, G.y, G.w, G.h, G.h * 0.12); g.fill();
+    }
+
+    /* what the cluster covers, in CSS px (circles {x, y, r}, rects {x, y, w, h}): Engine3D keeps the engine out of it */
+    keepOut() {
+      if (!this.w || !this.lampBox) return [];
+      const R = this.R, out = [{ x: this.cx, y: this.cy, r: R * 1.1 }, this.shiftBox, this.lampBox];
+      for (const G of [this.tempG, this.boostG]) out.push({ x: G.x, y: G.y, r: G.r * 1.1 });
+      if (this.odoHit) out.push(this.odoHit);
+      if (this.radio) out.push({ x: this.radio.x, y: this.radio.y, w: this.radio.w, h: this.radio.h });
+      if (this.showControls) {
+        const K = this.keyC, P = this.pedalR;
+        out.push({ x: K.x, y: K.y, r: K.r * 1.75 });                                   // OFF / ON / START around it
+        out.push({ x: K.x - K.r * 0.8, y: K.y + K.r * 1.2, w: K.r * 1.6, h: K.r * 0.6 }); // IGNITION
+        out.push({ x: P.x - P.w * 0.3, y: P.y, w: P.w * 1.6, h: P.h * 1.3 });           // pedal + THROTTLE
+      }
+      return out.map(s => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, Math.round(v * 10) / 10])));
     }
 
     hitTest(x, y) {
