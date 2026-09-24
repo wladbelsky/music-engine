@@ -57,7 +57,7 @@ A web wallpaper with a 3D engine. The engine revs up to the music, and on the mo
 
 ## Testing without Wallpaper Engine
 
-Open `index.html` in Chrome. A **Settings** panel will appear: demo beat, microphone, audio file, engine and background selection. **Hide** leaves a small **Settings** button in the top-left corner to bring it back; `D` toggles the panel too. The radio is off by default: tick `Radio: show` (or add `?showradio=true`) and use the fake track / play / pause / stop buttons.
+Open `index.html` in Chrome. A **Settings** panel will appear: demo beat, microphone, audio file, engine and background selection. **Hide** leaves a small **Settings** button in the top-left corner to bring it back; `D` toggles the panel too. The panel remembers its choices between visits (except a custom background image). The radio is off by default: tick `Radio: show` (or add `?showradio=true`); it shows the name of the audio file you picked (`Artist - Title.mp3` is split into artist and title), otherwise `AUX`.
 The microphone requires a local server:
 
 ```
