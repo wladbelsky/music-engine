@@ -18,8 +18,14 @@ A web wallpaper with a 3D engine. The engine revs up to the music, and on the mo
 
 - **Ignition on**: key position at startup.
 - **Show key and throttle pedal**.
-- **Number of cylinders** (2–12) and **Layout**: inline, V, boxer. For V and boxer an odd number is rounded up.
-- **Turbochargers**: none, 1, 2 (twin) or 4 (quad). Turbo size follows the engine (a V12 gets bigger turbos than a V8); twin and quad setups use the same size as a single. Without turbos the engine gets an air filter, the boost gauge shows manifold vacuum and there is no blow-off valve.
+- **Layout**: inline, V, boxer, W (two narrow VR banks with staggered cylinders, like the VW W12 / Bugatti W16) or radial (an aircraft star engine on a stand, flames from short stubs all round).
+- **Number of cylinders**: 1–32. The layout rounds it up where needed: V and boxer to an even number, W to a multiple of 4 (8 minimum), radial to an odd number per row with up to 9 per row (5 → 5, 8 → 9, 14 → 2 rows of 7, 18 → 2 × 9, 28+ → 4 × 7).
+- **Forced induction**: none, turbo, twin turbo, quad turbo, supercharger (Roots blower) or twincharged (blower + twin turbos).
+  - Turbo size follows the engine (a V12 gets bigger turbos than a V8); twin and quad setups use the same size as a single. Boost comes with lag and needs revs; lifting off gives the blow-off valve hiss.
+  - The Roots blower sits on the intake with a scoop on top and is belt-driven from the crank; its rotors show in cutaway mode. Boost is instant and grows with RPM, and there is no blow-off valve.
+  - Twincharged: the blower gives boost right away, the turbos take over higher up and blow into a hat on the blower.
+  - None: an air filter, and the boost gauge shows manifold vacuum.
+  - A radial has no turbos (turbo options act as none); "supercharger" there means the gear-driven supercharger in the rear housing.
 - **Cutaway block**: a semi-transparent block that shows the pistons, connecting rods and crankshaft.
 - **Valve cover color**, **gauge backlight color**.
 - **Background**: Garage, Carbon, Gradient (custom color), Custom image. Plus background dimming.
@@ -58,7 +64,7 @@ python -m http.server 8000
 # http://localhost:8000/?debug=true
 ```
 
-Parameters can be passed in the URL: `?demo=1&layout=inline&cylinders=6&background=carbon&ignition=false`.
+Parameters can be passed in the URL: `?demo=1&layout=radial&cylinders=9&turbos=sc&background=carbon&ignition=false`.
 
 ## Files
 
@@ -67,8 +73,10 @@ index.html        markup and script loading
 project.json      wallpaper description and properties for WE
 preview.jpg       preview
 js/audio.js       audio analysis: BPM, beats, loudness, silence; demo and browser audio sources
-js/sim.js         engine model: states, RPM, boost, temperature, flames, lamps, key, pedal
-js/engine3d.js    Three.js 3D scene: engine generation, camera, shadows, sway, flames, smoke
+js/sim.js         engine model: states, RPM, boost (turbo / blower / vacuum), temperature, flames, lamps, key, pedal
+js/engine3d.js    Three.js 3D scene: cylinders and kinematics, camera, shadows, sway, flames, smoke
+js/layouts.js     engine layouts as classes: inline, V, boxer, W, radial
+js/induction.js   forced induction options and parts: air filter, turbos, Roots blower
 js/dash.js        dashboard on a 2D canvas, key and pedal
 js/bg.js          backgrounds
 js/main.js        glue: WE properties, audio, input, main loop

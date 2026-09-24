@@ -1,5 +1,5 @@
-/* Procedural 3D engine (Three.js r149): inline / V / boxer, 2..12 cylinders,
- * fixed three-quarter camera, per-cylinder exhaust stacks with flames. */
+/* Procedural 3D engine (Three.js r149): scene, camera, cylinders, kinematics, stacks and flames.
+ * The engine shape comes from a layout class (js/layouts.js), induction parts from js/induction.js. */
 (function () {
   'use strict';
   const T = THREE;
@@ -8,6 +8,7 @@
 
   // geometry constants (1 unit ~ 10 cm)
   const P = 1.0, CR = 0.34, ROD = 1.05, BORE = 0.36, DECK = 1.65;
+  const FIT_RIGHT = 0.14; // landscape: rightmost engine part in NDC (= the old inline 8), keeps it off the dash
 
   const FIRING = {
     1: [0], 2: [0, 1], 3: [0, 2, 1], 4: [0, 2, 3, 1], 5: [0, 1, 3, 4, 2], 6: [0, 4, 2, 5, 1, 3],
@@ -269,111 +270,43 @@
     }
 
     /* ------------------------------------------------------------ build */
-    build(nCyl, layout, nTurbo = 1) {
+    /* Orchestrates the build; the shape itself comes from a layout class (js/layouts.js) and the
+       induction parts (js/induction.js). `ind` is a config from Induction.parse(). */
+    build(nCyl, layoutId, ind) {
       if (this.root) { this.scene.remove(this.root); this._dispose(this.root); }
       this.flames.clear(); this.smoke.clear();
-      let n = clamp(nCyl | 0, 1, 16);
-      if (layout !== 'inline' && n % 2) n += 1;
-      if (layout !== 'inline' && n < 2) n = 2;
-      this.n = n; this.layout = layout;
-      this.nTurbo = [0, 1, 2, 4].includes(nTurbo) ? nTurbo : 1;
+      const L = window.EngineLayouts.get(layoutId);
+      this.ind = window.Induction.effective(ind && typeof ind === 'object' ? ind : window.Induction.parse(ind), L);
+      const n = this.n = L.normCyl(nCyl);
+      this.layout = L.id;
 
       const root = this.root = new T.Group();
       const eng = this.eng = new T.Group(); root.add(eng);
-      const M = this.mats = this._materials();
+      this.mats = this._materials();
+      this.spinners = []; this.compressors = []; this.bovs = []; this.stacks = [];
+      const lay = this.lay = new L(this, n);
 
-      // banks
-      let banks;
-      if (layout === 'inline') banks = [{ tilt: 0, m: n, off: 0, outer: 1 }];
-      else {
-        const ang = layout === 'boxer' ? 180 : (n === 6 || n === 12) ? 60 : (n === 10 ? 72 : 90);
-        const m = n / 2;
-        banks = [{ tilt: ang / 2, m, off: -0.21, outer: 1 }, { tilt: -ang / 2, m, off: 0.21, outer: -1 }];
-      }
-      this.banks = banks;
-      const mMax = banks[0].m;
-      const len = mMax * P + (banks.length > 1 ? 0.42 : 0) + 0.3;
-      this.frontX = len / 2; this.rearX = -len / 2;
-
-      // cylinders list and firing slots
-      const cyls = []; const order = firingOrder(mMax);
+      // banks and cylinders
+      const banks = this.banks = lay.banks();
+      lay.dims(banks);
+      this.frontX = lay.frontX; this.rearX = lay.rearX;
+      const cyls = this.cyls = [];
       banks.forEach((b, bi) => {
         const grp = new T.Group(); grp.rotation.x = b.tilt * DEG; eng.add(grp); b.grp = grp;
-        const bl = b.m * P + 0.28;
-        // block
-        const block = new T.Mesh(new T.BoxGeometry(bl, DECK - 0.3, 1.0), M.block);
-        block.position.set(b.off, 0.3 + (DECK - 0.3) / 2, 0); grp.add(block);
-        this._edges(block, grp);
-        // head + valve cover
-        const head = new T.Mesh(new T.BoxGeometry(bl - 0.04, 0.46, 1.02), M.head);
-        head.position.set(b.off, DECK + 0.23, 0); head.castShadow = true; grp.add(head);
-        const cover = new T.Mesh(this._roundBox(bl - 0.16, 0.32, 0.86, 0.1), M.cover);
-        cover.position.set(b.off, DECK + 0.46 + 0.16, 0); cover.castShadow = true; grp.add(cover);
-        for (let r = -1; r <= 1; r++) {
-          const rib = new T.Mesh(new T.BoxGeometry(bl - 0.4, 0.04, 0.05), M.head);
-          rib.position.set(b.off, DECK + 0.795, r * 0.24); grp.add(rib);
-        }
-        for (let i = 0; i < b.m; i++) {
-          const x = (i - (b.m - 1) / 2) * P + b.off;
-          // liner
-          const liner = new T.Mesh(new T.CylinderGeometry(BORE + 0.03, BORE + 0.03, 0.95, 24, 1, true), M.liner);
-          liner.position.set(x, DECK - 0.475, 0); grp.add(liner);
-          // piston + rod
-          const pm = M.piston.clone();
-          const piston = new T.Mesh(new T.CylinderGeometry(BORE, BORE, 0.3, 24), pm);
-          grp.add(piston);
-          const rod = new T.Mesh(new T.BoxGeometry(0.1, ROD, 0.14), M.steel); grp.add(rod);
-          // coil pack
-          const coil = new T.Mesh(new T.CylinderGeometry(0.07, 0.07, 0.16, 10), M.dark);
-          coil.position.set(x, DECK + 0.86, 0); grp.add(coil);
-          const coilGlow = new T.Mesh(new T.CylinderGeometry(0.035, 0.035, 0.03, 8), M.spark.clone());
-          coilGlow.position.set(x, DECK + 0.955, 0); grp.add(coilGlow);
-          // exhaust port (bank-local)
-          const port = new T.Vector3(x, DECK + 0.2, b.outer * 0.52);
-          const intake = new T.Vector3(x, DECK + 0.2, -b.outer * 0.52);
-          const slot = order.indexOf(i) * banks.length + bi;
-          cyls.push({ bank: b, bi, i, x, piston, rod, pm, coilGlow, port, intake, slot, prevCycle: 0 });
-        }
+        lay.buildBank(b, bi);
+        lay.cylinders(b, bi).forEach(cd => cyls.push(this._cylinder(b, bi, cd, lay)));
       });
-      this.cyls = cyls;
       eng.updateMatrixWorld(true);
 
-      // crankcase + oil pan
-      const ccW = layout === 'inline' ? 1.1 : layout === 'boxer' ? 1.3 : 1.2 + 0.6 * Math.sin(banks[0].tilt * DEG);
-      const cc = new T.Mesh(new T.BoxGeometry(len - 0.05, 0.95, ccW), M.block);
-      cc.position.set(0, layout === 'boxer' ? 0 : -0.2, 0); eng.add(cc); this._edges(cc, eng);
-      const pan = new T.Mesh(this._roundBox(len - 0.3, 0.42, ccW * 0.85, 0.08), M.dark2);
-      pan.position.set(-0.1, layout === 'boxer' ? -0.72 : -0.88, 0); pan.castShadow = true; eng.add(pan);
-
-      // crankshaft
-      const shaft = this.shaft = new T.Group(); eng.add(shaft);
-      const main = new T.Mesh(new T.CylinderGeometry(0.11, 0.11, len + 0.3, 16), M.steel);
-      main.rotation.z = Math.PI / 2; shaft.add(main);
-      cyls.forEach(c => {
-        const throwG = new T.Group(); throwG.position.x = c.x; eng.add(throwG); c.throwG = throwG;
-        const pin = new T.Mesh(new T.CylinderGeometry(0.09, 0.09, 0.26, 12), M.steel);
-        pin.rotation.z = Math.PI / 2; pin.position.y = CR; throwG.add(pin);
-        for (const s of [-1, 1]) {
-          const web = new T.Mesh(new T.BoxGeometry(0.07, CR + 0.42, 0.34), M.steel);
-          web.position.set(s * 0.15, (CR - 0.3) / 2, 0); throwG.add(web);
-        }
-      });
-
-      // intake plenum + runners
-      const plen = this._intake(cyls, layout, len, M);
-      // front: timing cover, pulleys, turbo
-      this._front(layout, len, M, plen);
-      // flywheel
-      const fw = this.flywheel = new T.Group(); fw.position.x = this.rearX - 0.12; eng.add(fw);
-      const disc = new T.Mesh(new T.CylinderGeometry(0.85, 0.85, 0.12, 48), M.steel); disc.rotation.z = Math.PI / 2; disc.castShadow = true; fw.add(disc);
-      for (let k = 0; k < 6; k++) {
-        const bolt = new T.Mesh(new T.BoxGeometry(0.04, 0.12, 0.12), M.dark);
-        bolt.position.set(0.07, Math.cos(k * Math.PI / 3) * 0.55, Math.sin(k * Math.PI / 3) * 0.55); fw.add(bolt);
-      }
-
-      // exhaust stacks
-      this.stacks = [];
-      cyls.forEach(c => this._stack(c, layout, M));
+      lay.buildCase();
+      lay.buildCrank(cyls);
+      const plen = lay.buildIntake(cyls);
+      lay.buildFront(plen);
+      this.parts = window.Induction.parts(this.ind);
+      this.parts.forEach(p => p.build(this, lay, plen));
+      lay.buildRear();
+      cyls.forEach(c => this._stack(c, lay.stackPath(c)));
+      lay.finish();
 
       // center & ground
       eng.updateMatrixWorld(true);
@@ -394,6 +327,39 @@
       this._applyCutaway();
       this._frame();
     }
+
+    /* one cylinder: liner, piston, rod, coil (bank-local). cd = {i, x, zo, phase, port?, intake?} from the layout */
+    _cylinder(b, bi, cd, lay) {
+      const M = this.mats, grp = b.grp, lift = lay.lift || 0, D = DECK + lift, x = cd.x, zo = cd.zo || 0;
+      const liner = new T.Mesh(new T.CylinderGeometry(BORE + 0.03, BORE + 0.03, 0.95, 24, 1, true), M.liner);
+      liner.position.set(x, D - 0.475, zo); grp.add(liner);
+      const pm = M.piston.clone();
+      const piston = new T.Mesh(new T.CylinderGeometry(BORE, BORE, 0.3, 24), pm);
+      grp.add(piston);
+      const rodL = ROD + lift;
+      const rod = new T.Mesh(new T.BoxGeometry(0.1, rodL, 0.14), M.steel); grp.add(rod);
+      const coil = new T.Mesh(new T.CylinderGeometry(0.07, 0.07, 0.16, 10), M.dark);
+      coil.position.set(x, D + 0.86, zo); grp.add(coil);
+      const coilGlow = new T.Mesh(new T.CylinderGeometry(0.035, 0.035, 0.03, 8), M.spark.clone());
+      coilGlow.position.set(x, D + 0.955, zo); grp.add(coilGlow);
+      // exhaust / intake ports (bank-local)
+      const port = cd.port || new T.Vector3(x, D + 0.2, b.outer * (b.hw + 0.02));
+      const intake = cd.intake || new T.Vector3(x, D + 0.2, -b.outer * (b.hw + 0.02));
+      return { bank: b, bi, i: cd.i, x, zo, rodL, phase: cd.phase, piston, rod, pm, coilGlow, port, intake, prevCycle: 0 };
+    }
+
+    /* pulley group spinning about the crank axis at `ratio` x crank speed */
+    _pulley(r, x, y, z, ratio) {
+      const M = this.mats, g = new T.Group(); g.position.set(x, y, z);
+      const d = new T.Mesh(new T.CylinderGeometry(r, r, 0.12, 32), M.pulley); d.rotation.z = Math.PI / 2; g.add(d);
+      for (let k = 0; k < 4; k++) {
+        const sp = new T.Mesh(new T.BoxGeometry(0.03, r * 1.7, 0.05), M.steel); sp.position.x = 0.065; sp.rotation.x = k * Math.PI / 4; g.add(sp);
+      }
+      const hub = new T.Mesh(new T.CylinderGeometry(r * 0.25, r * 0.25, 0.16, 16), M.steel); hub.rotation.z = Math.PI / 2; g.add(hub);
+      this.eng.add(g); this.spin(g, ratio);
+      return g;
+    }
+    spin(obj, ratio, off = 0) { this.spinners.push({ obj, ratio, a: 0, off }); obj.rotation.x = off; }
 
     _blobTex() {
       if (this._blob) return this._blob;
@@ -421,12 +387,14 @@
         pulley: std(0x2b2d31, 0.9, 0.35),
         turbo: std(0x9a9ea5, 0.95, 0.3),
         turboHot: std(0x6b5e55, 0.9, 0.4, { emissive: new T.Color(1.0, 0.3, 0.05), emissiveIntensity: 0 }),
+        blower: std(0xc4c8ce, 0.95, 0.28),
+        blowerCase: std(0xb4b8be, 0.95, 0.3),   // ghosts in cutaway mode so the rotors show
         edge: new T.LineBasicMaterial({ color: 0x9aa3ad, transparent: true, opacity: 0.35 }),
       };
     }
 
-    _edges(mesh, parent) {
-      const e = new T.LineSegments(new T.EdgesGeometry(mesh.geometry), this.mats.edge);
+    _edges(mesh, parent, thresholdDeg) {
+      const e = new T.LineSegments(new T.EdgesGeometry(mesh.geometry, thresholdDeg), this.mats.edge);
       e.position.copy(mesh.position); e.rotation.copy(mesh.rotation); parent.add(e);
       (this._edgeList = this._edgeList || []).push(e);
       mesh.userData.ghost = true;
@@ -445,121 +413,9 @@
 
     _toEng(bank, v) { return v.clone().applyMatrix4(bank.grp.matrix); }
 
-    _intake(cyls, layout, len, M) {
-      const eng = this.eng;
-      let plenPos, plenSize;
-      if (layout === 'inline') { plenPos = new T.Vector3(-0.05, DECK + 0.1, -1.15); plenSize = [len - 0.5, 0.42, 0.5]; }
-      else if (layout === 'boxer') { plenPos = new T.Vector3(-0.05, 1.05, 0); plenSize = [len - 0.5, 0.36, 0.7]; }
-      else {
-        const t = this.banks[0].tilt * DEG;
-        plenPos = new T.Vector3(-0.05, Math.cos(t) * (DECK + 0.35) + 0.25, 0); plenSize = [len - 0.4, 0.4, 0.62];
-      }
-      const plen = new T.Mesh(this._roundBox(plenSize[0], plenSize[1], plenSize[2], 0.12), M.head);
-      plen.position.copy(plenPos); plen.castShadow = true; eng.add(plen);
-      // throttle body at the front
-      const tb = new T.Mesh(new T.CylinderGeometry(0.2, 0.2, 0.3, 24), M.steel);
-      tb.rotation.z = Math.PI / 2; tb.position.set(plenPos.x + plenSize[0] / 2 + 0.15, plenPos.y, plenPos.z); eng.add(tb);
-      cyls.forEach(c => {
-        const a = this._toEng(c.bank, c.intake);
-        const outDir = this._toEng(c.bank, new T.Vector3(0, 0, -c.bank.outer)).sub(this._toEng(c.bank, new T.Vector3())).normalize();
-        const b = new T.Vector3(a.x, plenPos.y - plenSize[1] * 0.2, plenPos.z + Math.sign(a.z - plenPos.z) * plenSize[2] * 0.35);
-        const mid = a.clone().addScaledVector(outDir, 0.25);
-        const curve = new T.CatmullRomCurve3([a, mid, b]);
-        const tube = new T.Mesh(new T.TubeGeometry(curve, 16, 0.085, 10, false), M.head);
-        tube.castShadow = true; eng.add(tube);
-      });
-      this.tbPos = new T.Vector3(plenPos.x + plenSize[0] / 2 + 0.3, plenPos.y, plenPos.z);
-      return { pos: plenPos, size: plenSize };
-    }
-
-    _front(layout, len, M, plen) {
-      const eng = this.eng, fx = this.frontX;
-      const topY = layout === 'boxer' ? 0.5 : (layout === 'inline' ? DECK : Math.cos(this.banks[0].tilt * DEG) * DECK);
-      const cover = new T.Mesh(new T.BoxGeometry(0.08, topY + 0.6, layout === 'inline' ? 0.9 : 1.1), M.dark2);
-      cover.position.set(fx + 0.02, (topY + 0.6) / 2 - 0.5, 0); eng.add(cover);
-      this.pulleys = [];
-      const pulley = (r, y, z, ratio) => {
-        const g = new T.Group(); g.position.set(fx + 0.14, y, z);
-        const d = new T.Mesh(new T.CylinderGeometry(r, r, 0.12, 32), M.pulley); d.rotation.z = Math.PI / 2; g.add(d);
-        for (let k = 0; k < 4; k++) {
-          const sp = new T.Mesh(new T.BoxGeometry(0.03, r * 1.7, 0.05), M.steel); sp.position.x = 0.065; sp.rotation.x = k * Math.PI / 4; g.add(sp);
-        }
-        const hub = new T.Mesh(new T.CylinderGeometry(r * 0.25, r * 0.25, 0.16, 16), M.steel); hub.rotation.z = Math.PI / 2; g.add(hub);
-        eng.add(g); this.pulleys.push({ g, ratio });
-      };
-      pulley(0.36, 0, 0, 1);
-      pulley(0.22, Math.min(topY, 1.1), 0, 1.6);
-      pulley(0.15, 0.55, layout === 'inline' ? -0.62 : -0.7, 2.4);
-      this._turbos(layout, M);
-    }
-
-    /* Turbos low at the front: one per side on V/boxer (camera side first), all on the exhaust side for inline.
-       Size follows the engine (V8 = 1.0, V12 = 1.5); twin/quad use the same size as a single, they just multiply.
-       No turbos -> an air filter on the throttle body. */
-    _turbos(layout, M) {
-      const eng = this.eng, nT = this.nTurbo, tb = this.tbPos.clone();
-      this.compressors = []; this.bovs = [];
-      if (!nT) {
-        const f = new T.Group(); f.position.set(tb.x + 0.17, tb.y, tb.z); eng.add(f);
-        const el = new T.Mesh(new T.CylinderGeometry(0.3, 0.3, 0.24, 36, 1, true), M.dark2); el.rotation.z = Math.PI / 2; f.add(el);
-        for (let k = 0; k < 28; k++) {           // pleats
-          const a = k / 28 * Math.PI * 2, p = new T.Mesh(new T.BoxGeometry(0.22, 0.02, 0.03), M.dark);
-          p.position.set(0, Math.cos(a) * 0.305, Math.sin(a) * 0.305); p.rotation.x = -a; f.add(p);
-        }
-        for (const x of [-0.13, 0.13]) {
-          const lid = new T.Mesh(new T.CylinderGeometry(0.34, 0.34, 0.03, 36), M.steel); lid.rotation.z = Math.PI / 2; lid.position.x = x; f.add(lid);
-        }
-        const nut = new T.Mesh(new T.CylinderGeometry(0.06, 0.06, 0.05, 6), M.steel); nut.rotation.z = Math.PI / 2; nut.position.x = 0.16; f.add(nut);
-        return;
-      }
-      const s = clamp(this.n / 8, 0.7, 1.6);
-      const inl = layout === 'inline';
-      const tz = inl ? Math.max(0.8 + 0.4 * (s - 1), 0.58 + 0.39 * s) : 1.05 + 0.4 * (s - 1); // inline: clear of the block side
-      const tx = this.frontX + 0.1 + 0.3 * s, gap = 0.85 * s;
-      const sides = layout === 'inline' ? [1] : [1, -1];
-      const per = nT / sides.length;
-      for (let j = 0; j < per; j++) for (const sg of sides) {
-        if (sides.length * j + (sg > 0 ? 0 : 1) >= nT) continue;
-        const col = j % 2, row = Math.floor(j / 2);
-        // second column: outward on V/boxer; along the block on inline (outward would hide it behind the first)
-        const x = inl ? tx - col * gap : tx, y = 0.45 + row * gap, z = sg * (tz + (inl ? 0 : col * gap));
-        const tg = new T.Group(); tg.position.set(x, y, z); tg.scale.setScalar(s); eng.add(tg);
-        const snail = new T.Mesh(new T.TorusGeometry(0.26, 0.13, 14, 32), M.turbo); snail.rotation.y = Math.PI / 2; tg.add(snail);
-        const hot = new T.Mesh(new T.TorusGeometry(0.22, 0.12, 12, 28), M.turboHot); hot.rotation.y = Math.PI / 2; hot.position.x = -0.32; tg.add(hot);
-        const core = new T.Mesh(new T.CylinderGeometry(0.14, 0.14, 0.3, 16), M.steel); core.rotation.z = Math.PI / 2; core.position.x = -0.16; tg.add(core);
-        const inlet = new T.Mesh(new T.CylinderGeometry(0.2, 0.2, 0.22, 24, 1, true), M.turbo); inlet.rotation.z = Math.PI / 2; inlet.position.x = 0.16; tg.add(inlet);
-        const wheel = new T.Group(); wheel.position.x = 0.18; tg.add(wheel); this.compressors.push(wheel);
-        for (let k = 0; k < 8; k++) {
-          const bl = new T.Mesh(new T.BoxGeometry(0.02, 0.17, 0.04), M.steel);
-          bl.position.set(0, Math.cos(k * Math.PI / 4) * 0.085, Math.sin(k * Math.PI / 4) * 0.085); bl.rotation.x = k * Math.PI / 4 + 0.4; wheel.add(bl);
-        }
-        // charge pipe turbo -> throttle body
-        const a = new T.Vector3(x, y + 0.3 * s, z), m1 = new T.Vector3(x + 0.1, Math.max(1.05, y + 0.6 * s), z * 0.8);
-        const curve = new T.CatmullRomCurve3([a, m1, new T.Vector3(tb.x + 0.35, tb.y, tb.z + (z - tb.z) * 0.3), tb]);
-        const pipe = new T.Mesh(new T.TubeGeometry(curve, 30, 0.07 + 0.03 * s, 12, false), M.steel); pipe.castShadow = true; eng.add(pipe);
-        this.bovs.push(m1);
-      }
-    }
-
-    _stack(c, layout, M) {
-      const b = c.bank;
-      const p0 = this._toEng(b, c.port);
-      const o = this._toEng(b, new T.Vector3()); // bank origin
-      const out = this._toEng(b, new T.Vector3(0, 0, b.outer)).sub(o).normalize();
-      const axis = this._toEng(b, new T.Vector3(0, 1, 0)).sub(o).normalize();
-      const up = new T.Vector3(0, 1, 0), back = new T.Vector3(-1, 0, 0);
-      let p1, p2;
-      if (layout === 'boxer') {
-        p1 = p0.clone().addScaledVector(out, 0.22);
-        p2 = p1.clone().addScaledVector(axis, 0.95).addScaledVector(out, 0.05);
-      } else {
-        const outH = new T.Vector3(0, 0, Math.sign(out.z) || 1);
-        p1 = p0.clone().addScaledVector(outH, 0.24).addScaledVector(up, -0.02);
-        p2 = p1.clone().addScaledVector(outH, 0.1).addScaledVector(up, 0.3);
-      }
-      const rise = Math.max(0.45, (this._topY() + 0.2) - p2.y);
-      const p3 = p2.clone().addScaledVector(up, rise * 0.6).addScaledVector(back, 0.06);
-      const p4 = p2.clone().addScaledVector(up, rise).addScaledVector(back, 0.2).addScaledVector(p2.clone().sub(p0).setY(0).normalize(), 0.12);
+    /* exhaust stack along the layout's path (engine space); the tip points along p4 - p3 */
+    _stack(c, pts) {
+      const M = this.mats, [p0, p1, p2, p3, p4] = pts;
       const curve = new T.CatmullRomCurve3([p0, p1, p2, p3, p4]);
       const tube = new T.Mesh(new T.TubeGeometry(curve, 36, 0.085, 10, false), M.header);
       tube.castShadow = true; this.eng.add(tube);
@@ -594,20 +450,16 @@
       this.stacks.push(c);
     }
 
-    _topY() {
-      if (this.layout === 'inline') return DECK + 0.95;
-      if (this.layout === 'boxer') return 1.35;
-      return Math.cos(this.banks[0].tilt * DEG) * (DECK + 0.9) + 0.4;
-    }
-
     _applyCutaway() {
-      const M = this.mats, on = this.cutaway;
-      M.block.transparent = on; M.block.opacity = on ? 0.2 : 1; M.block.depthWrite = !on;
-      M.block.side = on ? T.DoubleSide : T.FrontSide; M.block.needsUpdate = true;
+      const M = this.mats, on = this.cutaway, ghosts = [[M.block, 0.2], [M.blowerCase, 0.3]];
+      for (const [m, op] of ghosts) {
+        m.transparent = on; m.opacity = on ? op : 1; m.depthWrite = !on;
+        m.side = on ? T.DoubleSide : T.FrontSide; m.needsUpdate = true;
+      }
       (this._edgeList || []).forEach(e => e.visible = on);
       this.cyls.forEach(c => { c.piston.visible = on; c.rod.visible = on; c.throwG.visible = on; });
       M.liner.visible = on;
-      this.root.traverse(o => { if (o.isMesh && o.material === M.block) { o.castShadow = !on; o.receiveShadow = !on; } });
+      this.root.traverse(o => { if (o.isMesh && (o.material === M.block || o.material === M.blowerCase)) { o.castShadow = !on; o.receiveShadow = !on; } });
     }
     setCutaway(on) { this.cutaway = on; if (this.root) this._applyCutaway(); }
     setAccent(c) { this.accent.copy(c); if (this.mats) this.mats.cover.color.copy(c); }
@@ -631,6 +483,7 @@
       const w = this.w, h = this.h, cam = this.camera;
       const landscape = w / h >= 1.25;
       const box = this.box.clone(); box.max.y += 1.1; // headroom for flames
+      if (this.lay && this.lay.framePad) box.expandByScalar(this.lay.framePad); // flames in every direction (radial)
       const center = box.getCenter(new T.Vector3());
       const radius = box.getSize(new T.Vector3()).length() / 2;
       const tanV = Math.tan(cam.fov * DEG / 2);
@@ -638,14 +491,22 @@
       if (landscape) { fw = 0.54; fh = 0.92; sx = -0.2; sy = 0; } else { fw = 0.95; fh = 0.46; sx = 0; sy = 0.25; }
       const shX = -sx * w, shY = -sy * h;
       const fullW = w + 2 * Math.abs(shX), fullH = h + 2 * Math.abs(shY);
-      const dist = radius * 0.86 * (fullH / h) / (tanV * Math.min(fh, fw * w / h));
+      let dist = radius * 0.86 * (fullH / h) / (tanV * Math.min(fh, fw * w / h));
       cam.position.copy(center).addScaledVector(this.camDir, dist);
       cam.lookAt(center);
-      this.camBase = cam.position.clone();
       cam.aspect = fullW / fullH;
       // keep vertical fov relative to full height
       cam.setViewOffset(fullW, fullH, shX > 0 ? 2 * shX : 0, shY > 0 ? 0 : 2 * Math.abs(shY), w, h);
       cam.updateProjectionMatrix();
+      // long engines (inline 32, V32...) reach under the dash with the sphere fit: back off until the
+      // projected parts stay left of FIT_RIGHT
+      for (let it = 0; landscape && it < 4; it++) {
+        const c0 = center.clone().project(cam), k = (this._extent().maxX - c0.x) / (FIT_RIGHT - c0.x);
+        if (!(k > 1.005)) break;
+        dist *= k;
+        cam.position.copy(center).addScaledVector(this.camDir, dist); cam.lookAt(center);
+      }
+      this.camBase = cam.position.clone();
       this.pxScale.value = (fullH * this.renderer.getPixelRatio() / 2) / tanV;
       // shadow camera
       const k = this.key; k.target.position.copy(center); k.position.copy(center).add(new T.Vector3(-3, 11, 6));
@@ -653,28 +514,45 @@
       sc.left = -R; sc.right = R; sc.top = R; sc.bottom = -R; sc.near = 0.5; sc.far = 40; sc.updateProjectionMatrix();
     }
 
+    /* NDC extent of the engine, from the corners of every mesh's bounding box */
+    _extent() {
+      const cam = this.camera, ex = { minX: 1e9, maxX: -1e9, minY: 1e9, maxY: -1e9 }, v = new T.Vector3();
+      cam.updateMatrixWorld();
+      this.eng.updateMatrixWorld(true);
+      this.eng.traverse(o => {
+        if (!o.isMesh) return;
+        const g = o.geometry; if (!g.boundingBox) g.computeBoundingBox();
+        const bb = g.boundingBox;
+        for (let i = 0; i < 8; i++) {
+          v.set(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z).applyMatrix4(o.matrixWorld).project(cam);
+          if (v.x < ex.minX) ex.minX = v.x; if (v.x > ex.maxX) ex.maxX = v.x; if (v.y < ex.minY) ex.minY = v.y; if (v.y > ex.maxY) ex.maxY = v.y;
+        }
+      });
+      return ex;
+    }
+
     /* ------------------------------------------------------------ frame */
     update(dt, sim, animSpeed, quality) {
       if (!this.root) return;
       // one NaN in these accumulators (e.g. from a bad setting) would hide the engine for good
       for (const k of ['crank', 'heat', 'flash', 'rock', 'lean', 'vibA', 'ph1', 'ph2', 'ph3', 'phI']) if (!isFinite(this[k])) this[k] = 0;
-      const n = this.n, rpm = sim.rpm;
+      for (const s of this.spinners) if (!isFinite(s.a)) s.a = 0;
+      const rpm = sim.rpm;
       const running = sim.state === 'running' || sim.state === 'stalling';
       // crank (visual speed scaled down to avoid aliasing)
       const visK = 0.085 * animSpeed;
-      const prevCrank = this.crank;
-      this.crank = (this.crank + rpm / 60 * 360 * visK * dt) % 720;
+      const dCrank = rpm / 60 * 360 * visK * dt;
+      this.crank = (this.crank + dCrank) % 720;
       const crank = this.crank;
       this.cyls.forEach(c => {
         const b = c.bank;
-        const cyc = ((crank - c.slot * 720 / n) % 720 + 720) % 720;
+        // slider-crank; zo = bore offset from the crank plane (W rows), phase = firing offset from the layout
+        const cyc = ((crank - c.phase) % 720 + 720) % 720;
         const beta = cyc * DEG;
-        const sb = Math.sin(beta), cb = Math.cos(beta);
-        const s = CR * cb + Math.sqrt(ROD * ROD - CR * CR * sb * sb);
-        c.piston.position.set(c.x, s + 0.08, 0);
-        const py = CR * cb, pz = CR * sb;
-        const dy = s - py, dz = -pz;
-        c.rod.position.set(c.x, (s + py) / 2, pz / 2);
+        const py = CR * Math.cos(beta), pz = CR * Math.sin(beta);
+        const dz = c.zo - pz, dy = Math.sqrt(c.rodL * c.rodL - dz * dz), s = py + dy;
+        c.piston.position.set(c.x, s + 0.08, c.zo);
+        c.rod.position.set(c.x, (s + py) / 2, (pz + c.zo) / 2);
         c.rod.rotation.x = Math.atan2(dz, dy);
         c.throwG.rotation.x = (cyc + b.tilt) * DEG;
         // combustion glow
@@ -685,9 +563,8 @@
         if (c.prevCycle < 170 && cyc >= 170 && rpm > 200) this._pulse(c, sim);
         c.prevCycle = cyc;
       });
-      this.shaft.rotation.x = crank * DEG;
-      this.pulleys.forEach(p => p.g.rotation.x = crank * DEG * p.ratio);
-      this.flywheel.rotation.x = crank * DEG;
+      // accumulated per part, so ratios != 1 don't jump when the 720 deg crank angle wraps
+      this.spinners.forEach(s => { s.a = (s.a + dCrank * s.ratio) % 360; s.obj.rotation.x = s.a * DEG + s.off; });
       this.compressors.forEach(w => w.rotation.x += dt * Math.max(0, sim.boost + 0.7) * 40);
 
       // events
@@ -821,5 +698,7 @@
     render() { this.renderer.render(this.scene, this.camera); }
   }
 
+  // shared with js/layouts.js and js/induction.js
+  Engine3D.GEO = { P, CR, ROD, BORE, DECK, DEG, clamp, firingOrder };
   window.Engine3D = Engine3D;
 })();

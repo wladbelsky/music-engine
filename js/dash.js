@@ -72,6 +72,8 @@
       g.fillStyle = '#7d848c'; g.font = `500 ${R * 0.065}px "Segoe UI", Arial, sans-serif`;
       g.fillText('RPM × 1000', cx, cy + R * 0.3);
       g.fillStyle = '#9aa1a9'; g.font = `700 ${R * 0.075}px "Segoe UI", Arial, sans-serif`;
+      const lw = g.measureText(this.label).width; // long ones: "RADIAL 27 SUPERCHARGED"
+      if (lw > R * 1.1) g.font = `700 ${R * 0.075 * R * 1.1 / lw}px "Segoe UI", Arial, sans-serif`;
       g.fillText(this.label, cx, cy - R * 0.3);
 
       // small gauges
