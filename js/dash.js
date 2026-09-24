@@ -17,11 +17,40 @@
     { key: 'overboost', text: 'OVERBOOST', col: '#ffb020' },
   ];
 
+  /* scales per engine kind (layout static `kind`). The sim always runs in rpm; `map` turns that into what the
+     tach shows. The right small gauge shows sim.boost in the kind's own units. */
+  const IDLE = () => window.ENGINE_IDLE || 850;
+  const PROFILES = {
+    piston: red => ({
+      tach: { max: Math.ceil((red + 1000) / 1000) * 1000, red, minor: 250, half: 500, major: 1000, text: v => String(v / 1000),
+        title: 'RPM × 1000', map: r => r, digits: r => String(Math.round(r / 10) * 10).padStart(4, ' ') },
+      temp: { title: 'TEMP °C' },
+      boost: { min: -1, max: 2, labels: [-1, 0, 1, 2], danger: 1.5, title: 'BOOST bar', text: v => (v >= 0 ? '+' : '') + v.toFixed(2) },
+      lamps: {},
+    }),
+    // a mill engine: redline = 200 rpm
+    steam: red => ({
+      tach: { max: 250, red: 200, minor: 10, half: 50, major: 50, text: String,
+        title: 'RPM', map: r => r * 200 / red, digits: v => String(Math.round(v)).padStart(3, ' ') },
+      temp: { title: 'TEMP °C' },
+      boost: { min: 0, max: 16, labels: [0, 4, 8, 12, 16], danger: 13, title: 'STEAM bar', text: v => v.toFixed(1) },
+      lamps: { overboost: 'SAFETY VLV' },
+    }),
+    // turbine: % rpm, ground idle ~60 %, 100 % at the (internal) redline
+    jet: red => ({
+      tach: { max: 110, red: 100, minor: 2, half: 10, major: 20, text: String, title: '% RPM',
+        map: r => r <= IDLE() ? r / IDLE() * 60 : 60 + (r - IDLE()) / Math.max(1, red - IDLE()) * 40, digits: v => v.toFixed(1).padStart(5, ' ') },
+      temp: { title: 'OIL °C' },
+      boost: { min: 0, max: 10, labels: [0, 2, 4, 6, 8, 10], danger: 8.5, title: 'EGT ×100°C', text: v => String(Math.round(v * 100)) },
+      lamps: { stall: 'FLAMEOUT', overboost: 'EGT HIGH', battery: 'STARTER' },
+    }),
+  };
+
   class Dash {
     constructor(canvas) {
       this.c = canvas; this.ctx = canvas.getContext('2d');
       this.st = document.createElement('canvas'); this.sctx = this.st.getContext('2d');
-      this.redline = 7000; this.color = '#ff5a1a'; this.label = 'V8 TURBO';
+      this.redline = 7000; this.color = '#ff5a1a'; this.label = 'V8 TURBO'; this.kind = 'piston';
       this.showBpm = true; this.needle = 0; this.tempN = 70; this.boostN = 0;
       this.lampLvl = {}; LAMPS.forEach(l => this.lampLvl[l.key] = 0);
       this.showControls = true; this.keyAng = -50; this.pedalN = 0; this.pedalHover = false;
@@ -37,7 +66,7 @@
     }
     set(opts) {
       let dirty = false;
-      for (const k of ['redline', 'color', 'label', 'showBpm', 'showControls', 'showRadio', 'odoUnits']) if (opts[k] !== undefined && opts[k] !== this[k]) { this[k] = opts[k]; dirty = true; }
+      for (const k of ['kind', 'redline', 'color', 'label', 'showBpm', 'showControls', 'showRadio', 'odoUnits']) if (opts[k] !== undefined && opts[k] !== this[k]) { this[k] = opts[k]; dirty = true; }
       if (dirty && this.w) this._static();
     }
 
@@ -48,7 +77,8 @@
       const rad = this.showRadio;
       if (w / h >= 1.25) { this.R = Math.min(0.155 * w, (rad ? 0.232 : 0.24) * h); this.cx = 0.76 * w; this.cy = (rad ? 0.35 : 0.385) * h; }
       else { this.R = Math.min(0.28 * w, (rad ? 0.13 : 0.14) * h); this.cx = 0.5 * w; this.cy = (rad ? 0.615 : 0.64) * h; }
-      this.maxRpm = Math.ceil((this.redline + 1000) / 1000) * 1000;
+      this.prof = (PROFILES[this.kind] || PROFILES.piston)(Math.max(500, this.redline || 7000));
+      this.maxRpm = this.prof.tach.max;
     }
 
     _ang(v, max, a0, sweep) { return a0 + clamp(v / max, 0, 1.02) * sweep; }
@@ -59,23 +89,23 @@
       g.setTransform(d, 0, 0, d, 0, 0); g.clearRect(0, 0, this.w, this.h);
       this._bezel(g, cx, cy, R);
       // tach ticks
-      const max = this.maxRpm, a0 = 0.75 * Math.PI, sw = 1.5 * Math.PI;
+      const tc = this.prof.tach, max = tc.max, a0 = 0.75 * Math.PI, sw = 1.5 * Math.PI;
       g.lineCap = 'butt';
       g.strokeStyle = '#b3141a'; g.lineWidth = R * 0.075;
-      g.beginPath(); g.arc(cx, cy, R * 0.9, this._ang(this.redline, max, a0, sw), a0 + sw); g.stroke();
-      for (let v = 0; v <= max; v += 250) {
-        const a = this._ang(v, max, a0, sw), major = v % 1000 === 0, half = v % 500 === 0;
+      g.beginPath(); g.arc(cx, cy, R * 0.9, this._ang(tc.red, max, a0, sw), a0 + sw); g.stroke();
+      for (let v = 0; v <= max; v += tc.minor) {
+        const a = this._ang(v, max, a0, sw), major = v % tc.major === 0, half = v % tc.half === 0;
         const r1 = R * 0.95, r0 = R * (major ? 0.8 : half ? 0.86 : 0.89);
-        g.strokeStyle = v >= this.redline ? '#ff4a3a' : '#d9dde2'; g.lineWidth = major ? R * 0.022 : R * 0.009;
+        g.strokeStyle = v >= tc.red ? '#ff4a3a' : '#d9dde2'; g.lineWidth = major ? R * 0.022 : half ? R * 0.013 : R * 0.009;
         g.beginPath(); g.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); g.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); g.stroke();
         if (major) {
-          g.fillStyle = v >= this.redline ? '#ff4a3a' : '#e8ebef';
+          g.fillStyle = v >= tc.red ? '#ff4a3a' : '#e8ebef';
           g.font = `600 ${R * 0.13}px "Segoe UI", Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-          g.fillText(String(v / 1000), cx + Math.cos(a) * R * 0.66, cy + Math.sin(a) * R * 0.66);
+          g.fillText(tc.text(v), cx + Math.cos(a) * R * 0.66, cy + Math.sin(a) * R * 0.66);
         }
       }
       g.fillStyle = '#7d848c'; g.font = `500 ${R * 0.065}px "Segoe UI", Arial, sans-serif`;
-      g.fillText('RPM × 1000', cx, cy + R * 0.3);
+      g.fillText(tc.title, cx, cy + R * 0.3);
       g.fillStyle = '#9aa1a9'; g.font = `700 ${R * 0.075}px "Segoe UI", Arial, sans-serif`;
       const lw = g.measureText(this.label).width; // long ones: "BOXER 32 SUPERCHARGED"
       if (lw > R * 1.1) g.font = `700 ${R * 0.075 * R * 1.1 / lw}px "Segoe UI", Arial, sans-serif`;
@@ -85,14 +115,17 @@
       const sr = R * 0.36;
       this.tempG = { x: cx - R * 1.2, y: cy + R * 1.02, r: sr };
       this.boostG = { x: cx + R * 1.2, y: cy + R * 1.02, r: sr };
-      this._smallStatic(g, this.tempG, 60, 130, [60, 80, 100, 120], 110, 'TEMP °C');
-      this._smallStatic(g, this.boostG, -1, 2, [-1, 0, 1, 2], 1.5, 'BOOST bar');
+      const bs = this.prof.boost;
+      this._smallStatic(g, this.tempG, 60, 130, [60, 80, 100, 120], 110, this.prof.temp.title);
+      this._smallStatic(g, this.boostG, bs.min, bs.max, bs.labels, bs.danger, bs.title);
       this._odoStatic(g);
 
       // warning lamps: round lamp + screwed metal nameplate
       const cellW = R * 0.74, cellH = R * 0.24, gapX = R * 0.035, gapY = R * 0.07;
       const totalW = 4 * cellW + 3 * gapX, x0 = cx - totalW / 2, y0 = cy + R * 1.58;
-      this.lampRects = LAMPS.map((l, i) => {
+      const lt = this.prof.lamps;
+      this.lampRects = LAMPS.map((l0, i) => {
+        const l = lt[l0.key] ? Object.assign({}, l0, { text: lt[l0.key] }) : l0;
         const x = x0 + (i % 4) * (cellW + gapX), y = y0 + Math.floor(i / 4) * (cellH + gapY);
         const lr = cellH * 0.42;
         const L = { l, rgb: rgbOf(l.col), lx: x + lr, ly: y + cellH / 2, lr };
@@ -104,13 +137,15 @@
       g.font = `800 ${fs0}px "Segoe UI", Arial, sans-serif`;
       this.lampRects.forEach(L => { const tw = L.pw - L.ph * 0.95, m = g.measureText(L.l.text).width; if (m > tw) fs = Math.min(fs, fs0 * tw / m); });
       this.lampRects.forEach((L, i) => { L.fs = fs; this._plate(g, L, i); this._lampBezel(g, L); });
+      this.lampBox = { x: x0, y: y0, w: totalW, h: 2 * cellH + gapY };
       this.radio = null;
       if (this.showRadio) this._radioStatic(g, x0, y0 + 2 * cellH + gapY, totalW);
       // shift light housing
       const n = 10, sp = R * 0.19;
       this.shift = []; for (let i = 0; i < n; i++) this.shift.push({ x: cx + (i - (n - 1) / 2) * sp, y: cy - R * 1.22 });
       g.fillStyle = '#0d0e10'; g.strokeStyle = '#2c3035'; g.lineWidth = 2;
-      this._rr(g, cx - n * sp / 2 - sp * 0.2, cy - R * 1.22 - sp * 0.45, n * sp + sp * 0.4, sp * 0.9, sp * 0.45); g.fill(); g.stroke();
+      this.shiftBox = { x: cx - n * sp / 2 - sp * 0.2, y: cy - R * 1.22 - sp * 0.45, w: n * sp + sp * 0.4, h: sp * 0.9 };
+      this._rr(g, this.shiftBox.x, this.shiftBox.y, this.shiftBox.w, this.shiftBox.h, sp * 0.45); g.fill(); g.stroke();
       // ignition key + throttle pedal
       this.keyC = { x: cx - R * 1.5, y: cy - R * 0.93, r: R * 0.27 };
       this.pedalR = { x: cx + R * 1.5 - R * 0.17, y: cy - R * 1.24, w: R * 0.34, h: R * 0.62 };
@@ -566,6 +601,22 @@
       g.fillStyle = gr; this._rr(g, G.x, G.y, G.w, G.h, G.h * 0.12); g.fill();
     }
 
+    /* what the cluster covers, in CSS px (circles {x, y, r}, rects {x, y, w, h}): Engine3D keeps the engine out of it */
+    keepOut() {
+      if (!this.w || !this.lampBox) return [];
+      const R = this.R, out = [{ x: this.cx, y: this.cy, r: R * 1.1 }, this.shiftBox, this.lampBox];
+      for (const G of [this.tempG, this.boostG]) out.push({ x: G.x, y: G.y, r: G.r * 1.1 });
+      if (this.odoHit) out.push(this.odoHit);
+      if (this.radio) out.push({ x: this.radio.x, y: this.radio.y, w: this.radio.w, h: this.radio.h });
+      if (this.showControls) {
+        const K = this.keyC, P = this.pedalR;
+        out.push({ x: K.x, y: K.y, r: K.r * 1.75 });                                   // OFF / ON / START around it
+        out.push({ x: K.x - K.r * 0.8, y: K.y + K.r * 1.2, w: K.r * 1.6, h: K.r * 0.6 }); // IGNITION
+        out.push({ x: P.x - P.w * 0.3, y: P.y, w: P.w * 1.6, h: P.h * 1.3 });           // pedal + THROTTLE
+      }
+      return out.map(s => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, Math.round(v * 10) / 10])));
+    }
+
     hitTest(x, y) {
       const O = this.odoHit;                               // works with the key/pedal hidden too: resets TRIP
       if (O && x > O.x && x < O.x + O.w && y > O.y && y < O.y + O.h) return 'odo';
@@ -600,15 +651,16 @@
       g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, this.c.width, this.c.height);
       g.drawImage(this.st, 0, 0);
       g.setTransform(d, 0, 0, d, 0, 0);
-      const max = this.maxRpm, a0 = 0.75 * Math.PI, sw = 1.5 * Math.PI;
-      // needle smoothing (needle has its own mass)
+      const tc = this.prof.tach, max = tc.max, a0 = 0.75 * Math.PI, sw = 1.5 * Math.PI;
+      // needle smoothing (needle has its own mass); in the tach's own units
       const off = sim.state === 'off';
-      this.needle += (sim.rpm - this.needle) * (1 - Math.exp(-dt * 18));
+      this.needle += (tc.map(sim.rpm) - this.needle) * (1 - Math.exp(-dt * 18));
+      if (!isFinite(this.needle)) this.needle = 0;
       const rpm = this.needle;
       // lit arc
       g.save(); g.lineCap = 'round';
       g.strokeStyle = this.color; g.shadowColor = this.color; g.shadowBlur = R * 0.12; g.lineWidth = R * 0.02;
-      if (rpm > 20 && !off) { g.beginPath(); g.arc(cx, cy, R * 0.985, a0, this._ang(rpm, max, a0, sw)); g.stroke(); }
+      if (rpm > max * 0.002 && !off) { g.beginPath(); g.arc(cx, cy, R * 0.985, a0, this._ang(rpm, max, a0, sw)); g.stroke(); }
       g.restore();
       this._needle(g, cx, cy, this._ang(rpm, max, a0, sw), R * 0.88, R * 0.16, R * 0.028, off ? '#4a3a33' : sim.limiter ? '#ffffff' : this.color);
       this._hub(g, cx, cy, R * 0.1);
@@ -618,7 +670,7 @@
       if (!off) {
       g.font = `700 ${R * 0.17}px Consolas, "Courier New", monospace`;
       g.fillStyle = sim.rpm > this.redline * 0.93 ? '#ff4a3a' : '#f2f4f6';
-      g.fillText(String(Math.round(sim.rpm / 10) * 10).padStart(4, ' '), cx, cy + R * 0.52);
+      g.fillText(tc.digits(tc.map(sim.rpm)), cx, cy + R * 0.52);
       if (this.showBpm) {
         g.font = `600 ${R * 0.07}px Consolas, "Courier New", monospace`;
         g.fillStyle = '#8a929b';
@@ -645,12 +697,14 @@
       // small gauges
       this.tempN += (sim.temp - this.tempN) * (1 - Math.exp(-dt * 4));
       this.boostN += (sim.boost - this.boostN) * (1 - Math.exp(-dt * 10));
-      for (const [G, v, dg] of [[this.tempG, this.tempN, 110], [this.boostG, this.boostN, 1.5]]) {
+      if (!isFinite(this.boostN)) this.boostN = 0;
+      const bs = this.prof.boost;
+      for (const [G, v, dg] of [[this.tempG, this.tempN, 110], [this.boostG, this.boostN, bs.danger]]) {
         const a = G.a0 + clamp((v - G.min) / (G.max - G.min), 0, 1) * G.sw;
         this._needle(g, G.x, G.y, a, G.r * 0.82, G.r * 0.15, G.r * 0.05, off ? '#4a3a33' : v > dg ? '#ff3322' : this.color);
         this._hub(g, G.x, G.y, G.r * 0.12);
         g.font = `700 ${G.r * 0.22}px Consolas, monospace`; g.fillStyle = '#e6e9ec';
-        if (!off) g.fillText(G === this.tempG ? Math.round(v) : (v >= 0 ? '+' : '') + v.toFixed(2), G.x, G.y + G.r * 0.36);
+        if (!off) g.fillText(G === this.tempG ? Math.round(v) : bs.text(v), G.x, G.y + G.r * 0.36);
       }
 
       // warning lamps

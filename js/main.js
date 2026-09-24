@@ -37,18 +37,24 @@
   const parseColor = s => s.split(' ').map(Number);
   const layoutCls = () => EngineLayouts.get(S.layout);
   const induction = () => Induction.effective(S.induction, layoutCls()); // what this layout can carry
+  const kind = () => layoutCls().kind || 'piston';                       // piston | steam | jet
+  // steam and jet run the sim on a fixed internal scale; the dash shows their own units (js/dash.js)
+  const redline = () => kind() === 'piston' ? S.redline : 7000;
   const engineLabel = () => { const L = layoutCls(); return L.label(L.normCyl(S.cylinders)) + Induction.suffix(induction()); };
 
   function applySettings() {
     audio.gain = S.sensitivity;
     const ind = induction();
-    sim.settings.redline = S.redline; sim.settings.turbos = ind.turbos; sim.settings.blower = ind.blower; sim.settings.flameThr = S.flameThr; sim.settings.stallDelay = S.stallDelay;
+    sim.settings.kind = kind();
+    sim.settings.redline = redline(); sim.settings.turbos = ind.turbos; sim.settings.blower = ind.blower; sim.settings.flameThr = S.flameThr; sim.settings.stallDelay = S.stallDelay;
     eng3d.setAccent(new THREE.Color(S.accent[0], S.accent[1], S.accent[2]));
     eng3d.setCutaway(S.cutaway);
     eng3d.sway = S.sway;
-    dash.set({ redline: S.redline, color: hex(S.dashColor), label: engineLabel(), showBpm: S.showBpm, showControls: S.showControls, showRadio: S.showRadio, odoUnits: S.odoUnits });
+    dash.set({ kind: kind(), redline: redline(), color: hex(S.dashColor), label: engineLabel(), showBpm: S.showBpm, showControls: S.showControls, showRadio: S.showRadio, odoUnits: S.odoUnits });
+    eng3d.setKeepOut(dash.keepOut());   // the engine stays clear of what the dash draws (radio, key/pedal, odometer...)
     $('debug').style.display = S.debug ? 'block' : 'none';
     if (!IS_WE && $('dv-turbos')) $('dv-turbos').disabled = !Induction.supported(layoutCls()); // e.g. radial: always naturally aspirated
+    if (!IS_WE && $('dv-redline')) $('dv-redline').disabled = kind() !== 'piston';               // steam / jet: fixed internal scale
   }
 
   /* ---------- Wallpaper Engine property listener ---------- */
@@ -81,7 +87,7 @@
       }
       if (v('flamethreshold') !== undefined) S.flameThr = v('flamethreshold') / 100;
       if (v('stalldelay') !== undefined) S.stallDelay = v('stalldelay');
-      if (v('animspeed') !== undefined) S.animSpeed = v('animspeed') / 100;
+      if (v('animspeed') !== undefined) { const a = Number(v('animspeed')) / 100; S.animSpeed = isFinite(a) ? Math.max(0, a) : 1; } // editable: junk → default, never backwards
       if (v('sway') !== undefined) { const w = Number(v('sway')) / 100; S.sway = isFinite(w) ? Math.max(0, w) : 1; } // editable: junk → default
       if (v('quality') !== undefined) { S.quality = v('quality'); q = true; }
       if (v('showbpm') !== undefined) S.showBpm = !!v('showbpm');
@@ -132,7 +138,7 @@
   /* ---------- size ---------- */
   function resize() {
     const w = window.innerWidth, h = window.innerHeight, dpr = Math.min(window.devicePixelRatio || 1, 2);
-    bg.resize(w, h, dpr); dash.resize(w, h, dpr); eng3d.resize(w, h);
+    bg.resize(w, h, dpr); dash.resize(w, h, dpr); eng3d.setKeepOut(dash.keepOut()); eng3d.resize(w, h);
   }
   window.addEventListener('resize', resize);
 
@@ -141,7 +147,7 @@
   const PANEL = [
     ['Engine', [
       { k: 'ignition', t: 'bool', l: 'ignition', d: true },
-      { k: 'layout', t: 'select', l: 'layout', d: 'v', o: [['inline', 'Inline'], ['v', 'V'], ['boxer', 'Boxer'], ['w', 'W'], ['radial', 'Radial'], ['rotary', 'Rotary']] },
+      { k: 'layout', t: 'select', l: 'layout', d: 'v', o: [['inline', 'Inline'], ['v', 'V'], ['boxer', 'Boxer'], ['w', 'W'], ['radial', 'Radial'], ['rotary', 'Rotary'], ['steam', 'Steam'], ['jet', 'Turbojet']] },
       { k: 'cylinders', t: 'number', l: 'cylinders', d: 8, min: 1, max: 32 },
       { k: 'turbos', t: 'select', l: 'induction', d: '1', o: [['0', 'none'], ['1', 'turbo'], ['2', 'twin turbo'], ['4', 'quad turbo'], ['sc', 'supercharger'], ['sc2', 'twincharged']] },
       { k: 'cutaway', t: 'bool', l: 'cutaway', d: true },

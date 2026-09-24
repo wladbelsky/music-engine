@@ -9,7 +9,7 @@
   // geometry constants (1 unit ~ 10 cm)
   const P = 1.0, CR = 0.34, ROD = 1.05, BORE = 0.36, DECK = 1.65;
   const FLOOR_GAP = 0.012;  // lowest engine point above the floor while it rocks (rest clearance is 0.02)
-  const FIT_RIGHT = 0.14; // landscape: rightmost engine part in NDC (= the old inline 8), keeps it off the dash
+  const FIT_RIGHT = 0.14; // landscape fallback until the dash reports its areas (Dash.keepOut): rightmost engine part in NDC
 
   const FIRING = {
     1: [0], 2: [0, 1], 3: [0, 2, 1], 4: [0, 2, 3, 1], 5: [0, 1, 3, 4, 2], 6: [0, 4, 2, 5, 1, 3],
@@ -185,10 +185,10 @@
           c[k] = r * 1.05; c[k + 1] = g * 0.95; c[k + 2] = b; c[k + 3] = a * 0.8;
           this.size[i] = this.s0[i] * (0.55 + 1.7 * u);
         } else {
-          const base = this.kind[i] === 2 ? 0.85 : 0.22; // 2 = BOV vapor, else smoke
+          const kd4 = kd === 4, base = kd === 2 ? 0.85 : kd4 ? 0.93 : 0.22; // 2 = BOV vapor, 4 = steam, else smoke
           c[k] = base; c[k + 1] = base; c[k + 2] = base * 1.05;
-          c[k + 3] = (this.kind[i] === 2 ? 0.35 : 0.42) * Math.sin(Math.PI * Math.min(1, u * 1.3)) ;
-          this.size[i] = this.s0[i] * (0.5 + 2.2 * u);
+          c[k + 3] = (kd === 2 ? 0.35 : kd4 ? 0.5 : 0.42) * Math.sin(Math.PI * Math.min(1, u * 1.3)) * (kd4 ? 1 - 0.6 * u : 1);
+          this.size[i] = this.s0[i] * (0.5 + (kd4 ? 3.2 : 2.2) * u);
         }
       }
       this.aPos.needsUpdate = true; this.aCol.needsUpdate = true; this.aSize.needsUpdate = true;
@@ -216,7 +216,7 @@
       this.pxScale = { value: 500 };
       this.noise = makeNoiseTexture(256);
       this.flames = new ParticleSystem(900, true, this.pxScale, this.noise);
-      this.smoke = new ParticleSystem(500, false, this.pxScale, this.noise);
+      this.smoke = new ParticleSystem(800, false, this.pxScale, this.noise);
       this.time = 0;
       this.scene.add(this.flames.points, this.smoke.points);
 
@@ -306,7 +306,7 @@
       this.parts = window.Induction.parts(this.ind);
       this.parts.forEach(p => p.build(this, lay, plen));
       lay.buildRear();
-      cyls.forEach(c => this._stack(c, lay.stackPath(c)));
+      lay.buildExhaust(cyls);
       lay.finish();
 
       // center & ground
@@ -327,6 +327,7 @@
       eng.traverse(o => { if (o.isMesh) { const tr = o.material.transparent; o.castShadow = !tr; o.receiveShadow = !tr; } });
       this.scene.add(root);
       this._applyCutaway();
+      this._fitPts = this._fitPoints();
       this._frame();
     }
 
@@ -400,7 +401,9 @@
       this.eng.add(g); this.spin(g, ratio);
       return g;
     }
-    spin(obj, ratio, off = 0) { this.spinners.push({ obj, ratio, a: 0, off }); obj.rotation.x = off; }
+    /* pitch (deg, optional) = blade/spoke spacing of a part not tied to the crank: its step per frame is capped at
+       0.4 pitch so it never strobes (frozen or running backwards); s.over = the real step in pitches, for blur */
+    spin(obj, ratio, off = 0, pitch = 0) { const s = { obj, ratio, a: 0, off, pitch, over: 0 }; this.spinners.push(s); obj.rotation.x = off; return s; }
 
     _blobTex() {
       if (this._blob) return this._blob;
@@ -430,6 +433,8 @@
         turboHot: std(0x6b5e55, 0.9, 0.4, { emissive: new T.Color(1.0, 0.3, 0.05), emissiveIntensity: 0 }),
         blower: std(0xc4c8ce, 0.95, 0.28),
         blowerCase: std(0xb4b8be, 0.95, 0.3),   // ghosts in cutaway mode so the rotors show
+        brass: std(0xc8a24a, 1.0, 0.3),
+        fire: std(0x2a1208, 0.2, 0.8, { emissive: new T.Color(1.0, 0.42, 0.1), emissiveIntensity: 0 }), // firebox door, combustor cans
         edge: new T.LineBasicMaterial({ color: 0x9aa3ad, transparent: true, opacity: 0.35 }),
       };
     }
@@ -531,6 +536,7 @@
       const w = this.w, h = this.h, cam = this.camera;
       const landscape = w / h >= 1.25;
       const box = this.box.clone(); box.max.y += 1.1; // headroom for flames
+      if (this.lay) this.lay.frameBox(box);            // e.g. the afterburner plume
       if (this.lay && this.lay.framePad) box.expandByScalar(this.lay.framePad); // flames in every direction (radial)
       const center = box.getCenter(new T.Vector3());
       const radius = box.getSize(new T.Vector3()).length() / 2;
@@ -545,14 +551,15 @@
       cam.aspect = fullW / fullH;
       // keep vertical fov relative to full height
       cam.setViewOffset(fullW, fullH, shX > 0 ? 2 * shX : 0, shY > 0 ? 0 : 2 * Math.abs(shY), w, h);
-      cam.updateProjectionMatrix();
-      // long engines (inline 32, V32...) reach under the dash with the sphere fit: back off until the
-      // projected parts stay left of FIT_RIGHT
-      for (let it = 0; landscape && it < 4; it++) {
-        const c0 = center.clone().project(cam), k = (this._extent().maxX - c0.x) / (FIT_RIGHT - c0.x);
-        if (!(k > 1.005)) break;
-        dist *= k;
-        cam.position.copy(center).addScaledVector(this.camDir, dist); cam.lookAt(center);
+      cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+      // long engines (inline 32, W32...) and low front ends (jet, steam) reach into the dash with the sphere fit:
+      // back off until no part covers what the dash draws (bisection: parts near the camera shrink slower than 1/k)
+      const place = d => { cam.position.copy(center).addScaledVector(this.camDir, d); cam.lookAt(center); cam.updateMatrixWorld(); };
+      if (!this._clear(landscape)) {
+        let lo = dist, hi = dist;
+        for (let it = 0; it < 12; it++) { hi *= 1.25; place(hi); if (this._clear(landscape)) break; lo = hi; }
+        for (let it = 0; it < 12; it++) { const mid = (lo + hi) / 2; place(mid); if (this._clear(landscape)) hi = mid; else lo = mid; }
+        dist = hi; place(dist);
       }
       this.camBase = cam.position.clone();
       this.pxScale.value = (fullH * this.renderer.getPixelRatio() / 2) / tanV;
@@ -560,6 +567,47 @@
       const k = this.key; k.target.position.copy(center); k.position.copy(center).add(new T.Vector3(-3, 11, 6));
       const sc = k.shadow.camera; const R = radius * 1.2;
       sc.left = -R; sc.right = R; sc.top = R; sc.bottom = -R; sc.near = 0.5; sc.far = 40; sc.updateProjectionMatrix();
+    }
+
+    /* the dash's covered areas (CSS px, circles {x, y, r} / rects {x, y, w, h}) from Dash.keepOut(); reframes on change */
+    setKeepOut(list) {
+      const key = JSON.stringify(list || []);
+      if (key === this._koKey) return;
+      this._koKey = key; this.keepOut = list || [];
+      this._frame();
+    }
+
+    /* probe points for the fit: 26 points per mesh (bbox corners, edge and face centres), world space at rest */
+    _fitPoints() {
+      const pts = [], v = new T.Vector3();
+      this.eng.updateMatrixWorld(true);
+      this.eng.traverse(o => {
+        if (!o.isMesh) return;
+        const g = o.geometry; if (!g.boundingBox) g.computeBoundingBox();
+        const b = g.boundingBox, X = [b.min.x, (b.min.x + b.max.x) / 2, b.max.x], Y = [b.min.y, (b.min.y + b.max.y) / 2, b.max.y], Z = [b.min.z, (b.min.z + b.max.z) / 2, b.max.z];
+        for (let i = 0; i < 27; i++) {
+          if (i === 13) continue;                        // the centre is inside anyway
+          v.set(X[i % 3], Y[Math.floor(i / 3) % 3], Z[Math.floor(i / 9)]).applyMatrix4(o.matrixWorld);
+          pts.push(v.x, v.y, v.z);
+        }
+      });
+      return new Float32Array(pts);
+    }
+
+    /* true when no probe point lands on the dash (or, before the dash reported its areas, right of FIT_RIGHT) */
+    _clear(landscape) {
+      const P = this._fitPts; if (!P) return true;
+      const cam = this.camera, v = new T.Vector3(), w = this.w, h = this.h, m = 0.012 * w, K = this.keepOut;
+      for (let i = 0; i < P.length; i += 3) {
+        v.set(P[i], P[i + 1], P[i + 2]).project(cam);
+        if (!K) { if (landscape && v.x > FIT_RIGHT) return false; continue; }
+        const x = (v.x + 1) / 2 * w, y = (1 - v.y) / 2 * h;
+        for (const s of K) {
+          if (s.r !== undefined ? Math.hypot(x - s.x, y - s.y) < s.r + m
+            : x > s.x - m && x < s.x + s.w + m && y > s.y - m && y < s.y + s.h + m) return false;
+        }
+      }
+      return true;
     }
 
     /* NDC extent of the engine, from the corners of every mesh's bounding box */
@@ -589,7 +637,7 @@
       const rpm = sim.rpm;
       const running = sim.state === 'running' || sim.state === 'stalling';
       // crank (visual speed scaled down to avoid aliasing)
-      const visK = 0.085 * animSpeed;
+      const visK = 0.085 * animSpeed * (this.lay.animK || 1);
       const dCrank = rpm / 60 * 360 * visK * dt;
       this.crank = (this.crank + dCrank) % 720;
       this.crankTotal += dCrank;                   // unwrapped, for counting firings (see below)
@@ -608,17 +656,22 @@
         // combustion glow; with big steps sampling cyc < 80 would strobe, so use the counted firing instead
         const step = dCrank / per * 720;
         const glow = running ? Math.max(cyc < 80 ? 1 - cyc / 80 : 0, step > 80 ? c.fireGlow : 0) : 0;
-        c.pm.emissiveIntensity = glow * (0.5 + 2.2 * sim.throttle);
-        c.coilGlow.material.color.setRGB(0.2 + glow * 1.5, 0.1 + glow * 0.9, 0.05 + glow * 1.8);
-        // exhaust valve / port opening -> pulse of flame
-        if (rpm > 200) for (let k = 0; k < opened; k++) this._pulse(c, sim);
+        if (c.pm) c.pm.emissiveIntensity = glow * (0.5 + 2.2 * sim.throttle);   // no combustion glow on a steam piston
+        if (c.coilGlow) c.coilGlow.material.color.setRGB(0.2 + glow * 1.5, 0.1 + glow * 0.9, 0.05 + glow * 1.8);
+        // exhaust valve / port opening -> pulse of flame (steam: a chuff)
+        if (rpm > 200) for (let k = 0; k < opened; k++) lay.exhaustPulse(c, sim);
       });
       // accumulated per part, so ratios != 1 don't jump when the 720 deg crank angle wraps
-      this.spinners.forEach(s => { s.a = (s.a + dCrank * s.ratio) % 360; s.obj.rotation.x = s.a * DEG + s.off; });
-      this.compressors.forEach(w => w.rotation.x += dt * Math.max(0, sim.boost + 0.7) * 40);
+      this.spinners.forEach(s => {
+        let d = dCrank * s.ratio;
+        if (s.pitch) { s.over = Math.abs(d) / s.pitch; d = clamp(d, -0.4 * s.pitch, 0.4 * s.pitch); }
+        s.a = (s.a + d) % 360; s.obj.rotation.x = s.a * DEG + s.off;
+      });
+      this.compressors.forEach(w => w.rotation.x += Math.min(dt * Math.max(0, sim.boost + 0.7) * 40, 0.4 * Math.PI / 4)); // 8 blades: no strobing
 
       // events
       for (const e of sim.takeEvents()) {
+        if (lay.fxEvent(e, sim)) continue;         // steam / jet handle their own
         if (e.type === 'backfire') this._backfire(e.k);
         else if (e.type === 'smoke') this.stacks.forEach(c => this._smoke(c.tipW || c.tip, c.dirW || c.dir, 3 + 4 * e.k, 0));
         else if (e.type === 'bov') this.bovs.forEach(p => { for (let i = 0; i < 26 / this.bovs.length + 4; i++) this.smoke.spawn(p.x, p.y + (this.baseY || 0), p.z, 0.8 + Math.random() * 1.5, 0.6 + Math.random(), (Math.random() - 0.3) * 1.2 * Math.sign(p.z || 1), 0.5 + Math.random() * 0.4, 0.25, 2); });
@@ -636,13 +689,12 @@
 
       // flame light
       this.flash *= Math.exp(-dt / 0.08);
-      const tipC = this._tipCenter();
-      this.flameLight.position.copy(tipC).add(new T.Vector3(0, 0.4, 0));
-      this.flameLight.intensity = (sim.flame * 2.2 + this.flash * 4) * (0.85 + Math.random() * 0.3);
-
       // vibration / camera shake
       this._sway(dt, sim);
-      this._jets(dt, sim, quality);
+      const gp = lay.glowPoint();
+      if (gp) this.flameLight.position.copy(gp).add(new T.Vector3(0, 0.4, 0));
+      this.flameLight.intensity = gp ? (sim.flame * 2.2 + this.flash * 4) * (0.85 + Math.random() * 0.3) : 0;
+      lay.updateFx(dt, sim, quality);             // flame jets, or the layout's own effects
       this.shake *= Math.exp(-dt / 0.12);
       if (this.camBase) {
         this.camera.position.copy(this.camBase);
@@ -652,7 +704,7 @@
 
     _sway(dt, sim) {
       const TAU = Math.PI * 2, rpm = sim.rpm, red = Math.max(500, sim.settings.redline || 7000);
-      const rn = clamp(rpm / red, 0, 1.1), on = rpm > 60, k = isFinite(this.sway) ? Math.max(0, this.sway) : 1;
+      const rn = clamp(rpm / red, 0, 1.1), on = rpm > 60, k = (isFinite(this.sway) ? Math.max(0, this.sway) : 1) * (this.lay.swayK ?? 1);
       // torque reaction: block leans against crank rotation under load
       this.lean += ((on ? sim.throttle : 0) * 0.05 - this.lean) * (1 - Math.exp(-dt / 0.25));
       // vibration amplitude grows with rpm
@@ -666,7 +718,7 @@
       let roll = this.lean * k + A * (0.9 * Math.sin(this.ph1) + 0.3 * Math.sin(this.ph2));
       let pitch = A * (0.35 * Math.sin(this.ph1 * 0.71 + 1.3) + 0.18 * Math.sin(this.ph3));
       let bounce = A * 0.9 * Math.sin(this.ph2 * 1.13) + A * 0.4 * Math.sin(this.ph3);
-      if (on && rpm < 1400) roll += 0.006 * k * (Math.sin(this.phI) + 0.5 * Math.sin(this.phI * 2.3 + 0.7)) * (1 - rpm / 1400);
+      if (on && rpm < 1400 && !this.lay.smooth) roll += 0.006 * k * (Math.sin(this.phI) + 0.5 * Math.sin(this.phI * 2.3 + 0.7)) * (1 - rpm / 1400);
       roll += (sim.kick / red) * 0.03 * k;                              // beat jolts
       if (sim.state === 'stalling') { roll += (Math.random() - 0.5) * 0.025 * k; pitch += (Math.random() - 0.5) * 0.01 * k; }
       if (sim.state === 'cranking') roll += Math.sin(sim.stateT * 38) * 0.012 * k;
@@ -677,7 +729,7 @@
       // (envelope of the terms above). A swing past that (random stall jolts) lifts it
       // at once and lets it settle back slowly, so nothing sinks through the floor
       let rEnv = Math.abs(this.lean * k) + A * 1.2 + Math.abs(sim.kick / red) * 0.03 * k + this.rock * 0.035 * k;
-      if (on && rpm < 1400) rEnv += 0.009 * k * (1 - rpm / 1400);
+      if (on && rpm < 1400 && !this.lay.smooth) rEnv += 0.009 * k * (1 - rpm / 1400);
       if (sim.state === 'cranking') rEnv += 0.012 * k;
       const mt = this._mountTarget(rEnv, A * 0.53, A * 0.78);
       this.mountY += (mt - this.mountY) * (1 - Math.exp(-dt / 0.12));
@@ -752,8 +804,9 @@
     }
 
     glowScreen() { // screen position of flame area for the 2D glow overlay
-      if (!this.stacks || !this.stacks.length) return null;
-      const v = this._tipCenter().add(new T.Vector3(0, 0.5, 0)).project(this.camera);
+      const gp = this.lay && this.lay.glowPoint();
+      if (!gp) return null;
+      const v = gp.clone().add(new T.Vector3(0, 0.5, 0)).project(this.camera);
       return { x: (v.x + 1) / 2 * this.w, y: (1 - v.y) / 2 * this.h };
     }
 
@@ -762,5 +815,6 @@
 
   // shared with js/layouts.js and js/induction.js
   Engine3D.GEO = { P, CR, ROD, BORE, DECK, DEG, clamp, firingOrder };
+  Engine3D.FX = { addBlend, FIRE_RAMP };   // for the layouts' own flame shaders (js/jet.js)
   window.Engine3D = Engine3D;
 })();

@@ -29,6 +29,9 @@
       this.pitch = P;         // cylinder spacing along the crank
       this.lift = 0;          // extra bore height (longer rods), used by the radial
       this.airFilter = true;  // naturally aspirated -> air filter on the throttle body
+      this.animK = 1;         // visual shaft speed factor (a steam engine turns slowly)
+      this.swayK = 1;         // vibration / roll factor
+      this.smooth = false;    // true: no lumpy idle (turbine)
     }
     get eng() { return this.e.eng; }
 
@@ -186,6 +189,14 @@
     }
 
     finish() {}
+
+    /* ---- exhaust effects (default: zoomie stacks with flame jets, js/engine3d.js) ---- */
+    buildExhaust(cyls) { cyls.forEach(c => this.e._stack(c, this.stackPath(c))); }
+    exhaustPulse(c, sim) { this.e._pulse(c, sim); }      // an exhaust opening of cylinder c
+    fxEvent(ev, sim) { return false; }                   // true = handled here, skip the default
+    updateFx(dt, sim, quality) { this.e._jets(dt, sim, quality); }
+    glowPoint() { return this.e.stacks.length ? this.e._tipCenter() : null; } // world space: flame light, background glow
+    frameBox(box) {}                                     // widen the framing box for effects
   }
 
   /* ------------------------------------------------------------ inline */
@@ -372,7 +383,7 @@
 
     buildFront() {
       const e = this.e, M = this.M, x = this.rowX(0) + 1.05;
-      const hub = new T.Group(); hub.position.x = x; this.eng.add(hub); e.spin(hub, 0.6); // reduction gear
+      const hub = new T.Group(); hub.position.x = x; this.eng.add(hub); e.spin(hub, 0.6, 0, 120); // reduction gear; 3 blades
       const flange = new T.Mesh(new T.CylinderGeometry(0.34, 0.34, 0.08, 32), M.steel); flange.rotation.z = Math.PI / 2; hub.add(flange);
       const dome = new T.Mesh(new T.SphereGeometry(0.3, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), M.cover);
       dome.rotation.z = -Math.PI / 2; dome.position.x = 0.04; hub.add(dome);
@@ -561,6 +572,7 @@
   }
   RotaryLayout.id = 'rotary';
 
+  EngineLayout.kind = 'piston';  // 'piston' | 'steam' | 'jet': sim boost source, dash scales (js/dash.js)
   EngineLayout.turbos = true;    // which forced induction a layout can carry (see Induction.effective)
   EngineLayout.blower = true;
   const LAYOUTS = { inline: InlineLayout, v: VLayout, boxer: BoxerLayout, w: WLayout, radial: RadialLayout, rotary: RotaryLayout };
@@ -568,5 +580,7 @@
     MAX_CYL,
     base: EngineLayout,
     get(id) { return LAYOUTS[id] || VLayout; },   // unknown values fall back to V
+    register(cls) { LAYOUTS[cls.id] = cls; },     // layouts in their own files (js/steam.js, js/jet.js)
+    turboScale,
   });
 })();
