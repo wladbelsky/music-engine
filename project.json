@@ -241,7 +241,7 @@
         "text": "Debug info",
         "type": "bool",
         "value": false,
-        "order": 23
+        "order": 24
       },
       "sway": {
         "order": 20,
@@ -269,6 +269,26 @@
         "text": "Car radio (now playing; enable Media integration in WE settings)",
         "type": "bool",
         "value": false
+      },
+      "odounits": {
+        "order": 23,
+        "text": "Odometer",
+        "type": "combo",
+        "value": "km",
+        "options": [
+          {
+            "label": "Kilometers",
+            "value": "km"
+          },
+          {
+            "label": "Miles",
+            "value": "mi"
+          },
+          {
+            "label": "Hidden",
+            "value": "off"
+          }
+        ]
       }
     }
   }

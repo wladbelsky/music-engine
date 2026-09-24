@@ -1,4 +1,4 @@
-/* 2D instrument cluster: tachometer, temp, boost, shift lights, warning lamps, car radio. */
+/* 2D instrument cluster: tachometer, temp, boost, shift lights, warning lamps, odometer, car radio. */
 (function () {
   'use strict';
   const TAU = Math.PI * 2;
@@ -54,6 +54,7 @@
       this.showBpm = true; this.needle = 0; this.tempN = 70; this.boostN = 0;
       this.lampLvl = {}; LAMPS.forEach(l => this.lampLvl[l.key] = 0);
       this.showControls = true; this.keyAng = -50; this.pedalN = 0; this.pedalHover = false;
+      this.odoUnits = 'km'; this.odoR = this.tripR = null;
       this.showRadio = false; this.radio = null; this.vu = 0; this.scroll = 0; this.scrollHold = 1.5; this.mText = ''; this.spec = [];
     }
 
@@ -65,7 +66,7 @@
     }
     set(opts) {
       let dirty = false;
-      for (const k of ['kind', 'redline', 'color', 'label', 'showBpm', 'showControls', 'showRadio']) if (opts[k] !== undefined && opts[k] !== this[k]) { this[k] = opts[k]; dirty = true; }
+      for (const k of ['kind', 'redline', 'color', 'label', 'showBpm', 'showControls', 'showRadio', 'odoUnits']) if (opts[k] !== undefined && opts[k] !== this[k]) { this[k] = opts[k]; dirty = true; }
       if (dirty && this.w) this._static();
     }
 
@@ -117,6 +118,7 @@
       const bs = this.prof.boost;
       this._smallStatic(g, this.tempG, 60, 130, [60, 80, 100, 120], 110, this.prof.temp.title);
       this._smallStatic(g, this.boostG, bs.min, bs.max, bs.labels, bs.danger, bs.title);
+      this._odoStatic(g);
 
       // warning lamps: round lamp + screwed metal nameplate
       const cellW = R * 0.74, cellH = R * 0.24, gapX = R * 0.035, gapY = R * 0.07;
@@ -365,6 +367,64 @@
       g.restore();
     }
 
+    /* ---------- odometer: ODO + TRIP drum counters between TEMP and BOOST ---------- */
+    _odoStatic(g) {
+      this.odoR = this.tripR = this.odoHit = null;
+      if (this.odoUnits !== 'km' && this.odoUnits !== 'mi') return;
+      const R = this.R, cx = this.cx, cy = this.cy, unit = this.odoUnits;
+      // n drums of w×h; the last one is tenths. Window + unit label centred on cx (label/prefix widths in R)
+      const row = (n, w, h, top, pre, post) => {
+        const W = n * w, x = cx - (W + post - pre) / 2;
+        return { x, y: top, w: W, h, n, cw: w, pre, post };
+      };
+      this.odoR = row(7, R * 0.094, R * 0.15, cy + R * 1.17, 0, R * 0.16);
+      this.tripR = row(5, R * 0.068, R * 0.105, cy + R * 1.375, R * 0.2, R * 0.12);
+      const O = this.odoR, T = this.tripR, p = R * 0.02;
+      this.odoHit = { x: Math.min(O.x, T.x - T.pre) - p, y: O.y - p, w: 0, h: T.y + T.h - O.y + 2 * p };
+      this.odoHit.w = Math.max(O.x + O.w + O.post, T.x + T.w + T.post) + p - this.odoHit.x;
+      for (const D of [O, T]) {
+        const fp = D.h * 0.16;                                   // recessed window with a chrome-ish rim
+        g.save(); g.shadowColor = 'rgba(0,0,0,0.7)'; g.shadowBlur = fp * 2; g.shadowOffsetY = fp * 0.4;
+        this._rr(g, D.x - fp, D.y - fp, D.w + 2 * fp, D.h + 2 * fp, fp * 1.2);
+        const gr = g.createLinearGradient(0, D.y - fp, 0, D.y + D.h + fp);
+        gr.addColorStop(0, '#5d636a'); gr.addColorStop(0.5, '#23262a'); gr.addColorStop(1, '#8b9197');
+        g.fillStyle = gr; g.fill(); g.restore();
+        g.fillStyle = '#030304'; this._rr(g, D.x - 1, D.y - 1, D.w + 2, D.h + 2, fp * 0.5); g.fill();
+        g.fillStyle = '#7d848c'; g.textBaseline = 'middle';
+        g.font = `700 ${D.h * 0.5}px "Segoe UI", Arial, sans-serif`;
+        g.textAlign = 'left'; g.fillText(unit, D.x + D.w + fp * 1.8, D.y + D.h / 2);
+        if (D.pre) { g.textAlign = 'right'; g.fillText('TRIP', D.x - fp * 1.8, D.y + D.h / 2); }
+        // cylinder shading for the drums (depends only on the row), made once for the live canvas
+        const sh = D.shade = this.ctx.createLinearGradient(0, D.y, 0, D.y + D.h);
+        sh.addColorStop(0, 'rgba(0,0,0,0.85)'); sh.addColorStop(0.3, 'rgba(0,0,0,0.1)'); sh.addColorStop(0.45, 'rgba(255,255,255,0.06)');
+        sh.addColorStop(0.7, 'rgba(0,0,0,0.12)'); sh.addColorStop(1, 'rgba(0,0,0,0.9)');
+      }
+    }
+
+    // rolling number drums: a carry turns a drum only while every lower drum goes 9 → 0, like the real thing
+    _drums(g, D, value) {
+      const v = Math.max(0, value) * 10, h = D.h, fs = h * 0.72;
+      g.save();
+      g.font = `700 ${fs}px Consolas, "Courier New", monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      for (let i = 0; i < D.n; i++) {                            // i = 0: tenths (rightmost)
+        const p = Math.pow(10, i), x = D.x + (D.n - 1 - i) * D.cw;
+        const dig = Math.floor(v / p) % 10;
+        const roll = i === 0 ? v - Math.floor(v) : Math.max(0, (v - Math.floor(v / p) * p) - (p - 1));
+        g.fillStyle = i === 0 ? '#7a0f0c' : '#101113'; g.fillRect(x, D.y, D.cw, h);
+        g.fillStyle = i === 0 ? '#fff4ee' : '#e9ecef';
+        if (roll <= 0) { g.fillText(String(dig), x + D.cw / 2, D.y + h / 2); continue; }
+        g.save(); g.beginPath(); g.rect(x, D.y, D.cw, h); g.clip();   // only a turning drum needs the clip
+        const yc = D.y + h / 2 - roll * h;
+        g.fillText(String(dig), x + D.cw / 2, yc);
+        g.fillText(String((dig + 1) % 10), x + D.cw / 2, yc + h);
+        g.restore();
+      }
+      g.fillStyle = D.shade; g.fillRect(D.x, D.y, D.w, h);           // cylinder shading: drums curve away top and bottom
+      g.fillStyle = 'rgba(0,0,0,0.9)';                             // gaps between the drums
+      for (let i = 1; i < D.n; i++) g.fillRect(D.x + i * D.cw - 0.75, D.y, 1.5, h);
+      g.restore();
+    }
+
     /* ---------- car radio: decorative volume knob + VFD "now playing" display ---------- */
     _radioStatic(g, x, top, W) {
       const R = this.R, H = R * 0.32, y = top + R * 0.07;
@@ -540,6 +600,8 @@
     }
 
     hitTest(x, y) {
+      const O = this.odoHit;                               // works with the key/pedal hidden too: resets TRIP
+      if (O && x > O.x && x < O.x + O.w && y > O.y && y < O.y + O.h) return 'odo';
       if (!this.showControls || !this.keyC) return null;
       const K = this.keyC, P = this.pedalR;
       if (Math.hypot(x - K.x, y - K.y) < K.r * 1.3) return 'key';
@@ -566,7 +628,7 @@
       g.restore();
     }
 
-    draw(sim, audio, dt, t, media) {
+    draw(sim, audio, dt, t, media, odo) {
       const g = this.ctx, d = this.dpr, R = this.R, cx = this.cx, cy = this.cy;
       g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, this.c.width, this.c.height);
       g.drawImage(this.st, 0, 0);
@@ -636,6 +698,10 @@
         const lv = this.lampLvl[L.l.key] += ((on ? 1 : 0) - this.lampLvl[L.l.key]) * (1 - Math.exp(-dt * 25));
         this._lens(g, L, lv);
       });
+      if (this.odoR && odo) {
+        this._drums(g, this.odoR, odo.value(this.odoUnits, false));
+        this._drums(g, this.tripR, odo.value(this.odoUnits, true));
+      }
       if (this.radio) this._radioDraw(g, sim, audio, media, dt, t);
       if (this.showControls) { this._keyDraw(g, this.keyC, sim, dt); this._pedalDraw(g, this.pedalR, sim, dt); }
     }

@@ -1,6 +1,6 @@
 # Music Engine: audio-reactive wallpaper for Wallpaper Engine
 
-A web wallpaper with a 3D engine. The engine revs up to the music, and on the most powerful moments flames shoot out of the exhaust. On the right is a dashboard: tachometer, temperature, boost, warning lamps, an ignition key, a throttle pedal and a car radio that shows what's playing.
+A web wallpaper with a 3D engine. The engine revs up to the music, and on the most powerful moments flames shoot out of the exhaust. On the right is a dashboard: tachometer, temperature, boost, warning lamps, an ignition key, a throttle pedal, an odometer and a car radio that shows what's playing.
 
 **[Get it on Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3806831743)** · **[Live demo](https://wladbelsky.github.io/music-engine/)**
 
@@ -19,7 +19,7 @@ A web wallpaper with a 3D engine. The engine revs up to the music, and on the mo
 - **Ignition on**: key position at startup.
 - **Show key and throttle pedal**.
 - **Car radio** (off by default): a 1-DIN head unit under the lamps. It shows the current track as a scrolling line (▶/❚❚/■, track number, clock). The data comes from WE's media integration, which you enable in **WE settings → Media integration**; it works with any player that shows up in the Windows media overlay (Spotify, browsers, AIMP…). Without track info the display shows `AUX` and a small spectrum analyzer. The volume knob is decorative: its LED ring works as a level meter. The radio runs off the ignition.
-- **Layout**: inline, V, boxer, W (two narrow VR banks with staggered cylinders, like the VW W12 / Bugatti W16), radial (an aircraft star engine on a stand, flames from short stubs all round) rotary (Wankel: triangular rotors orbit the eccentric shaft inside epitrochoid housings, visible in cutaway mode; one exhaust stack per rotor), steam or turbojet:
+- **Layout**: inline, V, boxer, W (two narrow VR banks with staggered cylinders, like the VW W12 / Bugatti W16), radial (an aircraft star engine on a stand, flames from short stubs all round), rotary (Wankel: triangular rotors orbit the eccentric shaft inside epitrochoid housings, visible in cutaway mode; one exhaust stack per rotor), steam or turbojet:
   - **Steam engine**: a horizontal mill engine with a vertical boiler. Double-acting cylinders with crossheads, connecting rods and disc cranks, slide valves worked by eccentrics, a spoked flywheel and a Watt flyball governor whose balls fly out with the revs. The exhaust goes up the chimney, so every stroke is a chuff of steam; on the loud parts the fire roars (the firebox door glows, sparks and thick smoke from the chimney). When the boiler pressure reaches the top of the gauge the safety valve blows off; on start-up the drain cocks spit steam. The shaft turns at the speed the dash shows (up to 200 rpm).
   - **Turbojet (afterburner)**: an engine on a display stand. In cutaway mode you see the compressor stages, the combustor cans, the turbine and the flame holders; the spool spins with the revs (the spinner has a painted spiral). On the loud parts the afterburner lights: a long plume with shock diamonds, and the nozzle petals open.
 - **Number of cylinders**: 1–32. The layout rounds it up where needed: V and boxer to an even number, W to a multiple of 4 (8 minimum), radial to an odd number per row with up to 9 per row (5 → 5, 8 → 9, 14 → 2 rows of 7, 18 → 2 × 9, 28+ → 4 × 7). For the rotary the number is the rotor count (2 = like a 13B, 3 = 20B, 4 = 26B). Steam: 1–4 cylinders. Turbojet: the number of combustor cans, 6–16.
@@ -38,6 +38,7 @@ A web wallpaper with a 3D engine. The engine revs up to the music, and on the mo
 - **Crankshaft animation speed**, **engine sway strength**.
 - **Graphics quality**: low, medium, high. If the wallpaper loads your system too much, also cap the FPS in the WE settings.
 - **Show BPM and load**, **debug info** (BPM, confidence, loudness, engine state).
+- **Odometer**: kilometers, miles or hidden. The ODO and TRIP drum counters under the tachometer add mileage while the engine runs, faster at higher RPM (about 30 km/h per 1000 rpm). Click the counter to reset TRIP. Mileage is kept in the wallpaper's local storage. In Wallpaper Engine that storage belongs to each monitor, and WE may clear it (screensaver mode, cache reset), so treat it as best effort.
 
 ## Warning lamps
 
@@ -62,7 +63,7 @@ The steam engine and the turbojet use their own dash scales: steam shows the sha
 
 ## Testing without Wallpaper Engine
 
-Open `index.html` in Chrome. A **Settings** panel will appear: demo beat, microphone, audio file, engine and background selection. **Hide** leaves a small **Settings** button in the top-left corner to bring it back; `D` toggles the panel too. The panel remembers its choices between visits (except a custom background image). The radio is off by default: tick `Radio: show` (or add `?showradio=true`); it shows the name of the audio file you picked (`Artist - Title.mp3` is split into artist and title), otherwise `AUX`.
+Open `index.html` in Chrome. A **Settings** panel will appear: demo beat, microphone, audio file, engine and background selection. **Hide** leaves a small **Settings** button in the top-left corner to bring it back; `D` toggles the panel too. The panel has every setting of the WE version and remembers them between visits (except a custom background image); URL parameters override them without being saved. It also has buttons to reset TRIP, the odometer and the saved settings. The radio is off by default: tick `radio` (or add `?showradio=true`); it shows the name of the audio file you picked (`Artist - Title.mp3` is split into artist and title), otherwise `AUX`.
 The microphone requires a local server:
 
 ```
@@ -87,6 +88,8 @@ js/jet.js         turbojet layout: compressor, cans, turbine, afterburner plume,
 js/induction.js   forced induction options and parts: air filter, turbos, Roots blower
 js/dash.js        dashboard on a 2D canvas, key and pedal
 js/bg.js          backgrounds
+js/media.js       now playing for the radio (WE media integration, or the picked audio file)
+js/odometer.js    odometer and trip counter, kept in localStorage
 js/main.js        glue: WE properties, audio, input, main loop
 js/three.min.js   Three.js r149 (MIT, license in js/three.LICENSE.txt)
 ```

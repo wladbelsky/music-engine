@@ -86,6 +86,8 @@
     update(dt, a, t) {
       const s = this.settings, red = Math.max(250, s.redline || 7000);
       const beats = a.takeBeats();
+      // one NaN (junk input) would otherwise stick in these accumulators for good
+      for (const k of ['rpm', 'kick', 'throttle', 'pedal', 'temp', 'flame', 'stateT']) if (!isFinite(this[k])) this[k] = k === 'temp' ? 72 : 0;
       this.stateT += dt;
       const soundOn = a.silentTime < 0.12 && a.level > 0.006;
       // throttle pedal (manual)
