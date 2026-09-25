@@ -58,3 +58,25 @@ test('electric: the starting current surges, then follows the load; no backfire 
   assert.equal(sim.state, 'stalled');
   assert.equal(pops, 0, 'no pops from a motor');
 });
+
+test('electric: runs straight up without a starter: no rpm jump when it "starts", no starter shake, no jolt, no smoke', () => {
+  const W = world({ dash: false });
+  W.build(4, 'electric', '0');
+  Object.assign(W.audio, { level: 0.3, silentTime: 0, intensity: 0.3, power: 0.3 });
+  let prev = 0, prevState = W.sim.state, maxRoll = 0, rock = 0, jump = 0, smoke = 0;
+  const orig = W.e.lay.onEvent.bind(W.e.lay);
+  W.e.lay.onEvent = (ev, sim) => { if (ev.type === 'smoke') smoke++; orig(ev, sim); };
+  W.frame(120, 1 / 30, () => {
+    const s = W.sim;
+    // on the switch to running it just keeps accelerating towards the music's target (one normal step), no reset
+    if (prevState === 'cranking' && s.state === 'running') jump = (s.rpm - prev) - 0.2 * Math.max(0, s.target - prev);
+    if (s.state === 'cranking') maxRoll = Math.max(maxRoll, Math.abs(W.e.eng.rotation.x));
+    rock = Math.max(rock, W.e.rock);
+    prev = s.rpm; prevState = s.state;
+  });
+  assert.equal(W.sim.state, 'running');
+  assert.ok(jump < 1, `rpm jumped ${jump.toFixed(0)} past a normal step as it went to running`);
+  assert.ok(maxRoll < 0.003, `starter shake ${maxRoll}`);
+  assert.equal(rock, 0, 'a start jolt');
+  assert.equal(smoke, 0, 'smoke at start');
+});

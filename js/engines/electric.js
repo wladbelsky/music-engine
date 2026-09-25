@@ -251,11 +251,8 @@
           for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3 + Math.random(); this._plasma(this._bw(new T.Vector3(X_BR, Math.cos(a) * (R_C + 0.08), Math.sin(a) * (R_C + 0.08))), 1, 0.45); }
           e.flash = Math.max(e.flash, 0.45 + 0.6 * ev.k); e.shake = Math.max(e.shake, 0.12 + 0.25 * ev.k);
         } else this._sparks(null, Math.round(4 + 10 * ev.k), 0.7);   // arcing while it coasts down
-      } else if (ev.type === 'start') {                  // the line contactor pulls in: a flash in the terminal box
-        e.rock = 1; e.flash = Math.max(e.flash, 0.35);
-        const p = this.tbG.localToWorld(this.tbL.clone());
-        this._plasma(p, 2, 0.25);
-        for (let i = 0; i < 8; i++) e.flames.spawn(p.x, p.y, p.z, (Math.random() - 0.5) * 2, 1 + Math.random() * 2, 1 + Math.random() * 2, 0.3 + Math.random() * 0.3, 0.02, P_SPARK);
+      } else if (ev.type === 'start') {
+        // nothing: no starter to let go, no firing to catch; it just carries on running up (the contactor is in updateFx)
       } else if (ev.type === 'smoke') this.ozone = Math.max(this.ozone, 0.6 + ev.k);   // warm insulation and ozone out of the cage
     }
 
@@ -284,9 +281,19 @@
       });
     }
 
+    /* the line contactor pulls in as the run-up begins: a flash and a few sparks in the terminal box */
+    _contactor() {
+      const e = this.e, p = this.tbG.localToWorld(this.tbL.clone());
+      e.flash = Math.max(e.flash, 0.35);
+      this._plasma(p, 2, 0.25);
+      for (let i = 0; i < 8; i++) e.flames.spawn(p.x, p.y, p.z, (Math.random() - 0.5) * 2, 1 + Math.random() * 2, 1 + Math.random() * 2, 0.3 + Math.random() * 0.3, 0.02, P_SPARK);
+    }
+
     updateFx(dt, sim, quality) {
       const e = this.e, run = sim.state === 'running' || sim.state === 'stalling';
       e.time += dt; this.q = quality;
+      if (sim.state === 'cranking' && this.lastState !== 'cranking') this._contactor();
+      this.lastState = sim.state;
       // sparking level: light at idle, heavy with load and music peaks; the run-up draws a lot
       const lvl = run ? clamp(0.12 + 0.55 * sim.throttle + 1.1 * sim.flame, 0, 2) : sim.state === 'cranking' ? 0.7 : 0;
       this.spark += (lvl - this.spark) * (1 - Math.exp(-dt / 0.08));
@@ -346,7 +353,7 @@
     sim: {
       maxBoost: 360,                   // OVERCURRENT from 335 A
       sources: () => [new ArmatureCurrent()],
-      crank: { time: 1.2, rpm: 1200, wobble: 0, rise: 2.2, fire: 1100 },   // no starter: it runs up on the starting resistors
+      crank: { time: 1.2, rpm: 900, wobble: 0, rise: 2.5, fire: null, smoke: 0, shake: false },   // no starter: it runs up on the starting resistors, straight on
       stall: { rpm: 300, stumble: 0, pops: false },
     },
     dash: red => ({

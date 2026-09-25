@@ -12,7 +12,9 @@
      the value is the max of all of them. */
 
   /* starting and stalling, overridable per engine type (type.sim.crank / type.sim.stall) */
-  const CRANK = { time: 0.9, rpm: 230, wobble: 70, rise: 20, fire: 1500 };   // starter speed, its lumpiness, rpm when it fires
+  // starter speed, its lumpiness, rpm when it fires (null: carries on from the run-up), smoke when it starts (0: none),
+  // shake: the starter jerks the engine on its mounts (Engine3D._sway)
+  const CRANK = { time: 0.9, rpm: 230, wobble: 70, rise: 20, fire: 1500, smoke: 1, shake: true };
   const STALL = { rpm: 380, stumble: 500, pops: true };                    // dying revs, random stumbles, backfire pops
 
   class EngineSim {
@@ -85,7 +87,7 @@
           if (wake && this.stateT > 0.4) { this.state = 'cranking'; this.stateT = 0; }
           break;
         case 'cranking':
-          if (this.stateT > crank.time) { this.state = 'running'; this.stateT = 0; this.emit('start'); this.emit('smoke', 1); this.rpm = crank.fire; }
+          if (this.stateT > crank.time) { this.state = 'running'; this.stateT = 0; this.emit('start'); if (crank.smoke) this.emit('smoke', crank.smoke); this.rpm = crank.fire ?? this.rpm; }
           break;
       }
 

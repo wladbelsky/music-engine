@@ -504,7 +504,8 @@
       const kb = (isFinite(this.sway) ? Math.max(0, this.sway) : 1) * (this.lay.beatK ?? this.lay.swayK ?? 1);
       roll += (sim.kick / red) * 0.03 * kb;                             // beat jolts
       if (sim.state === 'stalling') { roll += (Math.random() - 0.5) * 0.025 * k; pitch += (Math.random() - 0.5) * 0.01 * k; }
-      if (sim.state === 'cranking') roll += Math.sin(sim.stateT * 38) * 0.012 * k;
+      const starter = sim.state === 'cranking' && ((sim.type && sim.type().sim.crank) || {}).shake !== false;   // a motor runs up without one
+      if (starter) roll += Math.sin(sim.stateT * 38) * 0.012 * k;
       this.rock *= Math.exp(-dt / 0.35);
       roll += Math.sin(performance.now() / 45) * this.rock * 0.035 * k;
       this.eng.rotation.set(roll, 0, pitch);
@@ -513,7 +514,7 @@
       // at once and lets it settle back slowly, so nothing sinks through the floor
       let rEnv = Math.abs(this.lean * k) + A * 1.2 + Math.abs(sim.kick / red) * 0.03 * kb + this.rock * 0.035 * k;
       if (on && rpm < 1400 && !this.lay.smooth) rEnv += 0.009 * k * (1 - rpm / 1400);
-      if (sim.state === 'cranking') rEnv += 0.012 * k;
+      if (starter) rEnv += 0.012 * k;
       const mt = this._mountTarget(rEnv, A * 0.53, A * 0.78);
       this.mountY += (mt - this.mountY) * (1 - Math.exp(-dt / 0.12));
       const y = this.mountY + bounce * 0.6;
