@@ -249,6 +249,20 @@
     g.setAttribute('position', new T.Float32BufferAttribute(verts, 3)); g.setIndex(idx);
     return g;
   }
+  /* a flame jet mesh (the piston stacks' zoomies, the marine funnel): hidden, not culled, added to `parent`;
+     drive it through .material.uniforms (uOrigin/uDir in world space, uLen, uWidth, uInt, uTime, uBend) */
+  function flameJet(noise, parent) {
+    const m = new T.ShaderMaterial({
+      uniforms: { uNoise: { value: noise }, uTime: { value: 0 }, uInt: { value: 0 }, uSeed: { value: Math.random() },
+        uOrigin: { value: new T.Vector3() }, uDir: { value: new T.Vector3(0, 1, 0) }, uLen: { value: 1 }, uWidth: { value: 0.3 }, uBend: { value: 0.25 } },
+      vertexShader: JET_VS, fragmentShader: JET_FS,
+      transparent: true, depthWrite: false, blending: T.CustomBlending, side: T.DoubleSide,
+    });
+    addBlend(m); m.toneMapped = false;
+    const mesh = new T.Mesh(ribbon(12), m); mesh.frustumCulled = false; mesh.renderOrder = 11; mesh.visible = false;
+    parent.add(mesh);
+    return mesh;
+  }
   /* a plume mesh (hidden, not culled, added to `parent`); drive it through .material.uniforms */
   function plume(noise, parent, { len = 3, width = 1.2, diam = 1.1, dir = new T.Vector3(-1, 0, 0) } = {}) {
     const m = new T.ShaderMaterial({
@@ -264,7 +278,7 @@
   }
 
   window.EngineFX = {
-    makeNoiseTexture, addBlend, FIRE_RAMP, JET_VS, JET_FS, PLUME_VS, PLUME_FS, ribbon, plume,
+    makeNoiseTexture, addBlend, FIRE_RAMP, JET_VS, JET_FS, PLUME_VS, PLUME_FS, ribbon, plume, flameJet,
     ParticleSystem, particleKind,
     P: { FIRE: P_FIRE, FIREBALL: P_FIREBALL, VAPOR: P_VAPOR, SPARK: P_SPARK, STEAM: P_STEAM },
   };

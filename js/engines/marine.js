@@ -13,7 +13,9 @@
  * compressor feeds the charge air receiver below it through the air cooler, with two auxiliary blowers that
  * run while the charge air is low. Platforms with yellow railings on the camera side give it scale.
  * sim.boost = charge air pressure (the dash's CHARGE AIR gauge). Starting on air blows the indicator cocks;
- * music peaks make black smoke and soot sparks, big beats lift a cylinder relief valve (a flame out sideways). */
+ * music peaks flare a flame jet out of the funnel with every exhaust, black smoke and soot sparks; beats with fire
+ * lift cylinder relief valves (flames out sideways) and make the funnel belch fireballs. The shaft turns at up to
+ * 500 rpm like a U-boat diesel (at 120, like a tanker's, it was too slow for the music). */
 (function () {
   'use strict';
   const T = THREE;
@@ -65,10 +67,10 @@
 
     constructor(e, n) {
       super(e, n);
-      this.animK = 120 / 7000 / 0.085;    // the shaft turns at the rpm the dash shows (120 at the redline)
+      this.animK = 500 / 7000 / 0.085;    // the shaft turns at the rpm the dash shows (500 at the redline, like a U-boat diesel)
       this.swayK = 0.12; this.smooth = true;
       this.acc = { smoke: 0, cock: 0, spark: 0 };
-      this.rn = 0; this.aux = 0; this.relief = 0;
+      this.rn = 0; this.aux = 0; this.reliefs = [];
     }
     _mats() {
       if (this.paint) return;
@@ -281,9 +283,13 @@
       // uptake: turbine outlet up to the funnel
       const ux = xt - 0.05, uy0 = Y_EXR + 0.95;
       this._cylY(0.36, 0.3, M.dark2, ux, uy0 - 0.15, Z_R, null, 20);
-      this._cylY(0.42, 1.6, this.lagging, ux, uy0 + 0.8, Z_R, null, 24);
+      this.funnelMat = this.lagging.clone(); this.funnelMat.emissive = new T.Color(1.0, 0.3, 0.06); this.funnelMat.emissiveIntensity = 0;   // glows with the flames
+      this._cylY(0.42, 1.6, this.funnelMat, ux, uy0 + 0.8, Z_R, null, 24);
       this._add(new T.TorusGeometry(0.42, 0.04, 6, 24), M.dark, ux, uy0 + 1.6, Z_R).rotation.x = Math.PI / 2;
       this.tipL = new T.Vector3(ux, uy0 + 1.62, Z_R);
+      // the funnel's flame jet (world space, like a piston engine's stacks): tip/dir here, tipW/dirW after the rocking
+      this.funnel = { tip: this.tipL.clone(), dir: new T.Vector3(0, 1, 0), pulse: 0, burst: 0, I: 0 };
+      this.funnel.jet = FX.flameJet(e.noise, e.root);
       return null;
     }
 
@@ -311,23 +317,26 @@
       const k = clamp(0.2 + 0.6 * sim.throttle + 0.8 * sim.flame, 0, 1.4), m = Math.max(1, Math.round((1.5 + 3 * k) * Math.min(1, 6 / this.n)));   // one exhaust per two turns: bigger puffs
       this._puff(m, k, FX.P.FIRE, sim.flame > 0.3);
       if (sim.flame > 0.3 && Math.random() < 0.4 * sim.flame) this._soot(1 + Math.round(2 * sim.flame), 1 + sim.flame);
+      // music peaks: every exhaust flares a flame out of the funnel, now and then a fireball
+      const f = this.funnel;
+      if (sim.flame > 0.04 && f.tipW) {
+        f.pulse = Math.max(f.pulse, 0.35 + 0.6 * sim.flame);
+        if (Math.random() < 0.3 * sim.flame) this.e._flameP({ tip: f.tip, dir: f.dir, tipW: f.tipW, dirW: f.dirW }, 1 + sim.flame, 0);
+      }
     }
 
     onEvent(ev, sim) {
       const e = this.e;
       if (ev.type === 'backfire') {
-        if (ev.k > 0.75 && e.time - (this.reliefT ?? -9) > 1.5) {   // a cylinder relief valve lifts (big beats only): a flame out sideways, a bang
+        if (ev.k > 0.45 && e.time - (this.reliefT ?? -9) > 0.5) {   // relief valves lift: flames out sideways, a bang (two on a big beat)
           this.reliefT = e.time;
-          const c = e.cyls[Math.floor(Math.random() * e.cyls.length)], p = this._w(c.reliefL), d = new T.Vector3(0.2, 0.25, 1).applyQuaternion(this.eng.quaternion).normalize();
-          for (let i = 0; i < Math.round(6 + 10 * ev.k); i++) {
-            const sp = 2 + Math.random() * 3 * (1 + ev.k);
-            e.flames.spawn(p.x, p.y, p.z, d.x * sp + (Math.random() - 0.5), d.y * sp + (Math.random() - 0.5), d.z * sp + (Math.random() - 0.5) * 0.5,
-              0.3 + Math.random() * 0.25, 0.35 + Math.random() * 0.25, FX.P.FIREBALL);
-          }
-          for (let i = 0; i < 4; i++) e.smoke.spawn(p.x, p.y, p.z, d.x * 1.5, 0.8 + Math.random(), d.z * 1.5, 1.6 + Math.random(), 0.45, FX.P.FIRE);
+          for (let r = 0; r < (ev.k > 0.8 ? 2 : 1); r++) this._relief(e.cyls[Math.floor(Math.random() * e.cyls.length)], ev.k);
           e.flash = Math.max(e.flash, 0.5 + 0.5 * ev.k); e.shake = Math.max(e.shake, 0.2 + 0.4 * ev.k);
-          this.reliefC = c; this.relief = 0.5;
         }
+        // and the funnel belches fire
+        const f = this.funnel;
+        f.burst = Math.max(f.burst, 0.6 + 0.8 * ev.k);
+        if (f.tipW) { const st = { tip: f.tip, dir: f.dir, tipW: f.tipW, dirW: f.dirW }; for (let i = 0; i < Math.round(2 + 5 * ev.k); i++) e._flameP(st, 1.1 + ev.k, 1); }
         this._puff(Math.round(2 + 4 * ev.k), 1, FX.P.FIRE, true);
         this._soot(Math.round(3 + 6 * ev.k), 1 + ev.k);
       } else if (ev.type === 'smoke') this._puff(Math.round(5 + 8 * ev.k), 0.6, FX.P.FIRE, true);
@@ -335,6 +344,18 @@
         e.rock = 1;
         e.cyls.forEach(c => { const p = this._w(c.cock); for (let i = 0; i < 2; i++) e.smoke.spawn(p.x, p.y, p.z, (Math.random() - 0.5) * 0.4, 0.5 + Math.random() * 0.5, 1.5 + Math.random(), 0.8 + Math.random() * 0.5, 0.18, FX.P.STEAM); });
       }
+    }
+
+    /* a cylinder relief valve lifts: fireballs out sideways, smoke, and a flame licking on for half a second */
+    _relief(c, k) {
+      const e = this.e, p = this._w(c.reliefL), d = new T.Vector3(0.2, 0.25, 1).applyQuaternion(this.eng.quaternion).normalize();
+      for (let i = 0; i < Math.round(6 + 10 * k); i++) {
+        const sp = 2 + Math.random() * 3 * (1 + k);
+        e.flames.spawn(p.x, p.y, p.z, d.x * sp + (Math.random() - 0.5), d.y * sp + (Math.random() - 0.5), d.z * sp + (Math.random() - 0.5) * 0.5,
+          0.3 + Math.random() * 0.25, 0.35 + Math.random() * 0.25, FX.P.FIREBALL);
+      }
+      for (let i = 0; i < 4; i++) e.smoke.spawn(p.x, p.y, p.z, d.x * 1.5, 0.8 + Math.random(), d.z * 1.5, 1.6 + Math.random(), 0.45, FX.P.FIRE);
+      this.reliefs.push({ c, t: 0.5 });
     }
 
     updateFx(dt, sim, quality) {
@@ -352,14 +373,28 @@
         const c = e.cyls[Math.floor(Math.random() * e.cyls.length)], p = this._w(c.cock);
         e.smoke.spawn(p.x, p.y, p.z, (Math.random() - 0.5) * 0.3, 0.2 + Math.random() * 0.3, 1.2 + Math.random() * 0.8, 0.6 + Math.random() * 0.4, 0.12, FX.P.STEAM);
       }
-      // the relief valve's flame licks on for a moment
-      if (this.relief > 0) {
-        this.relief -= dt;
-        if (!lo && Math.random() < 0.6) {
-          const p = this._w(this.reliefC.reliefL);
-          e.flames.spawn(p.x, p.y, p.z, (Math.random() - 0.3) * 0.6, 0.6 + Math.random(), 1.5 + Math.random() * 1.5, 0.25, 0.25 + Math.random() * 0.15, FX.P.FIRE);
-        }
+      // the relief valves' flames lick on for a moment
+      this.reliefs = this.reliefs.filter(r => (r.t -= dt) > 0);
+      for (const r of this.reliefs) if (!lo && Math.random() < 0.6) {
+        const p = this._w(r.c.reliefL);
+        e.flames.spawn(p.x, p.y, p.z, (Math.random() - 0.3) * 0.6, 0.6 + Math.random(), 1.5 + Math.random() * 1.5, 0.25, 0.25 + Math.random() * 0.15, FX.P.FIRE);
       }
+      // the funnel's flame jet: the music's flame, a flare per exhaust, bursts on the big beats; the funnel heats up
+      const f = this.funnel;
+      f.pulse *= Math.exp(-dt / 0.09); f.burst *= Math.exp(-dt / 0.22);
+      const flick = 0.8 + 0.2 * Math.sin(e.time * 29) * Math.sin(e.time * 15.3);
+      f.I += ((run ? sim.flame * 0.9 * flick : 0) + f.pulse + f.burst - f.I) * (1 - Math.exp(-dt / 0.03));
+      if (!isFinite(f.I)) f.I = 0;
+      f.jet.visible = f.I > 0.02 && !!f.tipW;
+      if (f.jet.visible) {
+        const u = f.jet.material.uniforms, I = Math.min(1.6, f.I);
+        u.uTime.value = e.time; u.uInt.value = I;
+        u.uOrigin.value.copy(f.tipW); u.uDir.value.copy(f.dirW);
+        u.uLen.value = 0.6 + 1.8 * Math.min(1.5, f.I); u.uWidth.value = 0.85 + 0.35 * Math.min(1.5, f.I); u.uBend.value = 0.08;
+        if (!lo && Math.random() < dt * 8 * f.I) this._soot(1, 1 + f.I);
+      }
+      this.fheat = (this.fheat || 0) + ((run ? 0.6 * sim.flame + 0.25 * sim.throttle : 0) - (this.fheat || 0)) * (1 - Math.exp(-dt / 1.5));
+      this.funnelMat.emissiveIntensity = this.fheat;
       // auxiliary blowers: run while the charge air is low, coast down after (step capped: 6 blades)
       const auxT = on && sim.boost < 0.45 ? 1 : 0;
       this.aux += (auxT - this.aux) * (1 - Math.exp(-dt / (auxT > this.aux ? 0.8 : 1.5)));
@@ -367,11 +402,13 @@
       this.rn = clamp(sim.rpm / Math.max(500, sim.settings.redline || 7000), 0, 1.1);
     }
 
-    /* axial shudder: the crankshaft's axial vibration at shaft speed, and a shove along the shaft on every beat */
+    /* axial shudder: the crankshaft's axial vibration at shaft speed, and a shove along the shaft on every beat;
+       then the funnel's flame origin in world space */
     afterSway() {
       const e = this.e, sw = isFinite(e.sway) ? Math.max(0, e.sway) : 1;
       const dx = sw * 0.01 * this.rn * Math.sin(e.crank * DEG * 2) + 0.02 * e.jolt;   // e.jolt carries the sway setting
       if (dx) { e.eng.position.x += dx; e.eng.updateMatrixWorld(true); }
+      const f = this.funnel; f.tipW = e.eng.localToWorld(f.tip.clone()); f.dirW = f.dir.clone().applyQuaternion(e.eng.quaternion);
     }
   }
   MarineLayout.id = 'marine';
@@ -389,7 +426,7 @@
   }
   EngineTypes.register({
     id: 'marine',
-    redline: 7000,                     // internal scale; the dash shows 120 rpm at its redline
+    redline: 7000,                     // internal scale; the dash shows 500 rpm at its redline
     glow: { color: 0xff7a2a, css: [255, 120, 30] },
     sim: {
       maxBoost: 3.6,                   // CHARGE HIGH from 3.35 bar
@@ -398,8 +435,8 @@
       stall: { rpm: 300, stumble: 200, pops: false },
     },
     dash: red => ({
-      tach: { max: 140, red: 120, minor: 5, half: 10, major: 20, text: String, title: 'RPM',
-        map: r => r * 120 / red, digits: v => String(Math.round(v)).padStart(3, ' ') },
+      tach: { max: 600, red: 500, minor: 20, half: 50, major: 100, text: String, title: 'RPM',
+        map: r => r * 500 / red, digits: v => String(Math.round(v)).padStart(3, ' ') },
       left: EngineTypes.tempGauge('JACKET °C'),
       right: { min: 0, max: 4, labels: [0, 1, 2, 3, 4], danger: 3.4, title: 'CHARGE AIR bar', value: s => s.boost, text: v => v.toFixed(2), rate: 6 },
       lamps: { stall: 'SHUTDOWN', battery: 'START AIR', oil: 'LUB OIL', redline: 'OVERSPEED', overboost: 'CHARGE HIGH', check: 'ALARM' },

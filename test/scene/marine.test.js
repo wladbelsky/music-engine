@@ -50,9 +50,9 @@ test('marine: the charge air lags the load, the auxiliary blowers run only while
   assert.ok(W.e.compressors.length === 1);
 });
 
-test('marine: the sim scale — 120 rpm at the redline on the dash, starting air slower than a starter motor', () => {
+test('marine: the sim scale — 500 rpm at the redline on the dash (a U-boat diesel), starting air slower than a starter motor', () => {
   const g = load(), P = g.EngineTypes.get('marine').dash(7000);
-  assert.equal(P.tach.map(7000), 120);
+  assert.equal(P.tach.map(7000), 500);
   const sim = new g.EngineSim(), a = fakeAudio(); Object.assign(sim.settings, { kind: 'marine', redline: 7000 });
   let t = 0, crankT = 0;
   for (let i = 0; i < 150; i++) { t += 1 / 30; sim.update(1 / 30, a, t); if (sim.state === 'cranking') crankT += 1 / 30; }
@@ -78,4 +78,27 @@ test('marine: two rockers per head, every one of them rocks in a cycle, and most
   }
   for (const [r, a] of span) assert.ok(a > 0.1, `a rocker only tips ${a.toFixed(3)} rad`);
   assert.ok(seen.size >= cyls.length, `only ${seen.size} of ${cyls.length * 2} rockers move in the first turn`);
+});
+
+test('marine: a flame out of the funnel on music peaks (from the world-space funnel top), none without', () => {
+  const W = world({ dash: false });
+  W.build(6, 'marine', '0');
+  W.rev(2);
+  const f = W.e.lay.funnel;
+  W.frame(20, 1 / 30, () => { W.sim.flame = 1; });
+  assert.ok(f.jet.visible, 'funnel flame at full flame');
+  assert.ok(f.jet.material.uniforms.uOrigin.value.distanceTo(W.e.eng.localToWorld(f.tip.clone())) < 1e-6, 'flame starts at the funnel top');
+  W.sim.pedalIn = false; Object.assign(W.audio, { intensity: 0.1, power: 0.1 });
+  W.frame(60, 1 / 30, () => { W.sim.flame = 0; W.sim.limiter = false; });
+  assert.ok(!f.jet.visible, 'funnel flame stays lit without flame');
+});
+
+test('marine: relief valves lift on ordinary fiery beats, several of them over a few seconds', () => {
+  const W = world({ dash: false });
+  W.build(8, 'marine', '0');
+  W.rev(1);
+  const lifted = new Set(), orig = W.e.lay._relief.bind(W.e.lay);
+  W.e.lay._relief = (c, k) => { lifted.add(c); orig(c, k); };
+  W.frame(90, 1 / 30, (W2, i) => { if (i % 10 === 0) W.sim.events.push({ type: 'backfire', k: 0.6 }); });
+  assert.ok(lifted.size > 1, `only ${lifted.size} relief valve(s) lifted`);
 });
