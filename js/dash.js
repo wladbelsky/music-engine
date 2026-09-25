@@ -62,7 +62,6 @@
     resize(w, h, dpr) {
       this.w = w; this.h = h; this.dpr = dpr;
       for (const cv of [this.c, this.st]) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
-      this.c.style.width = w + 'px'; this.c.style.height = h + 'px';
       this._layout(); this._static();
     }
     set(opts) {
