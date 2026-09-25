@@ -93,9 +93,14 @@ test('the key is kept like a setting in the browser; clicks on the panel never r
   await P.ctx.close();
 });
 
-test('file pickers list extensions, not audio/* or image/* (Android asks for the microphone / camera for those)', async () => {
+// Android Chrome (ui/android SelectFileDialog) maps the accept list to MIME types and asks for the microphone when
+// any is audio/…, for the camera when any is image/… or video/… (.webm), extensions included: audio/* asked for the
+// microphone, the extension list for both. Only a lone non-media type asks for nothing.
+const pickers = pg => pg.evaluate(() => [...document.querySelectorAll('input[type=file]')].map(i => [i.id, i.accept]));
+
+test('file pickers list extensions on the desktop (no wildcards)', async () => {
   const P = await open(browser, '');
-  const acc = await P.page.evaluate(() => [...document.querySelectorAll('input[type=file]')].map(i => [i.id, i.accept]));
+  const acc = await pickers(P.page);
   assert.ok(acc.length >= 2, JSON.stringify(acc));
   for (const [id, a] of acc) {
     assert.ok(!/\*/.test(a), `${id}: accept="${a}" has a wildcard`);
@@ -104,4 +109,17 @@ test('file pickers list extensions, not audio/* or image/* (Android asks for the
   assert.ok(acc.find(([id]) => id === 'dv-file')[1].includes('.mp3'));
   assert.deepEqual(P.errors, []);
   await P.ctx.close();
+});
+
+test('file pickers on Android accept only application/octet-stream (no microphone / camera prompt)', async () => {
+  const context = await browser.newContext({
+    viewport: { width: 412, height: 780 }, isMobile: true, hasTouch: true,
+    userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36',
+  });
+  const P = await open(browser, '', { context });
+  const acc = await pickers(P.page);
+  assert.ok(acc.length >= 2, JSON.stringify(acc));
+  for (const [id, a] of acc) assert.equal(a, 'application/octet-stream', `${id}: accept="${a}"`);
+  assert.deepEqual(P.errors, []);
+  await context.close();
 });

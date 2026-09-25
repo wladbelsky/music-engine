@@ -4,6 +4,12 @@
   const $ = id => document.getElementById(id);
   const qs = new URLSearchParams(location.search);
   const IS_WE = typeof window.wallpaperRegisterAudioListener === 'function';
+  // File picker filter. Android Chrome (ui/android SelectFileDialog) turns the accept list into MIME types and asks
+  // for the microphone if any is audio/…, for the camera if any is image/… or video/… (.webm), before the picker
+  // opens: audio/* asked for the microphone, the extension list for both. application/octet-stream alone asks for
+  // nothing and lists every file, so Android gets that; elsewhere the extensions filter the dialog.
+  const ANDROID = /Android/i.test(navigator.userAgent);
+  const pickerAccept = exts => ANDROID ? 'application/octet-stream' : exts;
 
   const S = {
     cylinders: 8, layout: 'v', induction: Induction.parse('1'), cutaway: true,
@@ -201,7 +207,7 @@
         else if (it.t === 'number') { c = el('input', { id, type: 'number', min: it.min, max: it.max, style: 'width:4em' }); c.onchange = () => prop(it.k, Number(c.value)); }
         else if (it.t === 'color') { c = el('input', { id, type: 'color' }); c.oninput = () => prop(it.k, toRgb(c.value), true, c); }
         else if (it.t === 'file') {
-          c = el('input', { id, type: 'file', accept: '.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif' });   // extensions, not image/*: Android would offer the camera (and ask for it)
+          c = el('input', { id, type: 'file', accept: pickerAccept('.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif') });
           c.onchange = () => { const f = c.files[0]; if (f) { prop('customimage', URL.createObjectURL(f), false); prop('background', 'custom', false); } };
         } else { // range + live value
           c = el('input', { id, type: 'range', min: it.min, max: it.max, step: it.step || 1, style: 'width:7em' });
@@ -247,6 +253,7 @@
     const stopSrc = () => { if (devSrc && devSrc.stop) devSrc.stop(); if (devSrc && devSrc.id) clearInterval(devSrc.id); if (devSrc && devSrc.el) devSrc.el.pause(); devSrc = null; media.clear(); };
     $('dv-demo').onclick = () => { stopSrc(); devSrc = new DemoSource(onAudio); };
     $('dv-mic').onclick = async () => { stopSrc(); const s = new WebAudioSource(onAudio); try { await s.startMic(); devSrc = s; } catch (e) { alert('Microphone unavailable: ' + e.message); } };
+    $('dv-file').accept = pickerAccept($('dv-file').accept);
     $('dv-file').onchange = e => { const f = e.target.files[0]; if (!f) return; stopSrc(); const s = new WebAudioSource(onAudio); s.startFile(f); devSrc = s; media.fromFile(f.name, s.el); };
     $('dv-stop').onclick = stopSrc;
     const prop = (k, val, keep = true) => { window.wallpaperPropertyListener.applyUserProperties({ [k]: { value: val } }); if (keep) remember(k, val); };
