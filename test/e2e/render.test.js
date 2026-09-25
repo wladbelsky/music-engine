@@ -3,6 +3,7 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { launch, open, props, until } = require('./page');
+const { LAYOUT_IDS: IDS } = require('../helpers/load');
 
 let browser, P;
 before(async () => {
@@ -11,7 +12,6 @@ before(async () => {
 });
 after(async () => { await browser?.close(); });
 
-const IDS = ['inline', 'v', 'boxer', 'w', 'radial', 'rotary', 'steam', 'jet'];
 const noErrors = tag => assert.deepEqual(P.errors, [], `${tag}: ${P.errors.join('\n')}`);
 
 /* the opaque engine pixels (ground/shadows/effects hidden) stay out of what the dash draws */

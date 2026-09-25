@@ -19,7 +19,8 @@ const pistonPin = c => c.bank.grp.localToWorld(V(c.x, c.piston.position.y - 0.08
 const crankPin = c => c.throwG.localToWorld(V(0, CR, 0));
 
 test('slider-crank layouts: the rod joins crank pin and piston pin, full stroke, TDC at the firing point', () => {
-  sim.ignition = false;
+  sim.ignition = false;                  // poses only, nothing may move on its own; the later tests need the key on
+  try {
   for (const [id, n] of [['inline', 4], ['v', 8], ['boxer', 6], ['w', 12], ['radial', 9], ['radial', 14], ['radial', 28], ['inline', 1]]) {
     W.build(n, id, '0');
     for (const c of e.cyls) {
@@ -43,6 +44,7 @@ test('slider-crank layouts: the rod joins crank pin and piston pin, full stroke,
       assert.ok(Math.abs(top - bot - stroke) < 0.005, `${id}${n} cyl ${c.i}: stroke ${(top - bot).toFixed(4)} vs ${stroke.toFixed(4)}`);
     }
   }
+  } finally { sim.ignition = true; }
 });
 
 test('radial: every cylinder of a row runs on the same crank pin (master-rod style)', () => {
@@ -109,6 +111,7 @@ test('firings and exhaust pulses are counted on the unwrapped crank: a huge fram
   for (const [id, n] of [['v', 8], ['rotary', 2], ['steam', 4]]) {
     W.build(n, id, '1');
     W.rev(2);
+    assert.equal(sim.state, 'running', `${id}: not running`);
     const c0 = e.cyls.map(c => c.nFire), tot0 = e.crankTotal;
     let pulses = 0, want = 0, multi = 0;
     const orig = e.lay.exhaustPulse;
@@ -133,6 +136,7 @@ test('firings and exhaust pulses are counted on the unwrapped crank: a huge fram
 test('crank-linked spinners never jump at the 720° wrap; pitch-capped spinners never strobe', () => {
   W.build(9, 'radial', '0');              // prop hub: ratio 0.6, pitch 120
   W.rev(1);
+  assert.equal(sim.state, 'running');
   const hub = e.spinners.find(s => s.pitch === 120);
   assert.ok(hub, 'prop hub spinner');
   for (const rpm of [800, 3000, 9000]) {
@@ -165,10 +169,18 @@ test('crank-linked spinners never jump at the 720° wrap; pitch-capped spinners 
 
 test('turbo wheels spin with boost and never step more than 0.4 of a blade', () => {
   W.build(8, 'v', '4');
-  W.rev(3);
-  const w = e.compressors[0], r0 = w.rotation.x;
-  for (let i = 0; i < 10; i++) e.update(1 / 30, sim, 1, 'high');
-  const per = (w.rotation.x - r0) / 10;
-  assert.ok(per > 0, 'spins');
-  assert.ok(per <= 0.4 * Math.PI / 4 + 1e-9, `step ${per}`);
+  const w = e.compressors[0];
+  const step = dt => { const r0 = w.rotation.x; e.update(dt, sim, 1, 'high'); return w.rotation.x - r0; };
+  sim.ignition = false;
+  W.frame(90);                            // key off: no boost
+  assert.equal(sim.state, 'off');
+  const idle = step(1 / 300), boost0 = sim.boost;
+  sim.ignition = true;
+  W.rev(3);                               // full throttle: the turbos spool up
+  assert.equal(sim.state, 'running');
+  assert.ok(sim.boost > 1.3 && boost0 < 0.1, `boost ${boost0} -> ${sim.boost}`);
+  const spooled = step(1 / 300);          // a small step stays under the cap, so it shows the boost
+  assert.ok(idle > 0, 'wheels turn slowly without boost');
+  assert.ok(spooled > 2 * idle, `wheel step ${spooled} at ${sim.boost.toFixed(2)} bar vs ${idle} at ${boost0.toFixed(2)} bar`);
+  for (let i = 0; i < 5; i++) assert.ok(step(1 / 30) <= 0.4 * Math.PI / 4 + 1e-9, 'step over 0.4 blade at 30 fps');
 });

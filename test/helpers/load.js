@@ -9,6 +9,8 @@ const vm = require('node:vm');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
+/* every layout id, from the WE `layout` combo (project.test.js checks it against the registry) */
+const LAYOUT_IDS = JSON.parse(read('project.json')).general.properties.layout.options.map(o => o.value);
 
 /* script order from index.html (js/…), so the tests load exactly what the page loads */
 function scriptOrder() {
@@ -95,4 +97,4 @@ function load({ scripts, seed = 12345 } = {}) {
   return g;
 }
 
-module.exports = { load, scriptOrder, fakeCanvas, MemoryStorage, ROOT, read };
+module.exports = { load, scriptOrder, fakeCanvas, MemoryStorage, ROOT, read, LAYOUT_IDS };

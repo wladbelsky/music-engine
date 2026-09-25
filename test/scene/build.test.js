@@ -81,3 +81,17 @@ test('radial carries no forced induction whatever the setting', () => {
     assert.equal(e.parts.length, 1);
   }
 });
+
+test('a rebuild grounds and frames the same way wherever the previous engine stopped', () => {
+  for (const [id, n] of [['steam', 4], ['radial', 14], ['v', 8]]) {
+    W.build(n, id, '0');
+    const ref = { base: e.baseY, foot: e.foot.length, fit: Array.from(e._fitPts) };
+    W.rev(1);
+    W.e.crank = 200; W.e.crankTotal = 12345;   // the crank stops anywhere
+    W.build(n, id, '0');
+    assert.equal(e.baseY, ref.base, `${id}: baseY`);
+    assert.equal(e.foot.length, ref.foot, `${id}: foot points`);
+    assert.deepEqual(Array.from(e._fitPts), ref.fit, `${id}: fit points`);
+    W.sim.pedalIn = false; W.sim.ignition = false; W.frame(60); W.sim.ignition = true;
+  }
+});
