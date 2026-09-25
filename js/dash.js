@@ -41,7 +41,8 @@
       tach: { max: 110, red: 100, minor: 2, half: 10, major: 20, text: String, title: '% RPM',
         map: r => r <= IDLE() ? r / IDLE() * 60 : 60 + (r - IDLE()) / Math.max(1, red - IDLE()) * 40, digits: v => v.toFixed(1).padStart(5, ' ') },
       temp: { title: 'OIL °C' },
-      boost: { min: 0, max: 10, labels: [0, 2, 4, 6, 8, 10], danger: 8.5, title: 'EGT ×100°C', text: v => String(Math.round(v * 100)) },
+      boost: { min: 0, max: 10, labels: [0, 2, 4, 6, 8, 10], danger: 8.5, title: 'EGT °C',
+        label: v => String(v * 100), text: v => String(Math.round(v * 100)) },
       lamps: { stall: 'FLAMEOUT', overboost: 'EGT HIGH', battery: 'STARTER' },
     }),
   };
@@ -117,7 +118,7 @@
       this.boostG = { x: cx + R * 1.2, y: cy + R * 1.02, r: sr };
       const bs = this.prof.boost;
       this._smallStatic(g, this.tempG, 60, 130, [60, 80, 100, 120], 110, this.prof.temp.title);
-      this._smallStatic(g, this.boostG, bs.min, bs.max, bs.labels, bs.danger, bs.title);
+      this._smallStatic(g, this.boostG, bs.min, bs.max, bs.labels, bs.danger, bs.title, bs.label);
       this._odoStatic(g);
 
       // warning lamps: round lamp + screwed metal nameplate
@@ -163,7 +164,7 @@
       g.strokeStyle = '#000'; g.lineWidth = R * 0.02; g.stroke();
     }
 
-    _smallStatic(g, G, min, max, labels, danger, title) {
+    _smallStatic(g, G, min, max, labels, danger, title, label = String) {
       const a0 = 0.8333 * Math.PI, sw = (4 / 3) * Math.PI, r = G.r;
       this._bezel(g, G.x, G.y, r);
       g.strokeStyle = '#b3141a'; g.lineWidth = r * 0.1;
@@ -175,7 +176,7 @@
         g.lineTo(G.x + Math.cos(a) * r * 0.9, G.y + Math.sin(a) * r * 0.9); g.stroke();
       }
       g.fillStyle = '#d9dde2'; g.font = `600 ${r * 0.2}px "Segoe UI", Arial, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-      labels.forEach(v => { const a = a0 + (v - min) / (max - min) * sw; g.fillText(String(v), G.x + Math.cos(a) * r * 0.5, G.y + Math.sin(a) * r * 0.5); });
+      labels.forEach(v => { const a = a0 + (v - min) / (max - min) * sw; g.fillText(label(v), G.x + Math.cos(a) * r * 0.5, G.y + Math.sin(a) * r * 0.5); });
       g.fillStyle = '#7d848c'; g.font = `600 ${r * 0.16}px "Segoe UI", Arial, sans-serif`;
       g.fillText(title, G.x, G.y + r * 0.62);
       G.min = min; G.max = max; G.a0 = a0; G.sw = sw;
