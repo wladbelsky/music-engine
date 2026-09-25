@@ -51,7 +51,7 @@ test('flame jets and fireballs start at the stack tips in world space (after swa
       assert.ok(Math.abs(c.dirW.length() - 1) < 1e-9);
     }
     const P = W.e.flames, c0 = P.cursor;
-    W.e._backfire(1);
+    W.e.lay._backfire(1);
     const tips = W.e.stacks.map(c => c.tipW);
     const n = (P.cursor - c0 + P.max) % P.max;
     assert.ok(n > 0, 'backfire spawns particles');

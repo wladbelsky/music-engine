@@ -1,5 +1,6 @@
-/* Procedural 3D engine (Three.js r149): scene, camera, cylinders, kinematics, stacks and flames.
- * The engine shape comes from a layout class (js/layouts.js), induction parts from js/induction.js. */
+/* Procedural 3D engine (Three.js r149): scene, lights, materials, particles, camera fit, grounding and rocking,
+ * crank timing (firings / exhaust pulses per cylinder) and spinners. Everything engine-specific (the shape, the
+ * motion of its parts, the flames or steam) comes from a layout class (js/core/layout.js, js/engines/*). */
 (function () {
   'use strict';
   const T = THREE;
@@ -271,8 +272,8 @@
     }
 
     /* ------------------------------------------------------------ build */
-    /* Orchestrates the build; the shape itself comes from a layout class (js/layouts.js) and the
-       induction parts (js/induction.js). `ind` is a config from Induction.parse(). */
+    /* Orchestrates the build; the shape itself comes from a layout class (js/engines/*) and the
+       induction parts (js/engines/induction.js). `ind` is a config from Induction.parse(). */
     build(nCyl, layoutId, ind) {
       if (this.root) { this.scene.remove(this.root); this._dispose(this.root); }
       this.flames.clear(); this.smoke.clear();
@@ -287,6 +288,8 @@
       this.mats = this._materials();
       this.spinners = []; this.compressors = []; this.bovs = []; this.stacks = []; this._edgeGeo = new Map();
       const lay = this.lay = new L(this, n);
+      this.type = window.EngineTypes.get(L.kind);
+      this.flameLight.color.setHex(this.type.glow ? this.type.glow.color : 0xff7a2a);
 
       // banks and cylinders
       const banks = this.banks = lay.banks();
@@ -373,27 +376,6 @@
       return Math.max(this.baseY, FLOOR_GAP + bEnv - lo);
     }
 
-    /* one cylinder: liner, piston, rod, coil (bank-local). cd = {i, x, zo, phase, port?, intake?} from the layout */
-    _cylinder(b, bi, cd, lay) {
-      const M = this.mats, grp = b.grp, lift = lay.lift || 0, D = DECK + lift, x = cd.x, zo = cd.zo || 0;
-      const liner = new T.Mesh(new T.CylinderGeometry(BORE + 0.03, BORE + 0.03, 0.95, 24, 1, true), M.liner);
-      liner.position.set(x, D - 0.475, zo); grp.add(liner);
-      const pm = M.piston.clone();
-      const piston = new T.Mesh(new T.CylinderGeometry(BORE, BORE, 0.3, 24), pm);
-      grp.add(piston);
-      const rodL = ROD + lift;
-      const rod = new T.Mesh(new T.BoxGeometry(0.1, rodL, 0.14), M.steel); grp.add(rod);
-      const coil = new T.Mesh(new T.CylinderGeometry(0.07, 0.07, 0.16, 10), M.dark);
-      coil.position.set(x, D + 0.86, zo); grp.add(coil);
-      const coilGlow = new T.Mesh(new T.CylinderGeometry(0.035, 0.035, 0.03, 8), M.spark.clone());
-      coilGlow.position.set(x, D + 0.955, zo); grp.add(coilGlow);
-      // exhaust / intake ports (bank-local)
-      const port = cd.port || new T.Vector3(x, D + 0.2, b.outer * (b.hw + 0.02));
-      const intake = cd.intake || new T.Vector3(x, D + 0.2, -b.outer * (b.hw + 0.02));
-      // moving: the parts only shown in cutaway (the layout's buildCrank adds the throw)
-      return { bank: b, bi, i: cd.i, x, zo, rodL, phase: cd.phase, piston, rod, moving: [piston, rod], pm, coilGlow, port, intake };
-    }
-
     /* pulley group spinning about the crank axis at `ratio` x crank speed */
     _pulley(r, x, y, z, ratio) {
       const M = this.mats, g = new T.Group(); g.position.set(x, y, z);
@@ -472,43 +454,6 @@
     }
 
     _toEng(bank, v) { return v.clone().applyMatrix4(bank.grp.matrix); }
-
-    /* exhaust stack along the layout's path (engine space); the tip points along p4 - p3 */
-    _stack(c, pts) {
-      const M = this.mats, [p0, p1, p2, p3, p4] = pts;
-      const curve = new T.CatmullRomCurve3([p0, p1, p2, p3, p4]);
-      const tube = new T.Mesh(new T.TubeGeometry(curve, 36, 0.085, 10, false), M.header);
-      tube.castShadow = true; this.eng.add(tube);
-      const dir = p4.clone().sub(p3).normalize();
-      const tip = new T.Mesh(new T.CylinderGeometry(0.115, 0.095, 0.16, 16, 1, true), M.header);
-      tip.position.copy(p4).addScaledVector(dir, -0.04);
-      tip.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), dir); this.eng.add(tip);
-      // inside of the stack: sooty liner + throat disc (otherwise the open end shows through), rolled lip on the rim
-      const liner = new T.Mesh(new T.CylinderGeometry(0.104, 0.086, 0.16, 16, 1, true), M.soot);
-      liner.position.copy(tip.position); liner.quaternion.copy(tip.quaternion); this.eng.add(liner);
-      const throat = new T.Mesh(new T.CircleGeometry(0.09, 16), M.soot);
-      throat.position.copy(p4).addScaledVector(dir, -0.09);
-      throat.quaternion.setFromUnitVectors(new T.Vector3(0, 0, 1), dir); this.eng.add(throat);
-      const lip = new T.Mesh(new T.TorusGeometry(0.11, 0.009, 6, 24), M.header);
-      lip.position.copy(p4).addScaledVector(dir, 0.04);
-      lip.quaternion.setFromUnitVectors(new T.Vector3(0, 0, 1), dir); this.eng.add(lip);
-      c.tip = p4.clone().addScaledVector(dir, 0.02); c.dir = dir;
-      c.pulse = 0; c.burst = 0; c.jetI = 0;
-      const jg = new T.BufferGeometry();
-      const verts = [], idx = [], SEG = 12;
-      for (let k = 0; k <= SEG; k++) { verts.push(-0.5, k / SEG, 0, 0.5, k / SEG, 0); if (k < SEG) idx.push(k * 2, k * 2 + 1, k * 2 + 2, k * 2 + 1, k * 2 + 3, k * 2 + 2); }
-      jg.setAttribute('position', new T.Float32BufferAttribute(verts, 3)); jg.setIndex(idx);
-      const jm = new T.ShaderMaterial({
-        uniforms: { uNoise: { value: this.noise }, uTime: { value: 0 }, uInt: { value: 0 }, uSeed: { value: Math.random() },
-          uOrigin: { value: new T.Vector3() }, uDir: { value: new T.Vector3(0, 1, 0) }, uLen: { value: 1 }, uWidth: { value: 0.3 }, uBend: { value: 0.25 } },
-        vertexShader: JET_VS, fragmentShader: JET_FS,
-        transparent: true, depthWrite: false, blending: T.CustomBlending, side: T.DoubleSide,
-      });
-      addBlend(jm); jm.toneMapped = false;
-      c.jet = new T.Mesh(jg, jm); c.jet.frustumCulled = false; c.jet.renderOrder = 11; c.jet.visible = false;
-      this.root.add(c.jet);
-      this.stacks.push(c);
-    }
 
     _applyCutaway() {
       const M = this.mats, on = this.cutaway, ghosts = [[M.block, 0.2], [M.blowerCase, 0.3]];
@@ -662,8 +607,7 @@
         // combustion glow; with big steps sampling cyc < 80 would strobe, so use the counted firing instead
         const step = dCrank / per * 720;
         const glow = running ? Math.max(cyc < 80 ? 1 - cyc / 80 : 0, step > 80 ? c.fireGlow : 0) : 0;
-        if (c.pm) c.pm.emissiveIntensity = glow * (0.5 + 2.2 * sim.throttle);   // no combustion glow on a steam piston
-        if (c.coilGlow) c.coilGlow.material.color.setRGB(0.2 + glow * 1.5, 0.1 + glow * 0.9, 0.05 + glow * 1.8);
+        lay.cylinderFx(c, glow, sim);
         // exhaust valve / port opening -> pulse of flame (steam: a chuff)
         if (rpm > 200) for (let k = 0; k < opened; k++) lay.exhaustPulse(c, sim);
       });
@@ -676,13 +620,7 @@
       this.compressors.forEach(w => w.rotation.x += Math.min(dt * Math.max(0, sim.boost + 0.7) * 40, 0.4 * Math.PI / 4)); // 8 blades: no strobing
 
       // events
-      for (const e of sim.takeEvents()) {
-        if (lay.fxEvent(e, sim)) continue;         // steam / jet handle their own
-        if (e.type === 'backfire') this._backfire(e.k);
-        else if (e.type === 'smoke') this.stacks.forEach(c => this._smoke(c.tipW || c.tip, c.dirW || c.dir, 3 + 4 * e.k, 0));
-        else if (e.type === 'bov') this.bovs.forEach(p => { for (let i = 0; i < 26 / this.bovs.length + 4; i++) this.smoke.spawn(p.x, p.y + (this.baseY || 0), p.z, 0.8 + Math.random() * 1.5, 0.6 + Math.random(), (Math.random() - 0.3) * 1.2 * Math.sign(p.z || 1), 0.5 + Math.random() * 0.4, 0.25, 2); });
-        else if (e.type === 'start') this.rock = 1;
-      }
+      for (const ev of sim.takeEvents()) lay.onEvent(ev, sim);
       this.flames.update(dt); this.smoke.update(dt);
       this.parts.forEach(p => p.update && p.update(dt, sim));
 
@@ -700,7 +638,7 @@
       const gp = lay.glowPoint();
       if (gp) this.flameLight.position.copy(gp).add(new T.Vector3(0, 0.4, 0));
       this.flameLight.intensity = gp ? (sim.flame * 2.2 + this.flash * 4) * (0.85 + Math.random() * 0.3) : 0;
-      lay.updateFx(dt, sim, quality);             // flame jets, or the layout's own effects
+      lay.updateFx(dt, sim, quality);             // the layout's effects (flame jets, steam, plume...)
       this.shake *= Math.exp(-dt / 0.12);
       if (this.camBase) {
         this.camera.position.copy(this.camBase);
@@ -744,29 +682,7 @@
       this.lift = need > this.lift ? need : this.lift + (need - this.lift) * (1 - Math.exp(-dt / 0.4));
       this.eng.position.set(0, y + this.lift, 0);
       this.eng.updateMatrixWorld(true);
-      const q = this.eng.quaternion;
-      this.stacks.forEach(c => { c.tipW = this.eng.localToWorld(c.tip.clone()); c.dirW = c.dir.clone().applyQuaternion(q); });
-    }
-
-    _jets(dt, sim, quality) {
-      this.time += dt;
-      const fl = sim.flame;
-      this.stacks.forEach((c, i) => {
-        c.pulse *= Math.exp(-dt / 0.07); c.burst *= Math.exp(-dt / 0.2);
-        const flick = 0.8 + 0.2 * Math.sin(this.time * 31 + i * 1.7) * Math.sin(this.time * 17.3 + i);
-        const target = fl * 0.7 * flick + c.pulse + c.burst;
-        c.jetI += (target - c.jetI) * (1 - Math.exp(-dt / 0.03));
-        const I = c.jetI, u = c.jet.material.uniforms;
-        c.jet.visible = I > 0.02;
-        if (!c.jet.visible) return;
-        u.uTime.value = this.time; u.uInt.value = Math.min(1.6, I);
-        u.uOrigin.value.copy(c.tipW || c.tip); u.uDir.value.copy(c.dirW || c.dir);
-        u.uLen.value = 0.35 + 1.35 * Math.min(1.5, I);
-        u.uWidth.value = 0.2 + 0.16 * Math.min(1.5, I);
-        u.uBend.value = 0.18 + 0.12 * (1 - Math.abs(c.dir.y));
-        // occasional embers
-        if (quality !== 'low' && Math.random() < dt * (2 + 10 * fl)) this._spark(c, 0.6 + fl);
-      });
+      this.lay.afterSway();                        // e.g. the stack tips in world space (tipW/dirW)
     }
 
     _spark(c, k) {
@@ -775,33 +691,12 @@
         0.4 + Math.random() * 0.5, 0.025 + Math.random() * 0.02, 3);
     }
 
-    _tipCenter() {
-      const v = new T.Vector3(); this.stacks.forEach(c => v.add(c.tipW || c.tip)); v.divideScalar(Math.max(1, this.stacks.length));
-      return v;
-    }
-
     _flameP(c, speed, kind) {
       const tp = c.tipW || c.tip, d = c.dirW || c.dir, j = 0.35;
       const sp = (2.2 + Math.random() * 1.4) * speed;
       this.flames.spawn(tp.x, tp.y, tp.z,
         d.x * sp + (Math.random() - 0.5) * j, d.y * sp + (Math.random() - 0.5) * j, d.z * sp + (Math.random() - 0.5) * j,
         (0.16 + Math.random() * 0.18) * (kind ? 1.3 : 1) * (0.7 + speed * 0.3), 0.3 + Math.random() * 0.18 + (kind ? 0.12 : 0), kind);
-    }
-    _pulse(c, sim) {
-      if (sim.flame > 0.04) { c.pulse = Math.max(c.pulse, 0.3 + 0.55 * sim.flame); if (Math.random() < 0.35 * sim.flame) this._flameP(c, 0.9 + sim.flame, 0); }
-      else if (sim.limiter && Math.random() < 0.5) { c.pulse = Math.max(c.pulse, 0.45); }
-      else if (sim.state === 'running' && sim.rpm < 1100 && Math.random() < 0.08) this._smoke(c.tipW || c.tip, c.dirW || c.dir, 1, 0);
-    }
-    _backfire(k) {
-      const list = k > 0.7 ? this.stacks : this.stacks.filter(() => Math.random() < 0.5);
-      (list.length ? list : [this.stacks[0]]).forEach(c => {
-        c.burst = Math.max(c.burst, 0.6 + 0.8 * k);
-        const m = Math.round(2 + 5 * k); for (let i = 0; i < m; i++) this._flameP(c, 1.1 + k, 1);
-        const sp = Math.round(3 + 8 * k); for (let i = 0; i < sp; i++) this._spark(c, 1 + k);
-      });
-      this.flash = Math.max(this.flash, 0.6 + 0.6 * k);
-      this.shake = Math.max(this.shake, 0.4 + 0.8 * k);
-      if (k > 0.5 && Math.random() < 0.5) this.stacks.forEach(c => this._smoke(c.tipW || c.tip, c.dirW || c.dir, 1, 0));
     }
     _smoke(tip, dir, count, kind) {
       for (let i = 0; i < count; i++) this.smoke.spawn(tip.x, tip.y, tip.z,
@@ -819,8 +714,8 @@
     render() { this.renderer.render(this.scene, this.camera); }
   }
 
-  // shared with js/layouts.js and js/induction.js
+  // shared with the layouts and js/engines/induction.js
   Engine3D.GEO = { P, CR, ROD, BORE, DECK, DEG, clamp, firingOrder };
-  Engine3D.FX = { addBlend, FIRE_RAMP };   // for the layouts' own flame shaders (js/jet.js)
+  Engine3D.FX = { addBlend, FIRE_RAMP, JET_VS, JET_FS };   // for the layouts' own flame shaders
   window.Engine3D = Engine3D;
 })();

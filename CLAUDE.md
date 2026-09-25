@@ -12,7 +12,7 @@ The engine (piston layouts, a steam mill engine or a turbojet) revs with the mus
 The dashboard has a tachometer with shift lights, temp and boost gauges, 8 lamps (round lamp + metal plate with screws), an ignition key, a throttle pedal, an odometer (ODO + TRIP drums), and a car radio (now playing via WE media integration).
 
 ## Architecture (plain scripts, no build step, no ES modules)
-Load order in `index.html`: `three.min.js → audio.js → sim.js → engine3d.js → layouts.js → steam.js → jet.js → induction.js → dash.js → bg.js → media.js → odometer.js → main.js`.
+Load order in `index.html`: `three.min.js → audio.js → sim.js → engine3d.js → layout.js → piston.js → piston-layouts.js → steam.js → jet.js → induction.js → dash.js → bg.js → media.js → odometer.js → main.js`.
 Each file is an IIFE exporting a class to `window`.
 Favicon (browser tab only): `favicon.svg` (a tachometer with a red zone) + `favicon.png` (32×32 fallback, a headless Chromium screenshot of the SVG; re-render it when the SVG changes).
 

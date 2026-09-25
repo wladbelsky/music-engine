@@ -1,10 +1,11 @@
-/* Forced induction: the option registry (the WE `turbos` combo) and the 3D parts.
+/* Forced induction: the option registry (the WE `turbos` combo), the boost it makes (sim sources for the
+ * piston type, js/engines/piston.js) and the 3D parts.
  *
  * Every part is a class with build(e, layout, plen), called by Engine3D.build() after the layout's
  * front end. Parts attach to mount points the layout provides (turboMount(), blowerMount()); a layout
- * that returns null there simply doesn't get that part. The boost behaviour lives in js/sim.js.
+ * that returns null there simply doesn't get that part.
  *
- * To add an option: add it to OPTIONS (and the combo in project.json / dev panel), then to parts(). */
+ * To add an option: add it to OPTIONS (and the combo in project.json / dev panel), then to parts() and boostSources(). */
 (function () {
   'use strict';
   const T = THREE;
@@ -201,6 +202,26 @@
     }
   }
 
+  /* ---- boost (bar) for EngineSim: each source has a target and its own rise/fall time, the gauge shows the max ---- */
+  class VacuumOnly {                  // naturally aspirated: manifold vacuum, ~-0.65 at idle to ~0 flat out
+    constructor() { this.v = -0.1; this.rise = 0.7; this.fall = 0.2; }
+    target(sim) { return -0.65 + 0.62 * clamp(sim.throttle * 1.25, 0, 1); }
+  }
+  class TurboBoost {                  // exhaust driven: needs revs and load, spools with lag
+    constructor(max) { this.v = -0.1; this.max = max; this.rise = 0.7; this.fall = 0.2; }
+    target(sim) {
+      const rpmF = clamp((sim.rpm - 1800) / 2600, 0, 1);
+      return -0.6 + (this.max + 0.6) * clamp(sim.throttle * 1.25, 0, 1) * rpmF;
+    }
+  }
+  class RootsBoost {                  // crank driven, positive displacement: instant, grows with rpm
+    constructor(max) { this.v = -0.1; this.max = max; this.rise = 0.12; this.fall = 0.12; }
+    target(sim, red) {
+      const th = clamp(sim.throttle * 1.25, 0, 1);
+      return -0.6 * (1 - th) + th * this.max * clamp(0.3 + 0.7 * sim.rpm / red, 0, 1);
+    }
+  }
+
   window.Induction = {
     OPTIONS,
     /* combo value -> {key, turbos, blower}; unknown values fall back to one turbo */
@@ -222,6 +243,14 @@
       if (cfg.turbos) out.push(new TurboSet(cfg.turbos));
       if (!cfg.blower && !cfg.turbos) out.push(new AirFilter());
       return out;
+    },
+    /* sim boost sources for settings {turbos, blower}; twincharged = blower down low, turbos take over higher up */
+    boostSources(s, max) {
+      const src = [];
+      if (s.blower) src.push(new RootsBoost(1.1));
+      if (s.turbos > 0) src.push(new TurboBoost(max));
+      if (!src.length) src.push(new VacuumOnly());
+      return src;
     },
     AirFilter, TurboSet, RootsBlower,
   };

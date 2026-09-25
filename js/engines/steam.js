@@ -53,15 +53,6 @@
       return this.xs.map((x, i) => ({ i, x, zo: 0, phase: i * 360 / n + (n % 2 === 0 && i >= n / 2 ? 180 / n : 0) }));
     }
 
-    /* ---- small builders (engine space) ---- */
-    _add(geo, mat, x, y, z, parent) { const m = new T.Mesh(geo, mat); m.position.set(x, y, z); (parent || this.eng).add(m); return m; }
-    _box(w, h, d, mat, x, y, z, parent) { return this._add(new T.BoxGeometry(w, h, d), mat, x, y, z, parent); }
-    _cylX(r, len, mat, x, y, z, parent, seg = 20) { const m = this._add(new T.CylinderGeometry(r, r, len, seg), mat, x, y, z, parent); m.rotation.z = Math.PI / 2; return m; }
-    _cylZ(r, len, mat, x, y, z, parent, seg = 20) { const m = this._add(new T.CylinderGeometry(r, r, len, seg), mat, x, y, z, parent); m.rotation.x = Math.PI / 2; return m; }
-    _cylY(r, len, mat, x, y, z, parent, seg = 20) { return this._add(new T.CylinderGeometry(r, r, len, seg), mat, x, y, z, parent); }
-    _tube(pts, r, mat) { const t = new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(pts), 24, r, 10, false), mat); this.eng.add(t); return t; }
-
-    buildBank() {}
 
     /* cylinder with its valve chest, guides, crosshead, rods; the crank itself comes in buildCrank */
     buildCylinder(b, bi, cd) {
@@ -241,7 +232,6 @@
     }
 
     /* ---- effects ---- */
-    _w(v) { return this.eng.localToWorld(v.clone()); }
     glowPoint() { return this._w(this.doorL); }
 
     _chuff(k) {                                       // a puff of exhaust steam out of the chimney
@@ -265,13 +255,12 @@
       if (sim.state === 'running' || sim.state === 'stalling' || sim.state === 'cranking') this._chuff(clamp(0.25 + sim.throttle * 0.9 + sim.flame * 0.3, 0, 1.2));
     }
 
-    fxEvent(ev, sim) {
+    onEvent(ev, sim) {
       const e = this.e;
       if (ev.type === 'backfire') { this._chuff(1.3); this._sparks(Math.round(6 + 12 * ev.k), 1 + ev.k); e.flash = Math.max(e.flash, 0.5 + 0.5 * ev.k); e.shake = Math.max(e.shake, 0.2 * ev.k); }
       else if (ev.type === 'smoke') this._coal(Math.round(6 + 10 * ev.k), true);
       else if (ev.type === 'vent') this.vent = 1.8;
       else if (ev.type === 'start') e.rock = 1;
-      return true;
     }
 
     updateFx(dt, sim, quality) {
@@ -314,6 +303,37 @@
   }
   SteamLayout.id = 'steam';
   SteamLayout.kind = 'steam';
+  SteamLayout.title = 'Steam';
   SteamLayout.turbos = false; SteamLayout.blower = false;   // no forced induction
   L.register(SteamLayout);
+
+  /* boiler pressure, bar (the dash's STEAM gauge): the fire raises it, the engine draws it down */
+  class SteamPressure {
+    constructor() { this.v = 0; this.rise = 2.2; this.fall = 3.5; }
+    target(sim, red) {
+      const draw = sim.throttle * clamp(sim.rpm / red, 0, 1.1);
+      return 10 + 6 * sim.flame + 1.6 * clamp(sim.pw - 0.4, 0, 0.6) - 1.6 * draw;   // strong peaks reach the safety valve
+    }
+    rest(sim) { return sim.state === 'off' ? 0 : 7.5; }   // a banked fire keeps some pressure up
+  }
+  EngineTypes.register({
+    id: 'steam',
+    redline: 7000,                   // the sim runs on the internal scale; the dash shows 200 rpm at its redline
+    glow: { color: 0xff7a2a, css: [255, 120, 30] },
+    sim: {
+      maxBoost: 14,
+      sources: () => [new SteamPressure()],
+      after(sim, dt, t) {            // the safety valve lifts near the top of the gauge; blowing off drops the pressure
+        if (sim.boost > sim.maxBoost * 0.97 && t - (sim._ventT ?? -99) > 3) { sim._ventT = t; sim.emit('vent', 1); for (const b of sim._src) b.v -= 1.2; }
+      },
+    },
+    // a mill engine: redline = 200 rpm
+    dash: red => ({
+      tach: { max: 250, red: 200, minor: 10, half: 50, major: 50, text: String,
+        title: 'RPM', map: r => r * 200 / red, digits: v => String(Math.round(v)).padStart(3, ' ') },
+      left: EngineTypes.tempGauge(),
+      right: { min: 0, max: 16, labels: [0, 4, 8, 12, 16], danger: 13, title: 'STEAM bar', value: s => s.boost, text: v => v.toFixed(1), rate: 10 },
+      lamps: { overboost: 'SAFETY VLV' },
+    }),
+  });
 })();

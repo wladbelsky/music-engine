@@ -1,206 +1,21 @@
-/* Engine layouts. Each layout is a class that builds the engine-specific geometry through hooks called
- * by Engine3D.build(); the cylinders, kinematics, stacks and flames are shared (js/engine3d.js).
- *
- * To add a layout: subclass EngineLayout (or a close relative), set `static id`, `normCyl`, `label`,
- * override the hooks that differ, add it to LAYOUTS below and to the `layout` combo in project.json
- * and the dev panel in index.html.
+/* The piston layouts: inline, V, boxer, W, radial, rotary (Wankel). Each subclasses PistonLayout
+ * (js/engines/piston.js) and overrides the hooks that differ; see js/core/layout.js for the hook list.
  *
  * Coordinates: crank axis = X (front = +X), up = +Y. A bank is a group rotated about X by `tilt`;
  * inside it the bores point along +Y and `outer` (+1/-1) is the exhaust side along bank-local Z. */
 (function () {
   'use strict';
   const T = THREE;
-  const { P, CR, BORE, DECK, DEG, clamp, firingOrder } = Engine3D.GEO;
-  const MAX_CYL = 32;
+  const { P, CR, BORE, DECK, DEG, clamp } = Engine3D.GEO;
+  const MAX_CYL = EngineLayouts.MAX_CYL;
   // any input -> integer 1..MAX_CYL (non-numeric -> 8)
   const cap = n => { const v = Math.round(Number(n)); return isFinite(v) ? clamp(v, 1, MAX_CYL) : 8; };
   const evenUp = n => Math.max(2, n + (n % 2));
-  // turbo size: the block's height and width don't depend on the cylinder count, only its length does, so the
-  // turbo hardly does either (V2 1.3, V8 1.4, V12 1.5, capped at 1.6); twin/quad turbos keep the single's size
-  const turboScale = n => clamp(1.25 + n / 48, 1.25, 1.6);
+  const turboScale = EngineLayouts.turboScale;
   const ROTOR_TDC = 270;   // rotary: shaft angle at which a rotor face is at TDC on the spark plug side
 
-  class EngineLayout {
-    static normCyl(n) { return cap(n); }
-    static label(n) { return String(n); }
-
-    constructor(e, n) {
-      this.e = e; this.n = n; this.M = e.mats;
-      this.pitch = P;         // cylinder spacing along the crank
-      this.lift = 0;          // extra bore height (longer rods), used by the radial
-      this.airFilter = true;  // naturally aspirated -> air filter on the throttle body
-      this.animK = 1;         // visual shaft speed factor (a steam engine turns slowly)
-      this.swayK = 1;         // vibration / roll factor
-      this.smooth = false;    // true: no lumpy idle (turbine)
-    }
-    get eng() { return this.e.eng; }
-
-    /* ---- geometry description ---- */
-    banks() { throw new Error('banks() not implemented'); }
-    dims(banks) {
-      this.len = banks[0].m * this.pitch + (banks.length > 1 ? 0.42 : 0) + 0.3;
-      this.frontX = this.len / 2; this.rearX = -this.len / 2;
-    }
-    zOffset(i) { return 0; }            // bore offset from the crank plane (staggered rows)
-    cylinders(b, bi) {
-      const order = firingOrder(this.e.banks[0].m), nb = this.e.banks.length, out = [];
-      for (let i = 0; i < b.m; i++) {
-        const slot = order.indexOf(i) * nb + bi;
-        out.push({ i, x: (i - (b.m - 1) / 2) * this.pitch + b.off, zo: this.zOffset(i), phase: slot * 720 / this.n });
-      }
-      return out;
-    }
-
-    /* ---- numbers the generic builders use ---- */
-    ccW() { return 1.1; }               // crankcase width
-    get caseY() { return -0.2; }
-    get panY() { return -0.88; }
-    plenum() { throw new Error('plenum() not implemented'); } // {pos, size}
-    frontTopY() { return DECK; }
-    coverD() { return 0.9; }            // timing cover depth
-    sidePulleyZ() { return -0.62; }
-    topY() { return DECK + 0.95; }      // height the exhaust stacks rise to
-    turboMount() { return null; }       // {s, tx, tz, gap, sides, along: 2nd column along the block (else outward), maxTop?}
-    blowerMount(plen) {                 // bottom centre of a Roots blower sitting on the plenum
-      if (!plen) return null;
-      return { x: plen.pos.x, y: plen.pos.y + plen.size[1] / 2, z: plen.pos.z, len: clamp(this.len * 0.55, 1.1, 3.2) };
-    }
-
-    /* ---- builders ---- */
-    buildCylinder(b, bi, cd) { return this.e._cylinder(b, bi, cd, this); } // liner, piston, rod, coil
-
-    /* per-frame motion of one cylinder: slider-crank; zo = bore offset from the crank plane (W rows) */
-    animate(c, cyc) {
-      const beta = cyc * DEG;
-      const py = CR * Math.cos(beta), pz = CR * Math.sin(beta);
-      const dz = c.zo - pz, dy = Math.sqrt(c.rodL * c.rodL - dz * dz), s = py + dy;
-      c.piston.position.set(c.x, s + 0.08, c.zo);
-      c.rod.position.set(c.x, (s + py) / 2, (pz + c.zo) / 2);
-      c.rod.rotation.x = Math.atan2(dz, dy);
-      c.throwG.rotation.x = (cyc + c.bank.tilt) * DEG;
-    }
-
-    buildBank(b) {
-      const e = this.e, M = this.M, grp = b.grp, bl = b.m * this.pitch + 0.28, W = 2 * b.hw;
-      const block = new T.Mesh(new T.BoxGeometry(bl, DECK - 0.3, W), M.block);
-      block.position.set(b.off, 0.3 + (DECK - 0.3) / 2, 0); grp.add(block);
-      e._edges(block, grp);
-      const head = new T.Mesh(new T.BoxGeometry(bl - 0.04, 0.46, W + 0.02), M.head);
-      head.position.set(b.off, DECK + 0.23, 0); head.castShadow = true; grp.add(head);
-      const cover = new T.Mesh(e._roundBox(bl - 0.16, 0.32, W - 0.14, 0.1), M.cover);
-      cover.position.set(b.off, DECK + 0.46 + 0.16, 0); cover.castShadow = true; grp.add(cover);
-      for (let r = -1; r <= 1; r++) {
-        const rib = new T.Mesh(new T.BoxGeometry(bl - 0.4, 0.04, 0.05), M.head);
-        rib.position.set(b.off, DECK + 0.795, r * b.hw * 0.48); grp.add(rib);
-      }
-    }
-
-    buildCase() {
-      const e = this.e, M = this.M, len = this.len, ccW = this.ccW();
-      const cc = new T.Mesh(new T.BoxGeometry(len - 0.05, 0.95, ccW), M.block);
-      cc.position.set(0, this.caseY, 0); this.eng.add(cc); e._edges(cc, this.eng);
-      const pan = new T.Mesh(e._roundBox(len - 0.3, 0.42, ccW * 0.85, 0.08), M.dark2);
-      pan.position.set(-0.1, this.panY, 0); pan.castShadow = true; this.eng.add(pan);
-    }
-
-    /* crank / eccentric shaft along X, turning with the crank */
-    _mainShaft(len, x = 0) {
-      const shaft = new T.Group(); this.eng.add(shaft); this.e.spin(shaft, 1);
-      const main = new T.Mesh(new T.CylinderGeometry(0.11, 0.11, len, 16), this.M.steel);
-      main.rotation.z = Math.PI / 2; main.position.x = x; shaft.add(main);
-    }
-    buildCrank(cyls) {
-      this._mainShaft(this.len + 0.3);
-      cyls.forEach(c => { c.throwG = this._throw(c.x); c.moving.push(c.throwG); });
-    }
-    _throw(x) {
-      const M = this.M, throwG = new T.Group(); throwG.position.x = x; this.eng.add(throwG);
-      const pin = new T.Mesh(new T.CylinderGeometry(0.09, 0.09, 0.26, 12), M.steel);
-      pin.rotation.z = Math.PI / 2; pin.position.y = CR; throwG.add(pin);
-      for (const s of [-1, 1]) {
-        const web = new T.Mesh(new T.BoxGeometry(0.07, CR + 0.42, 0.34), M.steel);
-        web.position.set(s * 0.15, (CR - 0.3) / 2, 0); throwG.add(web);
-      }
-      return throwG;
-    }
-
-    buildIntake(cyls) {
-      const e = this.e, M = this.M, eng = this.eng;
-      const { pos: plenPos, size: plenSize } = this.plenum();
-      const plen = new T.Mesh(e._roundBox(plenSize[0], plenSize[1], plenSize[2], 0.12), this.plenumMat());
-      plen.position.copy(plenPos); plen.castShadow = true; eng.add(plen);
-      // throttle body at the front (a blower carries its own throttles on top)
-      if (!e.ind.blower) {
-        const tb = new T.Mesh(new T.CylinderGeometry(0.2, 0.2, 0.3, 24), M.steel);
-        tb.rotation.z = Math.PI / 2; tb.position.set(plenPos.x + plenSize[0] / 2 + 0.15, plenPos.y, plenPos.z); eng.add(tb);
-      }
-      cyls.forEach(c => {
-        const a = e._toEng(c.bank, c.intake);
-        const outDir = e._toEng(c.bank, new T.Vector3(0, 0, -c.bank.outer)).sub(e._toEng(c.bank, new T.Vector3())).normalize();
-        const b = new T.Vector3(a.x, plenPos.y - plenSize[1] * 0.2, plenPos.z + Math.sign(a.z - plenPos.z) * plenSize[2] * 0.35);
-        const curve = new T.CatmullRomCurve3(this.runnerPath(a, outDir, b));
-        const tube = new T.Mesh(new T.TubeGeometry(curve, 16, 0.085, 10, false), M.head);
-        tube.castShadow = true; eng.add(tube);
-      });
-      e.tbPos = new T.Vector3(plenPos.x + plenSize[0] / 2 + 0.3, plenPos.y, plenPos.z);
-      return { pos: plenPos, size: plenSize };
-    }
-
-    runnerPath(a, outDir, b) { return [a, a.clone().addScaledVector(outDir, 0.25), b]; } // port -> plenum
-    plenumMat() { return this.M.head; }
-
-    buildFront() {
-      const e = this.e, M = this.M, fx = this.frontX, topY = this.frontTopY();
-      const cover = new T.Mesh(new T.BoxGeometry(0.08, topY + 0.6, this.coverD()), M.dark2);
-      cover.position.set(fx + 0.02, (topY + 0.6) / 2 - 0.5, 0); this.eng.add(cover);
-      e._pulley(0.36, fx + 0.14, 0, 0, 1);
-      this.crankPulley = { x: fx + 0.14, y: 0, z: 0, r: 0.36 };
-      if (!e.ind.blower) e._pulley(0.22, fx + 0.14, Math.min(topY, 1.1), 0, 1.6); // the blower belt runs there
-      e._pulley(0.15, fx + 0.14, 0.55, this.sidePulleyZ(), 2.4);
-    }
-
-    buildRear() {
-      const e = this.e, M = this.M;
-      const fw = new T.Group(); fw.position.x = this.rearX - 0.12; this.eng.add(fw); e.spin(fw, 1);
-      const disc = new T.Mesh(new T.CylinderGeometry(0.85, 0.85, 0.12, 48), M.steel); disc.rotation.z = Math.PI / 2; disc.castShadow = true; fw.add(disc);
-      for (let k = 0; k < 6; k++) {
-        const bolt = new T.Mesh(new T.BoxGeometry(0.04, 0.12, 0.12), M.dark);
-        bolt.position.set(0.07, Math.cos(k * Math.PI / 3) * 0.55, Math.sin(k * Math.PI / 3) * 0.55); fw.add(bolt);
-      }
-    }
-
-    /* zoomie stack: out of the port, up past the top of the engine, tip slightly back */
-    stackPath(c) {
-      const e = this.e, b = c.bank, p0 = e._toEng(b, c.port);
-      const o = e._toEng(b, new T.Vector3());
-      const out = e._toEng(b, new T.Vector3(0, 0, b.outer)).sub(o).normalize();
-      const up = new T.Vector3(0, 1, 0);
-      const outH = new T.Vector3(0, 0, Math.sign(out.z) || 1);
-      const p1 = p0.clone().addScaledVector(outH, 0.24).addScaledVector(up, -0.02);
-      const p2 = p1.clone().addScaledVector(outH, 0.1).addScaledVector(up, 0.3);
-      return this._stackTail(p0, p1, p2);
-    }
-    _stackTail(p0, p1, p2) {
-      const up = new T.Vector3(0, 1, 0), back = new T.Vector3(-1, 0, 0);
-      const rise = Math.max(0.45, (this.topY() + 0.2) - p2.y);
-      const p3 = p2.clone().addScaledVector(up, rise * 0.6).addScaledVector(back, 0.06);
-      const p4 = p2.clone().addScaledVector(up, rise).addScaledVector(back, 0.2).addScaledVector(p2.clone().sub(p0).setY(0).normalize(), 0.12);
-      return [p0, p1, p2, p3, p4];
-    }
-
-    finish() {}
-
-    /* ---- exhaust effects (default: zoomie stacks with flame jets, js/engine3d.js) ---- */
-    buildExhaust(cyls) { cyls.forEach(c => this.e._stack(c, this.stackPath(c))); }
-    exhaustPulse(c, sim) { this.e._pulse(c, sim); }      // an exhaust opening of cylinder c
-    fxEvent(ev, sim) { return false; }                   // true = handled here, skip the default
-    updateFx(dt, sim, quality) { this.e._jets(dt, sim, quality); }
-    glowPoint() { return this.e.stacks.length ? this.e._tipCenter() : null; } // world space: flame light, background glow
-    frameBox(box) {}                                     // widen the framing box for effects
-  }
-
   /* ------------------------------------------------------------ inline */
-  class InlineLayout extends EngineLayout {
+  class InlineLayout extends PistonLayout {
     static label(n) { return 'I' + n; }
     banks() { return [{ tilt: 0, m: this.n, off: 0, outer: 1, hw: 0.5 }]; }
     plenum() { return { pos: new T.Vector3(-0.05, DECK + 0.1, -1.15), size: [this.len - 0.5, 0.42, 0.5] }; }
@@ -216,7 +31,7 @@
   InlineLayout.id = 'inline';
 
   /* ------------------------------------------------------------ V (two banks) */
-  class VLayout extends EngineLayout {
+  class VLayout extends PistonLayout {
     static normCyl(n) { return evenUp(cap(n)); }
     static label(n) { return 'V' + n; }
     bankAngle(m) { return m % 3 === 0 ? 60 : m % 5 === 0 ? 72 : 90; }
@@ -280,7 +95,7 @@
   WLayout.id = 'w';
 
   /* ------------------------------------------------------------ radial (aircraft star, 1..4 rows) */
-  class RadialLayout extends EngineLayout {
+  class RadialLayout extends PistonLayout {
     // odd count per row (even firing with a single crank pin), at most 9 per row
     static split(n) {
       n = cap(n);
@@ -441,7 +256,7 @@
   /* ------------------------------------------------------------ rotary (Wankel), one "cylinder" = one rotor
      Housing bore = epitrochoid (long axis vertical), triangular rotor orbiting the eccentric shaft:
      rotor centre at ecc·(cos θ, sin θ) in (y, z), rotor turned by θ/3, each rotor fires once per shaft turn. */
-  class RotaryLayout extends EngineLayout {
+  class RotaryLayout extends PistonLayout {
     static label(n) { return n + '-ROTOR'; }
     constructor(e, n) {
       super(e, n);
@@ -582,15 +397,6 @@
   }
   RotaryLayout.id = 'rotary';
 
-  EngineLayout.kind = 'piston';  // 'piston' | 'steam' | 'jet': sim boost source, dash scales (js/dash.js)
-  EngineLayout.turbos = true;    // which forced induction a layout can carry (see Induction.effective)
-  EngineLayout.blower = true;
-  const LAYOUTS = { inline: InlineLayout, v: VLayout, boxer: BoxerLayout, w: WLayout, radial: RadialLayout, rotary: RotaryLayout };
-  window.EngineLayouts = Object.assign({}, LAYOUTS, {
-    MAX_CYL,
-    base: EngineLayout,
-    get(id) { return LAYOUTS[id] || VLayout; },   // unknown values fall back to V
-    register(cls) { LAYOUTS[cls.id] = cls; },     // layouts in their own files (js/steam.js, js/jet.js)
-    turboScale,
-  });
+  const reg = (cls, title) => { cls.title = title; EngineLayouts.register(cls); };
+  reg(InlineLayout, 'Inline'); reg(VLayout, 'V'); reg(BoxerLayout, 'Boxer'); reg(WLayout, 'W'); reg(RadialLayout, 'Radial'); reg(RotaryLayout, 'Rotary');
 })();

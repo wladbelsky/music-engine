@@ -26,11 +26,12 @@ function world({ w = 1920, h = 1080, dash = {}, seed } = {}) {
   const sim = new g.EngineSim(), audio = fakeAudio();
   const W = { g, e, d, sim, audio, t: 0, w, h };
   W.build = (n, id, ind = '1') => {
-    const L = g.EngineLayouts.get(id), eff = g.Induction.effective(g.Induction.parse(ind), L);
-    Object.assign(sim.settings, { kind: L.kind || 'piston', turbos: eff.turbos, blower: eff.blower, redline: L.kind === 'piston' ? sim.settings.redline : 7000 });
+    const L = g.EngineLayouts.get(id), eff = g.Induction.effective(g.Induction.parse(ind), L), type = g.EngineTypes.get(L.kind);
+    if (W.userRedline === undefined) W.userRedline = sim.settings.redline;
+    Object.assign(sim.settings, { kind: type.id, turbos: eff.turbos, blower: eff.blower, redline: type.redline ?? W.userRedline });
     e.build(n, id, g.Induction.parse(ind));
     e.resize(w, h);
-    if (d) d.set({ kind: L.kind || 'piston', label: L.label(L.normCyl(n)) });
+    if (d) d.set({ kind: type.id, label: L.label(L.normCyl(n)) });
     return W;
   };
   W.resize = (w2, h2) => { W.w = w2; W.h = h2; if (d) { d.resize(w2, h2, 1); e.setKeepOut(d.keepOut()); } e.resize(w2, h2); return W; };

@@ -234,12 +234,11 @@
     }
 
     frameBox(box) { box.min.x -= 1.2; }                 // room for the plume
-    _w(v) { return this.eng.localToWorld(v.clone()); }
     glowPoint() { return this.I > 0.02 ? this._w(this.nozzleL).add(this._dirW().multiplyScalar(1.2)) : this._w(this.nozzleL); }
     _dirW() { return new T.Vector3(-1, 0, 0).applyQuaternion(this.eng.quaternion); }
 
     exhaustPulse() {}
-    fxEvent(ev, sim) {
+    onEvent(ev, sim) {
       const e = this.e;
       if (ev.type === 'backfire') {                   // afterburner light-up / pop
         this.burst = Math.max(this.burst, 0.45 + 0.6 * ev.k);
@@ -247,7 +246,6 @@
         this._sparks(Math.round(4 + 8 * ev.k), 1 + ev.k);
       } else if (ev.type === 'start') { e.rock = 1; this.burst = Math.max(this.burst, 0.8); this._smoke(10); } // torching light-off
       else if (ev.type === 'smoke') this._smoke(Math.round(6 + 10 * ev.k));
-      return true;
     }
     _smoke(m) {
       const e = this.e, p = this._w(this.nozzleL), d = this._dirW();
@@ -306,6 +304,30 @@
   }
   JetLayout.id = 'jet';
   JetLayout.kind = 'jet';
+  JetLayout.title = 'Turbojet';
   JetLayout.turbos = false; JetLayout.blower = false;
   L.register(JetLayout);
+
+  /* exhaust gas temperature, x100 deg C (the dash's EGT gauge) */
+  class JetEgt {
+    constructor() { this.v = 0; this.rise = 0.35; this.fall = 1.4; }
+    target(sim) { return 4.4 + 2.3 * sim.throttle + 1.9 * sim.flame; }
+    rest(sim) { return sim.state === 'cranking' ? 1.2 + 4 * clamp(sim.stateT - 0.5, 0, 0.4) : 0.25; } // light-off
+  }
+  const IDLE = () => window.ENGINE_IDLE || 850;
+  EngineTypes.register({
+    id: 'jet',
+    redline: 7000,                   // internal scale; the dash shows % rpm
+    glow: { color: 0xff7a2a, css: [255, 120, 30] },
+    sim: { maxBoost: 8.5, sources: () => [new JetEgt()] },
+    // turbine: % rpm, ground idle ~60 %, 100 % at the (internal) redline
+    dash: red => ({
+      tach: { max: 110, red: 100, minor: 2, half: 10, major: 20, text: String, title: '% RPM',
+        map: r => r <= IDLE() ? r / IDLE() * 60 : 60 + (r - IDLE()) / Math.max(1, red - IDLE()) * 40, digits: v => v.toFixed(1).padStart(5, ' ') },
+      left: EngineTypes.tempGauge('OIL °C'),
+      right: { min: 0, max: 10, labels: [0, 2, 4, 6, 8, 10], danger: 8.5, title: 'EGT °C', value: s => s.boost,
+        label: v => String(v * 100), text: v => String(Math.round(v * 100)), rate: 10 },
+      lamps: { stall: 'FLAMEOUT', overboost: 'EGT HIGH', battery: 'STARTER' },
+    }),
+  });
 })();
