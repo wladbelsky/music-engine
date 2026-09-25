@@ -22,6 +22,7 @@
   const ECC = 0.075, LEAD = 120; // eccentric throw, angle ahead of the crank
   const VALVE_Y = H + 0.72, VALVE_Z = 1.25;
   const DZ = -1, Z = z => DZ * z;  // the cylinders lie towards -Z: crank, rods and flywheel face the camera
+  const BLOW_P = 0.1;          // cylinder cock blow-outs per turn at full flame, on top of the beats (like the marine relief valves)
 
   class SteamLayout extends L.base {
     static normCyl(n) { const v = Math.round(Number(n)); return isFinite(v) ? clamp(v, 1, 8) : 2; }
@@ -35,6 +36,7 @@
       this.swayK = 0.2; this.smooth = true;   // a heavy engine on a foundation: it shows the beat otherwise (updateFx)
       this.acc = { smoke: 0, spark: 0, drain: 0, vent: 0 };
       this.vent = 0; this.fireK = 0; this.cj = 0; this.rn = 0;
+      this.blows = [];
     }
 
     banks() { return [{ tilt: 0, m: this.n, off: 0, outer: 1, hw: 0.5 }]; }
@@ -256,14 +258,35 @@
         2.4 + Math.random() * 1.5, dark ? 0.5 : 0.38, 0);
     }
 
+    /* music: a cylinder's cocks blow out, a burst of steam from under the barrel (like a locomotive's), lingering a moment */
+    _blow(c, k) {
+      const e = this.e;
+      for (const d of c.drains) {
+        const w = this._w(d);
+        for (let i = 0; i < Math.round(6 + 8 * k); i++) {
+          const sp = 2.5 + Math.random() * 3 * (0.6 + k);   // out from under the barrel towards the crank end (the camera), fanning sideways
+          e.smoke.spawn(w.x, w.y, w.z, 0.4 + (Math.random() - 0.5) * 2.4, 0.2 + Math.random() * 0.9, -DZ * sp,
+            0.9 + Math.random() * 0.6, 0.28 + Math.random() * 0.2 + 0.12 * k, 4);
+        }
+      }
+      this.blows.push({ c, t: 0.45 });
+    }
+
     exhaustPulse(c, sim) {
       if (sim.state === 'running' || sim.state === 'stalling' || sim.state === 'cranking') this._chuff(clamp(0.25 + sim.throttle * 0.9 + sim.flame * 0.3, 0, 1.2));
+      // hard running: now and then the cylinder that just exhausted blows its cocks (two chuffs per turn per cylinder)
+      if (sim.state === 'running' && sim.flame > 0.5 && Math.random() < BLOW_P * sim.flame / (2 * this.n)) this._blow(c, 0.3 + 0.4 * sim.flame);
     }
 
     onEvent(ev, sim) {
       const e = this.e;
-      if (ev.type === 'backfire') { this._chuff(1.3); this._sparks(Math.round(6 + 12 * ev.k), 1 + ev.k); e.flash = Math.max(e.flash, 0.5 + 0.5 * ev.k); e.shake = Math.max(e.shake, 0.2 * ev.k); }
-      else if (ev.type === 'smoke') this._coal(Math.round(6 + 10 * ev.k), true);
+      if (ev.type === 'backfire') {
+        if (ev.k > 0.4 && e.time - (this.blowT ?? -9) > 0.25) {   // beats blow a cylinder's cocks (two on a big beat)
+          this.blowT = e.time;
+          for (let r = 0; r < (ev.k > 0.8 ? 2 : 1); r++) this._blow(e.cyls[Math.floor(Math.random() * e.cyls.length)], ev.k);
+        }
+        this._chuff(1.3); this._sparks(Math.round(6 + 12 * ev.k), 1 + ev.k); e.flash = Math.max(e.flash, 0.5 + 0.5 * ev.k); e.shake = Math.max(e.shake, 0.2 * ev.k);
+      } else if (ev.type === 'smoke') this._coal(Math.round(6 + 10 * ev.k), true);
       else if (ev.type === 'vent') this.vent = 1.8;
       else if (ev.type === 'start') e.rock = 1;
     }
@@ -289,6 +312,12 @@
       for (; acc.drain >= 1; acc.drain--) {
         const c = e.cyls[Math.floor(Math.random() * e.cyls.length)], w = this._w(c.drains[Math.random() < 0.5 ? 0 : 1]);
         e.smoke.spawn(w.x, w.y, w.z, 1.6 + Math.random(), -0.7 - Math.random() * 0.5, (Math.random() - 0.5) * 0.6, 0.7 + Math.random() * 0.5, 0.12, 4);
+      }
+      // blown cocks keep hissing for a moment
+      this.blows = this.blows.filter(b => (b.t -= dt) > 0);
+      for (const b of this.blows) if (!lo && Math.random() < 0.7) {
+        const w = this._w(b.c.drains[Math.random() < 0.5 ? 0 : 1]);
+        e.smoke.spawn(w.x, w.y, w.z, (Math.random() - 0.5) * 1.2, Math.random() * 0.6, -DZ * (1.8 + Math.random() * 1.5), 0.7 + Math.random() * 0.4, 0.2, 4);
       }
       // safety valve
       if (this.vent > 0) {
