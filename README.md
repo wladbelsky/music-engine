@@ -73,6 +73,25 @@ python -m http.server 8000
 
 Parameters can be passed in the URL: `?demo=1&layout=radial&cylinders=9&turbos=sc&background=carbon&ignition=false`.
 
+## Tests
+
+The wallpaper itself has no build step; `package.json` is only for the tests (Node 22+).
+
+```
+npm install
+npm run test:unit    # unit + scene tests in Node, ~30 s, no browser
+npm run test:e2e     # the page in headless Chromium with SwiftShader WebGL, ~4 min
+npx playwright install chromium   # once, if Playwright has no browser yet
+```
+
+- `test/unit`: audio analysis (BPM, silence, junk input), the engine state machine and boost sources, layouts' cylinder rules, forced induction, odometer, radio info, dash scales and hit areas, and `project.json` ↔ code ↔ settings panel consistency.
+- `test/scene`: the real Three.js scene graph built in Node without WebGL: every layout × induction × cylinder count, kinematics (rods on their pins, stroke, firing order, rotor apexes), camera fit against the dash, the engine staying on the floor, flames at the stack tips, cutaway, NaN resilience.
+- `test/e2e`: rendering checked by rules, not reference images: every build compiles and draws, no engine pixel under the dash, additive flames never write alpha; plus the Wallpaper Engine API (audio and media listeners, properties with junk values, pause, one animation loop), the key, pedal and odometer, and the browser settings panel.
+
+GitHub Actions runs both on every push to `master` and on pull requests (`.github/workflows/ci.yml`).
+
+Don't publish `node_modules/`, `test/`, `.github/` or `package*.json` to the Workshop: the wallpaper needs only `index.html`, `project.json`, `preview.jpg` and `js/`.
+
 ## Files
 
 ```
@@ -92,4 +111,6 @@ js/media.js       now playing for the radio (WE media integration, or the picked
 js/odometer.js    odometer and trip counter, kept in localStorage
 js/main.js        glue: WE properties, audio, input, main loop
 js/three.min.js   Three.js r149 (MIT, license in js/three.LICENSE.txt)
+test/             automated tests (node:test + Playwright), see Tests
+.github/          CI workflow
 ```

@@ -307,6 +307,9 @@
       this.parts.forEach(p => p.build(this, lay, plen));
       lay.buildRear();
       lay.buildExhaust(cyls);
+      // pose the moving parts before grounding: until the first animate() they sit at their origins, and the steam
+      // engine's rods hung below the floor there, so the whole engine was grounded on them and floated after one frame
+      cyls.forEach(c => { const per = c.period || 720; lay.animate(c, (((this.crank - c.phase) % per + per) % per) * 720 / per, this.crank); });
       lay.finish();
 
       // center & ground
