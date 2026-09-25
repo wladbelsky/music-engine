@@ -67,6 +67,10 @@
           {
             "label": "Electric (DC motor)",
             "value": "electric"
+          },
+          {
+            "label": "Marine diesel",
+            "value": "marine"
           }
         ],
         "order": 6
@@ -102,7 +106,7 @@
           }
         ],
         "order": 7,
-        "condition": "layout.value != 'radial' && layout.value != 'steam' && layout.value != 'jet' && layout.value != 'electric'"
+        "condition": "layout.value != 'radial' && layout.value != 'steam' && layout.value != 'jet' && layout.value != 'electric' && layout.value != 'marine'"
       },
       "cutaway": {
         "text": "Cutaway block (shows pistons)",
@@ -181,7 +185,7 @@
       },
       "redline": {
         "text": "Rev limiter (RPM)",
-        "condition": "layout.value != 'steam' && layout.value != 'jet' && layout.value != 'electric'",
+        "condition": "layout.value != 'steam' && layout.value != 'jet' && layout.value != 'electric' && layout.value != 'marine'",
         "type": "slider",
         "value": 7000,
         "min": 5000,

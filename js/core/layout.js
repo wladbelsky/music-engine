@@ -85,8 +85,8 @@
     _tube(pts, r, mat, parent) { const t = new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(pts), 24, r, 10, false), mat); (parent || this.eng).add(t); return t; }
     _w(v, obj) { return (obj || this.eng).localToWorld(v.clone()); }   // local point -> world
     /* crank / eccentric shaft along X, turning with the crank */
-    _mainShaft(len, x = 0) {
-      const shaft = new T.Group(); this.eng.add(shaft); this.e.spin(shaft, 1);
+    _mainShaft(len, x = 0, y = 0) {
+      const shaft = new T.Group(); shaft.position.y = y; this.eng.add(shaft); this.e.spin(shaft, 1);
       const main = new T.Mesh(new T.CylinderGeometry(0.11, 0.11, len, 16), this.M.steel);
       main.rotation.z = Math.PI / 2; main.position.x = x; shaft.add(main);
     }

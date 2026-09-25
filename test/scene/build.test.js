@@ -31,7 +31,8 @@ function check(id, nIn, ind) {
   const gp = e.lay.glowPoint();
   if (gp) assert.ok([gp.x, gp.y, gp.z].every(Number.isFinite), `${tag}: glowPoint`);
   // forced induction parts
-  assert.equal(e.compressors.length, eff.turbos, `${tag}: turbo wheels`);
+  if (e.lay instanceof g.PistonLayout) assert.equal(e.compressors.length, eff.turbos, `${tag}: turbo wheels`);
+  else assert.equal(eff.turbos, 0, `${tag}: no induction parts`);   // its own turbocharger may spin as a compressor (marine)
   assert.equal(e.bovs.length, eff.turbos, `${tag}: BOV origins`);
   assert.deepEqual(e.parts.map(p => p.constructor.name), Induction.parts(eff).map(p => p.constructor.name), tag);
   const blower = e.parts.find(p => p.constructor.name === 'RootsBlower');
