@@ -136,11 +136,18 @@
   window.addEventListener('pagehide', () => odo.flush());
 
   /* ---------- size ---------- */
+  // the layout viewport (the canvases' 100%), not innerWidth/innerHeight: on a phone those follow the pinch zoom,
+  // and a canvas sized from a zoomed-out value kept the page zoomed out after landscape -> portrait
+  function viewSize() {
+    const de = document.documentElement;
+    return [de.clientWidth || window.innerWidth, de.clientHeight || window.innerHeight];
+  }
   function resize() {
-    const w = window.innerWidth, h = window.innerHeight, dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const [w, h] = viewSize(), dpr = Math.min(window.devicePixelRatio || 1, 2);
     bg.resize(w, h, dpr); dash.resize(w, h, dpr); eng3d.setKeepOut(dash.keepOut()); eng3d.resize(w, h);
   }
   window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', () => setTimeout(resize, 300)); // some phones report the old size in 'resize'
 
   /* ---------- settings panel (browser): every WE property, mirrors project.json ---------- */
   // values are raw WE values (%, "r g b" colours...), so the panel goes through applyUserProperties like WE does
@@ -280,7 +287,7 @@
     if (S.fps > 0 && now - last < 1000 / S.fps - 2) return;
     const step = Math.max(0, (now - last) / 1000), dt = Math.min(0.1, Math.max(0.001, step)); last = now;
     const t = now / 1000;
-    if (needRebuild) { needRebuild = false; eng3d.build(S.cylinders, S.layout, S.induction); eng3d.setCutaway(S.cutaway); eng3d.resize(window.innerWidth, window.innerHeight); dash.set({ label: engineLabel() }); }
+    if (needRebuild) { needRebuild = false; eng3d.build(S.cylinders, S.layout, S.induction); eng3d.setCutaway(S.cutaway); eng3d.resize(...viewSize()); dash.set({ label: engineLabel() }); }
     audio.tick(t);
     sim.update(dt, audio, t);
     odo.update(Math.min(step, 1), sim, now); // real time (low FPS caps), but not a whole hidden-tab gap
