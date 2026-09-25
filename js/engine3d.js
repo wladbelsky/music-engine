@@ -276,6 +276,7 @@
     build(nCyl, layoutId, ind) {
       if (this.root) { this.scene.remove(this.root); this._dispose(this.root); }
       this.flames.clear(); this.smoke.clear();
+      this.crank = this.crankTotal = 0;             // every build is grounded and framed in the same pose
       const L = window.EngineLayouts.get(layoutId);
       this.ind = window.Induction.effective(ind && typeof ind === 'object' ? ind : window.Induction.parse(ind), L);
       const n = this.n = L.normCyl(nCyl);
@@ -307,6 +308,9 @@
       this.parts.forEach(p => p.build(this, lay, plen));
       lay.buildRear();
       lay.buildExhaust(cyls);
+      // pose the moving parts before grounding: until the first animate() they sit at their origins, and the steam
+      // engine's rods hung below the floor there, so the whole engine was grounded on them and floated after one frame
+      cyls.forEach(c => lay.animate(c, this._cyc(c, 0), 0));
       lay.finish();
 
       // center & ground
@@ -401,6 +405,9 @@
       this.eng.add(g); this.spin(g, ratio);
       return g;
     }
+    /* position of cylinder c in its firing cycle at crank angle `crank`, normalised to 0..720
+       (period 720; a rotor's cycle is one shaft turn, 360; a double-acting steam cylinder's 180) */
+    _cyc(c, crank) { const per = c.period || 720; return (((crank - c.phase) % per + per) % per) * 720 / per; }
     /* pitch (deg, optional) = blade/spoke spacing of a part not tied to the crank: its step per frame is capped at
        0.4 pitch so it never strobes (frozen or running backwards); s.over = the real step in pitches, for blur */
     spin(obj, ratio, off = 0, pitch = 0) { const s = { obj, ratio, a: 0, off, pitch, over: 0 }; this.spinners.push(s); obj.rotation.x = off; return s; }
@@ -644,8 +651,7 @@
       const crank = this.crank;
       const lay = this.lay;
       this.cyls.forEach(c => {
-        // cyc = position in the firing cycle, normalised to 0..720 (a rotor's cycle is one shaft turn, period 360)
-        const per = c.period || 720, cyc = (((crank - c.phase) % per + per) % per) * 720 / per;
+        const per = c.period || 720, cyc = this._cyc(c, crank);
         lay.animate(c, cyc, crank);                // pistons/rods (slider-crank) or rotors, from the layout
         // firings (cyc 0) and exhaust openings (cyc 170) since the last frame, counted on the unwrapped crank
         // angle: a frame step bigger than the cycle window (low fps, high rpm, a rotor's 360 period) can't skip them

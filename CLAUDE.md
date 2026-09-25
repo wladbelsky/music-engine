@@ -54,27 +54,32 @@ Favicon (browser tab only): `favicon.svg` (a tachometer with a red zone) + `favi
 - **One rAF chain only:** `setPaused(false)` used to call `requestAnimationFrame(loop)` unconditionally; WE unpausing without a pause (or pause+unpause within one frame) stacked extra loops, each running a full frame. Use `startLoop()` (tracks `rafId`).
 
 - **Media listener registration must not break `if (IS_WE) … else setupDev()`**: a loop inserted between them once captured the `else`, so setupDev() ran 3× (three DemoSource feeds at ~90 Hz, BPM garbage). Keep the `for` loop after the if/else, with braces.
-- **Never `git add -A` after downloading tools into the repo root** (`pip download` once committed 49 MB of wheels). `.gitignore` covers `*.whl`.
+- **Ground the engine in its posed state:** until the first `animate()` the moving parts sit at their origins; the steam engine's rods hung below the floor there, so `build()` grounded it on them and it floated ~0.8 above its shadow after one frame. `build()` now resets the crank to 0 and calls `lay.animate(c, _cyc(c, 0), 0)` for every cylinder before `lay.finish()` and the grounding: a fixed pose, so foot points, fit points and the radial stand don't depend on where the previous engine's crank stopped (`_cyc(c, crank)` is the one cycle mapping, also used by `update()`).
+- **Never `git add -A` after downloading tools into the repo root** (`pip download` once committed 49 MB of wheels). `.gitignore` covers `*.whl` and `node_modules/`; `npm install` for the tests puts ~10 MB there, keep it out of Workshop uploads.
 
 ## Testing
-Headless Chromium + SwiftShader (the sandbox has Playwright, browsers in `/opt/pw-browsers`):
+**Automated (`npm test`; CI in `.github/workflows/ci.yml` runs `test:unit` and `test:e2e` as two jobs).** Plain `node:test`, the only dependency is `playwright` pinned to **1.56.1** = the sandbox's `chromium-1194` in `/opt/pw-browsers` (don't bump one without the other; `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD` is set here, so `npm install` fetches no browser).
+- `test/helpers/load.js`: loads the scripts in `index.html` order (all but main.js) into a `vm` context: stub `THREE.WebGLRenderer`/`PMREMGenerator`, a 2D context Proxy that swallows every call (Dash/Background lay out for real), `MemoryStorage` for localStorage (`.broken = true` throws), seeded `Math.random`, `clock.ms` = `performance.now()`. `g.run(code, timeoutMs)`: the timeout also stops endless loops (the BPM hang test relies on it). Objects from the vm are another realm: `assert.deepEqual` on its arrays fails, spread them first.
+- `test/helpers/scene.js`: `world({w, h, dash})` wires Engine3D + Dash like main.js (`dash.resize → setKeepOut(keepOut()) → eng3d.resize`), `build(n, id, ind)`, `frame(n, dt, each)`, `rev(secs)` (to running, pedal down), `fakeAudio()` (the sim unit tests use it too). `LAYOUT_IDS` (load.js) = the `layout` combo in project.json: iterate layouts with it, don't hardcode the list.
+- `test/unit` (no THREE rendering), `test/scene` (real scene graph, no pixels), `test/e2e` (`page.js`: `open(browser, query, {we})` with a fake WE API when `we`, `__t.beat(bpm)` feeds audio in the page, `__t.raf` = pending rAF callbacks, `__t.intervals30` = 30 Hz intervals (DemoSource), `__t.pixels({only: 'engine'|'fx', keepOut, near})` renders and reads the GL canvas back in the same task; `props(page, {...})` = applyUserProperties + wait for frames).
+- Rendering is tested by rules, not golden images (the user's choice): no NaN vertex/matrix, fit points and opaque engine pixels outside `Dash.keepOut()`, lowest vertex ≥ floor while rocking, flame particles born at `tipW`, additive effects with `opaque === 0`.
+- Known finding kept as a `todo` test (doesn't fail CI): multi-row radials don't fire evenly across rows (14 = 2×7 fires in pairs, 27/28 uneven); each row is even.
+- Mutation-checked: reverting the old bugs (unclamped BPM refinement, `requestAnimationFrame` in `setPaused`, `setupDev()` ×3, plain additive blending, no keep-out fit, no `mountY`/`lift`, no NaN reset, one exhaust pulse per frame, no spinner pitch cap, grounding on unposed parts) makes the matching test fail.
+
+Manual checks: headless Chromium + SwiftShader:
 ```python
 b = await p.chromium.launch(args=["--use-gl=angle","--use-angle=swiftshader","--enable-unsafe-swiftshader"])
 await pg.goto("file:///…/music-engine/index.html?demo=1&layout=v&cylinders=8&debug=true")
 await pg.evaluate("document.getElementById('devpanel').style.display='none'")
-state = await pg.evaluate("__dbg.sim.state")   # __dbg = {audio, sim, eng3d, dash, S}
+state = await pg.evaluate("__dbg.sim.state")   # __dbg = {audio, sim, eng3d, dash, media, odo, S}
 ```
 - In headless mode FPS is low and `dt` is clamped to 0.1, so sim time lags wall time. Pick frames by state (for example `__dbg.sim.flame > 0.5`), not by timer.
 - Key/pedal: take coordinates from `__dbg.dash.keyC` / `__dbg.dash.pedalR` and use `page.mouse`.
 - URL parameters are passed straight into `applyUserProperties` (`?ignition=false&background=carbon…`).
 - **Refactor regression:** `?ignition=false` with the `bg` and `dash` canvases hidden gives a deterministic engine frame (only turbo wheels move, they spin from boost even when off); diff against screenshots from before the change.
-- Before finishing, check JS syntax: `node -e "new Function(fs.readFileSync(f,'utf8'))"`, and that there are no `pageerror`s.
+- Before finishing: `npm run test:unit` (and `test:e2e` for anything visual), no `pageerror`s.
 
 ## Ideas / not done yet
-- **Autotests + GitHub CI** (planned for a separate branch once the current work is merged):
-  - unit tests on `node:test` loading the plain scripts into a `vm` (BPM detection, sim state machine, boost sources, `normCyl`/`label`/`Induction` rules, `project.json` consistency);
-  - Playwright + SwiftShader e2e over every layout × induction option (no errors/NaN, part counts, engine in frame and off the dash, flames from the stack tips, butterflies, cutaway, rotor apex check, junk WE values, one rAF chain);
-  - golden screenshots of the engine only (ignition off, bg/dash hidden), with Playwright pinned to the sandbox's Chromium build;
-  - a GitHub Actions workflow with a manual job to regenerate the baselines;
-  - for deterministic stills, stop the turbo wheels when the engine is off (they spin from boost now).
+- **Radial firing across rows** (found by the tests, `todo` in `test/scene/kinematics.test.js`): `phase = tilt + pinOff + 360·(k%2)` is even within a row, but rows land on each other (14 = 2×7: pairs fire at once) or leave uneven gaps (27, 28). Real twin-row radials fire every 720/n. Flipping the alternate cylinders on odd rows (`360·((k + row) % 2)`) fixes 2 rows; 3–4 rows need a different pin offset or row stagger. Changes the look of the firing, so ask first.
+- **Golden screenshots**: not done on purpose (the user wanted rendering covered by logic, not image diffs).
 - **Engine kind → layout class** (the user decided to leave it for now): the engine type is described in three places keyed by the `kind` string: `PROFILES` in dash.js, `_sources()`/`MAX_BOOST` in sim.js, `redline()` in main.js. When a fourth kind comes along, move that data into a static description on the layout class (tach scale, the right gauge's source and max, internal redline, lamp names) and keep the drawing in dash.js. Different instrument *sets* per kind (brass gauges without shift lights for steam; N1/N2/fuel flow for the jet) would mean splitting `Dash` into gauge components with a layout, hitTest, radio and portrait included. Only worth it with a concrete design.

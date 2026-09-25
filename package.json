@@ -1,0 +1,17 @@
+{
+  "name": "music-engine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Audio-reactive engine wallpaper for Wallpaper Engine (tests and CI tooling only; the wallpaper itself has no build step)",
+  "scripts": {
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "node --test --test-reporter=spec \"test/unit/*.test.js\" \"test/scene/*.test.js\"",
+    "test:e2e": "node --test --test-reporter=spec --test-concurrency=1 \"test/e2e/*.test.js\""
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
