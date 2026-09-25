@@ -57,8 +57,8 @@ function beatMotion(id, sway) {
 test('jet and steam show the beat although they barely rock: the jet stand leans on its springy legs, the boiler and chimney rock', () => {
   const jet = beatMotion('jet', 1), steam = beatMotion('steam', 1);
   assert.ok(jet.jolt > 0.8, `beat spring ${jet.jolt}`);
-  assert.ok(jet.jx > 0.05, `jet surge ${jet.jx}`);
-  assert.ok(jet.jrot > 0.03, `jet stand legs lean ${jet.jrot}`);
+  assert.ok(jet.jx > 0.037 && jet.jx < 0.11, `jet surge ${jet.jx}`);            // 0.75 of the first version (0.128): it looked like it would break the stand
+  assert.ok(jet.jrot > 0.022 && jet.jrot < 0.09, `jet stand legs lean ${jet.jrot}`);
   assert.ok(jet.cradle < 1e-9, 'the cradles ride with the engine');
   assert.ok(steam.chim > 0.012, `chimney ${steam.chim}`);
   assert.ok(steam.boiler > 0.004, `boiler ${steam.boiler}`);

@@ -224,7 +224,7 @@
       const push = run ? 0.02 * sim.throttle + 0.035 * clamp(this.I, 0, 1.2) : 0;
       this.push += (push - this.push) * (1 - Math.exp(-dt / 0.35));
       const trem = run ? 0.0035 * rn * Math.sin(e.time * 71) * Math.sin(e.time * 53.3) * sw : 0;
-      const a = clamp((this.push * sw + 0.05 * e.jolt) / this.LEG, -0.12, 0.12);   // leg lean; e.jolt carries the sway setting
+      const a = clamp(0.75 * (this.push * sw + 0.05 * e.jolt) / this.LEG, -0.09, 0.09);   // leg lean (a quarter less than first tried: it looked like it would break the stand); e.jolt carries the sway setting
       const dx = this.LEG * Math.sin(a), dy = -this.LEG * (1 - Math.cos(a));
       this.legs.forEach(l => { l.rotation.z = -a; });
       this.W.position.set(dx, dy, 0);

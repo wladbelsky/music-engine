@@ -102,3 +102,13 @@ test('marine: relief valves lift on ordinary fiery beats, several of them over a
   W.frame(90, 1 / 30, (W2, i) => { if (i % 10 === 0) W.sim.events.push({ type: 'backfire', k: 0.6 }); });
   assert.ok(lifted.size > 1, `only ${lifted.size} relief valve(s) lifted`);
 });
+
+test('marine: at full flame the relief valves lift about twice as often as they used to (5 in 3 s)', () => {
+  const W = world({ dash: false, seed: 3 });
+  W.build(8, 'marine', '0');
+  W.rev(1);
+  let n = 0; const orig = W.e.lay._relief.bind(W.e.lay);
+  W.e.lay._relief = (c, k) => { n++; orig(c, k); };
+  W.frame(90, 1 / 30, (W2, i) => { W.sim.flame = 1; if (i % 10 === 0) W.sim.events.push({ type: 'backfire', k: 0.6 }); });
+  assert.ok(n >= 9, `only ${n} relief valve lifts in 3 s`);
+});

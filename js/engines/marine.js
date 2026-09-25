@@ -21,6 +21,7 @@
   const T = THREE;
   const { DEG, clamp, firingOrder } = Engine3D.GEO;
   const FX = EngineFX, L = EngineLayouts;
+  const RELIEF_P = 0.15;              // relief valve lifts per engine cycle (two turns) at full flame, on top of the beats
 
   const PITCH = 1.05;                 // cylinder spacing
   const H = 1.3, CRK = 0.5, ROD = 2.0, PROD = 2.15;  // crank axis height, crank radius, connecting rod, piston rod
@@ -323,12 +324,14 @@
         f.pulse = Math.max(f.pulse, 0.35 + 0.6 * sim.flame);
         if (Math.random() < 0.3 * sim.flame) this.e._flameP({ tip: f.tip, dir: f.dir, tipW: f.tipW, dirW: f.dirW }, 1 + sim.flame, 0);
       }
+      // hard running: now and then the cylinder that just fired lifts its relief valve too
+      if (sim.flame > 0.5 && Math.random() < RELIEF_P * sim.flame / this.n) this._relief(c, 0.3 + 0.4 * sim.flame);
     }
 
     onEvent(ev, sim) {
       const e = this.e;
       if (ev.type === 'backfire') {
-        if (ev.k > 0.45 && e.time - (this.reliefT ?? -9) > 0.5) {   // relief valves lift: flames out sideways, a bang (two on a big beat)
+        if (ev.k > 0.4 && e.time - (this.reliefT ?? -9) > 0.25) {   // relief valves lift: flames out sideways, a bang (two on a big beat)
           this.reliefT = e.time;
           for (let r = 0; r < (ev.k > 0.8 ? 2 : 1); r++) this._relief(e.cyls[Math.floor(Math.random() * e.cyls.length)], ev.k);
           e.flash = Math.max(e.flash, 0.5 + 0.5 * ev.k); e.shake = Math.max(e.shake, 0.2 + 0.4 * ev.k);
