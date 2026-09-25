@@ -12,15 +12,18 @@ const { world, fakeAudio } = require('./scene');
 const SCENE_CASES = [
   ['inline', 4, '0'], ['inline', 6, '1'], ['v', 8, '2'], ['v', 12, 'sc'], ['boxer', 6, 'sc2'], ['w', 16, '4'],
   ['radial', 9, '0'], ['radial', 14, '1'], ['rotary', 2, '1'], ['rotary', 4, 'sc'], ['steam', 2, '0'], ['steam', 5, '0'],
-  ['jet', 8, '0'], ['jet', 16, '0'],
+  ['jet', 8, '0'], ['jet', 16, '0'], ['electric', 4, '0'], ['electric', 12, '0'], ['marine', 6, '0'], ['marine', 12, '0'],
+  ['rocket', 1, '0'], ['rocket', 9, '0'],
 ];
 const SIM_CASES = [
   { kind: 'piston', turbos: 0, blower: false }, { kind: 'piston', turbos: 1, blower: false }, { kind: 'piston', turbos: 2, blower: false },
   { kind: 'piston', turbos: 0, blower: true }, { kind: 'piston', turbos: 2, blower: true },
   { kind: 'piston', turbos: 1, blower: false, redline: 9500 }, { kind: 'piston', turbos: 1, blower: false, redline: 5000 },
   { kind: 'steam', turbos: 0, blower: false, redline: 7000 }, { kind: 'jet', turbos: 0, blower: false, redline: 7000 },
+  { kind: 'electric', turbos: 0, blower: false, redline: 7000 }, { kind: 'marine', turbos: 0, blower: false, redline: 7000 },
+  { kind: 'rocket', turbos: 0, blower: false, redline: 7000 },
 ];
-const DASH_KINDS = ['piston', 'steam', 'jet'];
+const DASH_KINDS = ['piston', 'steam', 'jet', 'electric', 'marine', 'rocket'];
 
 const DT = 1 / 30;
 /* the song: returns what the audio / key / pedal do at time t */
