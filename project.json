@@ -71,6 +71,10 @@
           {
             "label": "Marine diesel",
             "value": "marine"
+          },
+          {
+            "label": "Rocket",
+            "value": "rocket"
           }
         ],
         "order": 6
@@ -106,7 +110,7 @@
           }
         ],
         "order": 7,
-        "condition": "layout.value != 'radial' && layout.value != 'steam' && layout.value != 'jet' && layout.value != 'electric' && layout.value != 'marine'"
+        "condition": "layout.value != 'radial' && layout.value != 'steam' && layout.value != 'jet' && layout.value != 'electric' && layout.value != 'marine' && layout.value != 'rocket'"
       },
       "cutaway": {
         "text": "Cutaway block (shows pistons)",
@@ -185,7 +189,7 @@
       },
       "redline": {
         "text": "Rev limiter (RPM)",
-        "condition": "layout.value != 'steam' && layout.value != 'jet' && layout.value != 'electric' && layout.value != 'marine'",
+        "condition": "layout.value != 'steam' && layout.value != 'jet' && layout.value != 'electric' && layout.value != 'marine' && layout.value != 'rocket'",
         "type": "slider",
         "value": 7000,
         "min": 5000,

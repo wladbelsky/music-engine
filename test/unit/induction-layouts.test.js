@@ -67,6 +67,7 @@ test('normCyl: every input becomes a legal count for the layout', () => {
     jet: n => n >= 6 && n <= 16,
     electric: n => n >= 2 && n <= 12 && n % 2 === 0,
     marine: n => n >= 4 && n <= 12,
+    rocket: n => n >= 1 && n <= 30,
   };
   for (const id of IDS) for (const x of inputs) {
     const n = EL.get(id).normCyl(x);
@@ -103,6 +104,8 @@ test('labels', () => {
   assert.equal(lab('jet', 8), 'TURBOJET 8-CAN');
   assert.equal(lab('electric', 4), 'DC MOTOR 4-BRUSH');
   assert.equal(lab('marine', 6), 'MARINE DIESEL 6-CYL');
+  assert.equal(lab('rocket', 1), 'ROCKET ENGINE');
+  assert.equal(lab('rocket', 9), 'ROCKET 9-ENGINE');
 });
 
 test('turboScale: 1.25 … 1.6', () => {

@@ -138,7 +138,8 @@ test('cutaway shows the moving parts and ghosts the block; off hides them', () =
     assert.equal(M.block.transparent, true); assert.ok(M.block.opacity < 0.5);
     assert.equal(M.blowerCase.transparent, true);
     assert.ok((W.e._edgeList || []).every(l => l.visible));
-    assert.ok((W.e._edgeList || []).length > 0, `${id}: no ghost edges`);
+    let ghosts = false; W.e.eng.traverse(o => { if (o.isMesh && o.material === M.block) ghosts = true; });
+    if (ghosts) assert.ok((W.e._edgeList || []).length > 0, `${id}: no ghost edges`);   // (the rocket has no casing to ghost)
   }
 });
 

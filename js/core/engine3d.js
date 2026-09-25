@@ -370,12 +370,13 @@
       return new Float32Array(pts);
     }
 
-    /* true when no probe point lands on the dash (or, before the dash reported its areas, right of FIT_RIGHT) */
+    /* true when every probe point is on screen and none lands on the dash (or, before the dash reported its areas, right of FIT_RIGHT) */
     _clear(landscape) {
       const P = this._fitPts; if (!P) return true;
       const cam = this.camera, v = new T.Vector3(), w = this.w, h = this.h, m = 0.012 * w, K = this.keepOut;
       for (let i = 0; i < P.length; i += 3) {
         v.set(P[i], P[i + 1], P[i + 2]).project(cam);
+        if (Math.abs(v.x) > 1 || Math.abs(v.y) > 1) return false;   // off the screen (a wide, deep engine: the rocket cluster's stand)
         if (!K) { if (landscape && v.x > FIT_RIGHT) return false; continue; }
         const x = (v.x + 1) / 2 * w, y = (1 - v.y) / 2 * h;
         for (const s of K) {
