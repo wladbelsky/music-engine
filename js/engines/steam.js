@@ -34,7 +34,7 @@
       this.airFilter = false;
       this.animK = 200 / 7000 / 0.085;   // the shaft turns at the rpm the dash shows (200 at the redline)
       this.swayK = 0.2; this.smooth = true;   // a heavy engine on a foundation: it shows the beat otherwise (updateFx)
-      this.acc = { smoke: 0, spark: 0, drain: 0, vent: 0 };
+      this.acc = { smoke: 0, spark: 0, drain: 0, vent: 0, ember: 0 };
       this.vent = 0; this.fireK = 0; this.cj = 0; this.rn = 0;
       this.blows = [];
     }
@@ -186,6 +186,7 @@
       this._box(0.48, 0.4, 0.04, M.dark2, 0.24, 0, 0.02, hinge);
       this._cylZ(0.035, 0.06, M.steel, 0.4, 0, 0.06, hinge, 8);                          // handle
       this.doorL = door.position.clone().addScaledVector(dir, 0.35);
+      this.door = door;                                  // embers fly out of the grate (_embers)
       // pressure gauge and water glass on the front
       const gp = new T.Vector3(xb, 2.3, zb).addScaledVector(dir, R + 0.03), gauge = new T.Group();
       gauge.position.copy(gp); gauge.rotation.y = door.rotation.y; B.add(gauge);
@@ -272,6 +273,16 @@
       this.blows.push({ c, t: 0.45 });
     }
 
+    /* embers out of the firebox door: along the door's normal, up and fanning out, then falling (the boiler rocks, so via the door) */
+    _embers(m, k) {
+      const e = this.e, p = this._w(new T.Vector3(0, 0, 0.1), this.door), d = this._w(new T.Vector3(0, 0, 1.1), this.door).sub(p);
+      for (let i = 0; i < m; i++) {
+        const sp = 1.5 + Math.random() * 3 * k, up = 1.2 + Math.random() * 2.8 * k, sd = (Math.random() - 0.5) * 1.6;
+        e.flames.spawn(p.x + (Math.random() - 0.5) * 0.3, p.y + (Math.random() - 0.5) * 0.25, p.z,
+          d.x * sp - d.z * sd, up, d.z * sp + d.x * sd, 0.6 + Math.random() * 0.8, 0.04 + Math.random() * 0.035, 3);
+      }
+    }
+
     exhaustPulse(c, sim) {
       if (sim.state === 'running' || sim.state === 'stalling' || sim.state === 'cranking') this._chuff(clamp(0.25 + sim.throttle * 0.9 + sim.flame * 0.3, 0, 1.2));
       // hard running: now and then the cylinder that just exhausted blows its cocks (two chuffs per turn per cylinder)
@@ -285,7 +296,7 @@
           this.blowT = e.time;
           for (let r = 0; r < (ev.k > 0.8 ? 2 : 1); r++) this._blow(e.cyls[Math.floor(Math.random() * e.cyls.length)], ev.k);
         }
-        this._chuff(1.3); this._sparks(Math.round(6 + 12 * ev.k), 1 + ev.k); e.flash = Math.max(e.flash, 0.5 + 0.5 * ev.k); e.shake = Math.max(e.shake, 0.2 * ev.k);
+        this._chuff(1.3); this._sparks(Math.round(6 + 12 * ev.k), 1 + ev.k); this._embers(Math.round(12 + 20 * ev.k), 0.6 + ev.k); e.flash = Math.max(e.flash, 0.5 + 0.5 * ev.k); e.shake = Math.max(e.shake, 0.2 * ev.k);
       } else if (ev.type === 'smoke') this._coal(Math.round(6 + 10 * ev.k), true);
       else if (ev.type === 'vent') this.vent = 1.8;
       else if (ev.type === 'start') e.rock = 1;
@@ -306,6 +317,8 @@
       for (; acc.smoke >= 1; acc.smoke--) this._coal(1, sim.flame > 0.3);
       acc.spark += dt * (run ? 28 * sim.flame : 0) * (lo ? 0 : 1);
       for (; acc.spark >= 1; acc.spark--) this._sparks(1, 1);
+      acc.ember += dt * (run ? 16 * sim.flame : 0) * (lo ? 0.5 : 1);   // the roaring fire spits embers out of the door
+      for (; acc.ember >= 1; acc.ember--) this._embers(1, 0.5 + 0.5 * sim.flame);
       // drain cocks blowing while starting from cold
       const draining = sim.state === 'cranking' || (sim.state === 'running' && sim.stateT < 2.5);
       acc.drain += dt * (draining ? 30 * Math.min(this.n, 3) : 0);   // puffs/s for the whole engine, a random cock each

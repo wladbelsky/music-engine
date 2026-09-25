@@ -32,3 +32,24 @@ test('steam: no blow-outs on a calm run without peaks', () => {
   W.frame(150);
   assert.equal(n, 0);
 });
+
+test('steam: the firebox spits embers out of its door with the music (falling sparks, riding the rocking boiler), none on a calm run', () => {
+  const W = world({ dash: false, seed: 3 });
+  W.build(2, 'steam', '0');
+  W.rev(1);
+  const lay = W.e.lay, F = W.e.flames, T = W.g.THREE, orig = lay._embers.bind(lay);
+  let n = 0;
+  lay._embers = (m, k) => {
+    const at = F.cursor, p = lay._w(new T.Vector3(0, 0, 0.1), lay.door);
+    orig(m, k); n += m;
+    assert.ok(Math.hypot(F.pos[at * 3] - p.x, F.pos[at * 3 + 1] - p.y, F.pos[at * 3 + 2] - p.z) < 0.25, 'ember starts at the firebox door');
+    assert.equal(F.kind[at], W.g.EngineFX.P.SPARK);
+  };
+  W.frame(30, 1 / 30, () => { W.sim.flame = 1; });
+  assert.ok(n >= 5, `only ${n} embers in a second at full flame`);
+  const n0 = n; W.sim.events.push({ type: 'backfire', k: 0.8 }); W.frame(1, 1 / 30, () => { W.sim.flame = 1; });
+  assert.ok(n - n0 >= 20, `a beat throws ${n - n0} embers`);
+  W.sim.pedalIn = false; Object.assign(W.audio, { intensity: 0.2, power: 0.2 });
+  W.frame(60); n = 0; W.frame(150);
+  assert.equal(n, 0, 'embers on a calm run');
+});
