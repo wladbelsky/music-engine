@@ -26,9 +26,9 @@ test('tach profiles: piston rpm as is, steam 0–200 rpm at the redline, jet % r
     for (let r = 0; r <= 8000; r += 50) { const v = t.map(r); assert.ok(v >= prev, `map not monotonic at ${r}`); prev = v; }
   }
   const u = dash(1920, 1080, { kind: 'zzz' }).d.prof;
-  assert.equal(u.boost.title, 'BOOST bar', 'unknown kind -> piston scales');
-  assert.equal(dash(1920, 1080, { kind: 'steam' }).d.prof.boost.max, 16);
-  assert.equal(dash(1920, 1080, { kind: 'jet' }).d.prof.boost.max, 10);
+  assert.equal(u.right.title, 'BOOST bar', 'unknown kind -> piston scales');
+  assert.equal(dash(1920, 1080, { kind: 'steam' }).d.prof.right.max, 16);
+  assert.equal(dash(1920, 1080, { kind: 'jet' }).d.prof.right.max, 10);
 });
 
 test('hitTest: key, pedal and odometer in their spots; odo works with the controls hidden', () => {

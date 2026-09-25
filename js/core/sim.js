@@ -1,46 +1,21 @@
-/* Engine behaviour model driven by AudioAnalyzer output. */
+/* Engine behaviour model driven by AudioAnalyzer output. Generic: the state machine, revs from the music and the
+ * pedal, flames, pops, warnings. What depends on the engine type (the boost channel's sources, extra events)
+ * comes from EngineTypes (js/core/layout.js), looked up by settings.kind. */
 (function () {
   'use strict';
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const IDLE = 850;
   const FIRE_RPM = 2500;              // no flames or pops below this, whatever the redline is
 
-  /* Boost sources (bar). Each has a target and its own rise/fall time; the gauge shows the max of all.
-     To add a kind of forced induction, add a class and pick it in EngineSim._sources(). */
-  class VacuumOnly {                  // naturally aspirated: manifold vacuum, ~-0.65 at idle to ~0 flat out
-    constructor() { this.v = -0.1; this.rise = 0.7; this.fall = 0.2; }
-    target(sim) { return -0.65 + 0.62 * clamp(sim.throttle * 1.25, 0, 1); }
-  }
-  class TurboBoost {                  // exhaust driven: needs revs and load, spools with lag
-    constructor(max) { this.v = -0.1; this.max = max; this.rise = 0.7; this.fall = 0.2; }
-    target(sim) {
-      const rpmF = clamp((sim.rpm - 1800) / 2600, 0, 1);
-      return -0.6 + (this.max + 0.6) * clamp(sim.throttle * 1.25, 0, 1) * rpmF;
-    }
-  }
-  class RootsBoost {                  // crank driven, positive displacement: instant, grows with rpm
-    constructor(max) { this.v = -0.1; this.max = max; this.rise = 0.12; this.fall = 0.12; }
-    target(sim, red) {
-      const th = clamp(sim.throttle * 1.25, 0, 1);
-      return -0.6 * (1 - th) + th * this.max * clamp(0.3 + 0.7 * sim.rpm / red, 0, 1);
-    }
-  }
+  /* The right-hand small gauge reads sim.boost: turbo/blower boost for a piston engine, boiler pressure, EGT...
+     Its sources come from the engine type (js/core/layout.js): each has a target and its own rise/fall time,
+     the value is the max of all of them. */
 
-  /* The right-hand small gauge of the other engine kinds uses the same slot (sim.boost), in its own units. */
-  class SteamPressure {               // boiler pressure, bar: the fire raises it, the engine draws it down
-    constructor() { this.v = 0; this.rise = 2.2; this.fall = 3.5; }
-    target(sim, red) {
-      const draw = sim.throttle * clamp(sim.rpm / red, 0, 1.1);
-      return 10 + 6 * sim.flame + 1.6 * clamp(sim.pw - 0.4, 0, 0.6) - 1.6 * draw;   // strong peaks reach the safety valve
-    }
-    rest(sim) { return sim.state === 'off' ? 0 : 7.5; }   // a banked fire keeps some pressure up
-  }
-  class JetEgt {                      // exhaust gas temperature, x100 deg C
-    constructor() { this.v = 0; this.rise = 0.35; this.fall = 1.4; }
-    target(sim) { return 4.4 + 2.3 * sim.throttle + 1.9 * sim.flame; }
-    rest(sim) { return sim.state === 'cranking' ? 1.2 + 4 * clamp(sim.stateT - 0.5, 0, 0.4) : 0.25; } // light-off
-  }
-  const MAX_BOOST = { piston: 1.6, steam: 14, jet: 8.5 };  // overboost lamp at 0.93 of this
+  /* starting and stalling, overridable per engine type (type.sim.crank / type.sim.stall) */
+  // starter speed, its lumpiness, rpm when it fires (null: carries on from the run-up), smoke when it starts (0: none),
+  // shake: the starter jerks the engine on its mounts (Engine3D._sway)
+  const CRANK = { time: 0.9, rpm: 230, wobble: 70, rise: 20, fire: 1500, smoke: 1, shake: true };
+  const STALL = { rpm: 380, stumble: 500, pops: true };                    // dying revs, random stumbles, backfire pops
 
   class EngineSim {
     constructor() {
@@ -58,22 +33,17 @@
       this.lowT = 0; this.ceT = 0; this.obT = 0;
       this.warn = {};
       this.settings = { redline: 7000, stallDelay: 3, flameThr: 0.62, turbos: 1, blower: false, kind: 'piston' };
-      this.pw = 0; this._ventT = -99;
+      this.pw = 0;
       this._srcKey = '';
     }
 
+    type() { return window.EngineTypes.get(this.settings.kind); }
     _sources() {
-      const s = this.settings, kind = MAX_BOOST[s.kind] ? s.kind : 'piston', key = kind + '|' + (s.turbos | 0) + '|' + !!s.blower;
+      const s = this.settings, type = this.type(), key = type.id + '|' + (s.turbos | 0) + '|' + !!s.blower;
       if (key !== this._srcKey) {
-        this._srcKey = key; const src = [];
-        this.maxBoost = MAX_BOOST[kind];
-        if (kind === 'steam') src.push(new SteamPressure());
-        else if (kind === 'jet') src.push(new JetEgt());
-        else {
-          if (s.blower) src.push(new RootsBoost(1.1));
-          if (s.turbos > 0) src.push(new TurboBoost(this.maxBoost));
-          if (!src.length) src.push(new VacuumOnly());
-        }
+        this._srcKey = key;
+        this.maxBoost = type.sim.maxBoost;
+        const src = type.sim.sources(s, this.maxBoost);
         src.forEach(b => b.v = this.boost);
         this._src = src;
       }
@@ -85,6 +55,7 @@
 
     update(dt, a, t) {
       const s = this.settings, red = Math.max(250, s.redline || 7000);
+      const ts = this.type().sim, crank = Object.assign({}, CRANK, ts.crank), stall = Object.assign({}, STALL, ts.stall);
       const beats = a.takeBeats();
       // one NaN (junk input) would otherwise stick in these accumulators for good
       for (const k of ['rpm', 'kick', 'throttle', 'pedal', 'temp', 'flame', 'stateT']) if (!isFinite(this[k])) this[k] = k === 'temp' ? 72 : 0;
@@ -116,7 +87,7 @@
           if (wake && this.stateT > 0.4) { this.state = 'cranking'; this.stateT = 0; }
           break;
         case 'cranking':
-          if (this.stateT > 0.9) { this.state = 'running'; this.stateT = 0; this.emit('start'); this.emit('smoke', 1); this.rpm = 1500; }
+          if (this.stateT > crank.time) { this.state = 'running'; this.stateT = 0; this.emit('start'); if (crank.smoke) this.emit('smoke', crank.smoke); this.rpm = crank.fire ?? this.rpm; }
           break;
       }
 
@@ -131,10 +102,10 @@
         target = Math.max(target, IDLE + (red * 1.05 - IDLE) * Math.pow(this.pedal, 1.3));
         target += Math.sin(t * 7.3) * 18 + Math.sin(t * 13.1) * 10; // idle wobble
       } else if (this.state === 'stalling') {
-        target = 380 + (Math.random() < 0.15 ? 500 : 0); rise = 10; fall = 3;
-        if (Math.random() < dt * 1.2) this.emit('backfire', 0.3);
+        target = stall.rpm + (Math.random() < 0.15 ? stall.stumble : 0); rise = 10; fall = 3;
+        if (Math.random() < dt * 1.2 && stall.pops) this.emit('backfire', 0.3);
       } else if (this.state === 'cranking') {
-        target = 230 + Math.sin(this.stateT * 38) * 70; rise = 20; fall = 20;
+        target = crank.rpm + Math.sin(this.stateT * 38) * crank.wobble; rise = crank.rise; fall = 20;
       } else {
         target = 0; fall = this.state === 'stalled' ? 4 : 3;
       }
@@ -175,8 +146,9 @@
         boost = Math.max(boost, b.v);
       }
       this.boost = boost;
-      // steam: the safety valve lifts near the top of the gauge
-      if (s.kind === 'steam' && this.boost > this.maxBoost * 0.97 && t - this._ventT > 3) { this._ventT = t; this.emit('vent', 1); for (const b of this._src) b.v -= 1.2; } // blowing off drops the pressure
+      // the type's own extras (steam: the safety valve lifts near the top of the gauge)
+      const after = this.type().sim.after;
+      if (after) after(this, dt, t);
 
       // temperature
       const run = this.rpm > 300;

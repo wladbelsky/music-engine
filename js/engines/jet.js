@@ -9,7 +9,6 @@
   'use strict';
   const T = THREE;
   const { DEG, clamp } = Engine3D.GEO;
-  const { addBlend, FIRE_RAMP } = Engine3D.FX;
   const L = EngineLayouts;
 
   const HC = 1.3;                                   // axis height above the floor
@@ -20,45 +19,6 @@
   const casingR = x => x > X_C0 ? 0.8 : x > X_C1 ? 0.7 + 0.1 * (x - X_C1) / (X_C0 - X_C1) : x > X_B1 ? 0.74 : 0.68;
   const hubR = x => 0.27 + 0.15 * (X_C0 - x) / (X_C0 - X_C1);
 
-  const AB_VS = `
-    uniform vec3 uOrigin; uniform vec3 uDir; uniform float uLen; uniform float uWidth;
-    varying vec2 vUv;
-    void main(){
-      float y = position.y;
-      vec3 p = uOrigin + uDir * (y * uLen);
-      vec3 side = normalize(cross(uDir, normalize(cameraPosition - p)));
-      p += side * position.x * uWidth * (1.0 + 0.7 * y);
-      vUv = vec2(position.x + 0.5, y);
-      gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
-    }`;
-  const AB_FS = `
-    uniform sampler2D uNoise; uniform float uTime; uniform float uInt; uniform float uSeed; uniform float uLen; uniform float uDiam;
-    varying vec2 vUv;
-    ${FIRE_RAMP}
-    void main(){
-      float y = vUv.y, x = (vUv.x - 0.5) * 2.0, z = y * uLen;
-      vec2 q = vec2(vUv.x * 0.7 + uSeed, z * 0.3 - uTime * 3.2);
-      float n = texture2D(uNoise, q).r;
-      float n2 = texture2D(uNoise, q * 2.3 + vec2(0.37, -uTime * 2.1)).g;
-      x += (n2 - 0.5) * 0.35 * y;
-      // plume: nozzle-wide at first, narrowing into a ragged tip
-      float r = mix(0.62, 0.3, smoothstep(0.2, 1.0, y));
-      float body = (1.0 - smoothstep(r * 0.45, r, abs(x))) * (1.0 - smoothstep(0.35, 1.0, y + (n - 0.5) * 0.45));
-      body *= smoothstep(0.0, 0.03, y) * (0.3 + 0.6 * n);
-      // shock diamonds: pinched bright knots at a fixed spacing, fading downstream
-      float ph = fract(z / uDiam - 0.35);
-      float pinch = 0.22 + 0.5 * abs(ph - 0.5);
-      float knot = exp(-pow((ph - 0.5) * 4.5, 2.0)) * (1.0 - smoothstep(pinch * 0.3, pinch, abs(x))) * (1.0 - smoothstep(0.05, 0.7, y));
-      // between the knots a translucent orange body, the knots themselves yellow-white
-      float temp = body * (0.9 - 0.6 * y) + knot * 0.8;
-      vec3 col = fireRamp(temp) * body * 1.1;
-      col += vec3(1.0, 0.85, 0.55) * knot * 1.8;
-      // blue-violet sheath near the nozzle
-      float sheath = smoothstep(r * 0.2, r * 0.8, abs(x)) * (1.0 - smoothstep(r * 0.8, r * 1.05, abs(x))) * (1.0 - smoothstep(0.0, 0.45, y));
-      col += vec3(0.35, 0.4, 1.0) * sheath * (0.5 + n);
-      gl_FragColor = vec4(col * uInt, 0.0);
-    }`;
-
   class JetLayout extends L.base {
     static normCyl(n) { const v = Math.round(Number(n)); return isFinite(v) ? clamp(v, 6, 16) : 8; }
     static label(n) { return 'TURBOJET ' + n + '-CAN'; }
@@ -67,16 +27,20 @@
       super(e, n);
       this.airFilter = false;
       this.animK = 0.3;                   // real speed visible from idle up; above that the blur discs take over
-      this.swayK = 0.35; this.smooth = true;
+      this.swayK = 0.35; this.smooth = true;   // the core's rocking only (the stand's forward lean was removed: the user didn't like it)
       this.I = 0; this.burst = 0; this.open = 0; this.burn = 0; this.acc = 0;
     }
 
     banks() { return []; }
     dims() { this.frontX = X_IN + 0.35; this.rearX = X_N - PETAL_L; this.len = this.frontX - this.rearX; }
 
-    get J() {                            // everything hangs off one group on the engine axis
+    get J() {                            // the engine hangs off one group on its axis: it rides in the stand's cradles
       if (!this._J) { this._J = new T.Group(); this._J.position.y = HC; this.eng.add(this._J); }
       return this._J;
+    }
+    get S() {                            // the stand, same frame as J but fixed
+      if (!this._S) { this._S = new T.Group(); this._S.position.y = HC; this.eng.add(this._S); }
+      return this._S;
     }
     _mesh(geo, mat, parent) { const m = new T.Mesh(geo, mat); (parent || this.J).add(m); return m; }
     /* a lathe along X from (x, r) points, front to back (built back to front: rising y keeps the normals outward) */
@@ -119,19 +83,17 @@
       const tw = this._mesh(new T.CylinderGeometry(0.06, 0.06, 0.25, 10), M.dark2); tw.position.set(1.7, -0.78, 0);
       const tank = this._mesh(new T.CylinderGeometry(0.16, 0.16, 0.9, 16), M.dark2); tank.rotation.z = Math.PI / 2; tank.position.set(1.2, -0.62, 0.52);
       for (const [x, z] of [[1.4, -0.3], [2.1, 0.3]]) {
-        const pump = this._mesh(new T.CylinderGeometry(0.1, 0.1, 0.22, 12), M.steel); pump.position.set(x, -1.2, z);
+        const pump = this._mesh(new T.CylinderGeometry(0.1, 0.1, 0.22, 12), M.steel); pump.position.set(x, -1.14, z);   // clear of the floor when the nose dips
       }
-      // stand: two cradles on rails, the engine hangs in them
-      const fy = -HC;
+      // stand: two cradles on legs and rails, the engine sits in them
+      const fy = -HC, y0 = fy + 0.06;
       for (const x of [1.9, -2.3]) {
         const r = (x > 0 ? casingR(x) : R_PIPE) + 0.06;
-        const cr = this._mesh(new T.TorusGeometry(r, 0.05, 8, 32, Math.PI), M.dark); cr.rotation.set(Math.PI, Math.PI / 2, 0); cr.position.x = x;
-        for (const s of [-1, 1]) {
-          const leg = this._mesh(new T.BoxGeometry(0.1, -fy - 0.05, 0.1), M.dark); leg.position.set(x, fy / 2, s * (r + 0.05));
-        }
-        const foot = this._mesh(new T.BoxGeometry(0.18, 0.06, 2 * r + 0.5), M.dark); foot.position.set(x, fy + 0.03, 0);
+        const cr = this._mesh(new T.TorusGeometry(r, 0.05, 8, 32, Math.PI), M.dark, this.S); cr.rotation.set(Math.PI, Math.PI / 2, 0); cr.position.x = x;
+        for (const s of [-1, 1]) { const leg = this._mesh(new T.BoxGeometry(0.1, -y0, 0.1), M.dark, this.S); leg.position.set(x, y0 / 2, s * (r + 0.05)); }
+        const foot = this._mesh(new T.BoxGeometry(0.18, 0.06, 2 * r + 0.5), M.dark, this.S); foot.position.set(x, fy + 0.03, 0);
       }
-      for (const s of [-1, 1]) { const rail = this._mesh(new T.BoxGeometry(4.8, 0.08, 0.1), M.dark); rail.position.set(-0.2, fy + 0.04, s * 0.7); }
+      for (const s of [-1, 1]) { const rail = this._mesh(new T.BoxGeometry(4.8, 0.08, 0.1), M.dark, this.S); rail.position.set(-0.2, fy + 0.04, s * 0.7); }
     }
 
     /* the spool: shaft, compressor, turbine; cans are static */
@@ -215,31 +177,19 @@
         const p = new T.Group(); h.add(p); this._mesh(pg, this.pipeMat, p); this.petals.push(p);
       }
       this._ring(X_N + 0.2, R_PIPE + 0.06, 0.035, M.steel);   // actuator ring
-      this.nozzleL = new T.Vector3(X_N - PETAL_L * 0.9, HC, 0);
+      this.nozzleL = new T.Vector3(X_N - PETAL_L * 0.9, 0, 0);   // in J
     }
 
     /* the afterburner plume: a camera-facing ribbon along -X (world space, like the flame jets) */
-    buildExhaust() {
-      const g = new T.BufferGeometry(), verts = [], idx = [], SEG = 24;
-      for (let k = 0; k <= SEG; k++) { verts.push(-0.5, k / SEG, 0, 0.5, k / SEG, 0); if (k < SEG) idx.push(k * 2, k * 2 + 1, k * 2 + 2, k * 2 + 1, k * 2 + 3, k * 2 + 2); }
-      g.setAttribute('position', new T.Float32BufferAttribute(verts, 3)); g.setIndex(idx);
-      const m = new T.ShaderMaterial({
-        uniforms: { uNoise: { value: this.e.noise }, uTime: { value: 0 }, uInt: { value: 0 }, uSeed: { value: Math.random() },
-          uOrigin: { value: new T.Vector3() }, uDir: { value: new T.Vector3(-1, 0, 0) }, uLen: { value: 3 }, uWidth: { value: 1.2 }, uDiam: { value: 1.1 } },
-        vertexShader: AB_VS, fragmentShader: AB_FS, transparent: true, depthWrite: false, side: T.DoubleSide,
-      });
-      addBlend(m); m.toneMapped = false;
-      this.plume = new T.Mesh(g, m); this.plume.frustumCulled = false; this.plume.renderOrder = 11; this.plume.visible = false;
-      this.e.root.add(this.plume);
-    }
+    buildExhaust() { this.plume = EngineFX.plume(this.e.noise, this.e.root, { len: 3, width: 1.2, diam: 1.1 }); }
 
     frameBox(box) { box.min.x -= 1.2; }                 // room for the plume
-    _w(v) { return this.eng.localToWorld(v.clone()); }
-    glowPoint() { return this.I > 0.02 ? this._w(this.nozzleL).add(this._dirW().multiplyScalar(1.2)) : this._w(this.nozzleL); }
-    _dirW() { return new T.Vector3(-1, 0, 0).applyQuaternion(this.eng.quaternion); }
+    glowPoint() { return this.I > 0.02 ? this._wJ(this.nozzleL).add(this._dirW().multiplyScalar(1.2)) : this._wJ(this.nozzleL); }
+    _wJ(v) { return this.J.localToWorld(v.clone()); }
+    _dirW() { return new T.Vector3(-1, 0, 0).applyQuaternion(this.J.getWorldQuaternion(new T.Quaternion())); }
 
     exhaustPulse() {}
-    fxEvent(ev, sim) {
+    onEvent(ev, sim) {
       const e = this.e;
       if (ev.type === 'backfire') {                   // afterburner light-up / pop
         this.burst = Math.max(this.burst, 0.45 + 0.6 * ev.k);
@@ -247,17 +197,27 @@
         this._sparks(Math.round(4 + 8 * ev.k), 1 + ev.k);
       } else if (ev.type === 'start') { e.rock = 1; this.burst = Math.max(this.burst, 0.8); this._smoke(10); } // torching light-off
       else if (ev.type === 'smoke') this._smoke(Math.round(6 + 10 * ev.k));
-      return true;
     }
     _smoke(m) {
-      const e = this.e, p = this._w(this.nozzleL), d = this._dirW();
+      const e = this.e, p = this._wJ(this.nozzleL), d = this._dirW();
       for (let i = 0; i < m; i++) e.smoke.spawn(p.x, p.y, p.z, d.x * (1.5 + Math.random() * 2), d.y + Math.random() * 0.5, (Math.random() - 0.5) * 0.6,
         1.6 + Math.random(), 0.45 + Math.random() * 0.2, 0);
     }
     _sparks(m, k) {
-      const e = this.e, p = this._w(this.nozzleL), d = this._dirW();
+      const e = this.e, p = this._wJ(this.nozzleL), d = this._dirW();
       for (let i = 0; i < m; i++) e.flames.spawn(p.x, p.y + (Math.random() - 0.5) * 0.5, p.z + (Math.random() - 0.5) * 0.5,
         d.x * (5 + Math.random() * 5) * k, (Math.random() - 0.3) * 2, (Math.random() - 0.5) * 2, 0.4 + Math.random() * 0.4, 0.025 + Math.random() * 0.02, 3);
+    }
+
+    /* the engine sits still in its stand; it rocks with the core's sway (roll about its axis, beat jolts included)
+       and gets a small tremor at high revs. (A forward lean of the stand on springy legs with the thrust and the
+       beats was tried and removed: the user didn't like how it looked. Before that it slid along its own axis.) */
+    _ride(dt, sim, run) {
+      const e = this.e, sw = isFinite(e.sway) ? Math.max(0, e.sway) : 1, rn = clamp(sim.rpm / Math.max(500, sim.settings.redline || 7000), 0, 1.1);
+      const trem = run ? 0.0035 * rn * Math.sin(e.time * 71) * Math.sin(e.time * 53.3) * sw : 0;
+      this.J.position.set(0, HC + trem, 0);
+      this.J.rotation.set(trem * 0.4, 0, 0);
+      this.S.updateMatrixWorld(true); this.J.updateMatrixWorld(true);
     }
 
     updateFx(dt, sim, quality) {
@@ -290,11 +250,12 @@
         b.mat.opacity = clamp((over * b.B / 20 - 0.3) / 0.4, 0, b.cap);
         b.rings.forEach(r => { r.visible = b.mat.opacity > 0.01; });
       }
+      this._ride(dt, sim, run);
       // plume
       const u = this.plume.material.uniforms;
       this.plume.visible = I > 0.02;
       if (this.plume.visible) {
-        const d = this._dirW(), p = this._w(new T.Vector3(X_N - PETAL_L * 0.85, HC, 0));
+        const d = this._dirW(), p = this._wJ(new T.Vector3(X_N - PETAL_L * 0.85, 0, 0));
         u.uOrigin.value.copy(p); u.uDir.value.copy(d); u.uTime.value = e.time;
         u.uInt.value = Math.min(1.5, I) * flick;
         u.uLen.value = 1.8 + 4.0 * Math.min(1.3, I);
@@ -306,6 +267,30 @@
   }
   JetLayout.id = 'jet';
   JetLayout.kind = 'jet';
+  JetLayout.title = 'Turbojet';
   JetLayout.turbos = false; JetLayout.blower = false;
   L.register(JetLayout);
+
+  /* exhaust gas temperature, x100 deg C (the dash's EGT gauge) */
+  class JetEgt {
+    constructor() { this.v = 0; this.rise = 0.35; this.fall = 1.4; }
+    target(sim) { return 4.4 + 2.3 * sim.throttle + 1.9 * sim.flame; }
+    rest(sim) { return sim.state === 'cranking' ? 1.2 + 4 * clamp(sim.stateT - 0.5, 0, 0.4) : 0.25; } // light-off
+  }
+  const IDLE = () => window.ENGINE_IDLE || 850;
+  EngineTypes.register({
+    id: 'jet',
+    redline: 7000,                   // internal scale; the dash shows % rpm
+    glow: { color: 0xff7a2a, css: [255, 120, 30] },
+    sim: { maxBoost: 8.5, sources: () => [new JetEgt()] },
+    // turbine: % rpm, ground idle ~60 %, 100 % at the (internal) redline
+    dash: red => ({
+      tach: { max: 110, red: 100, minor: 2, half: 10, major: 20, text: String, title: '% RPM',
+        map: r => r <= IDLE() ? r / IDLE() * 60 : 60 + (r - IDLE()) / Math.max(1, red - IDLE()) * 40, digits: v => v.toFixed(1).padStart(5, ' ') },
+      left: EngineTypes.tempGauge('OIL °C'),
+      right: { min: 0, max: 10, labels: [0, 2, 4, 6, 8, 10], danger: 8.5, title: 'EGT °C', value: s => s.boost,
+        label: v => String(v * 100), text: v => String(Math.round(v * 100)), rate: 10 },
+      lamps: { stall: 'FLAMEOUT', overboost: 'EGT HIGH', battery: 'STARTER' },
+    }),
+  });
 })();

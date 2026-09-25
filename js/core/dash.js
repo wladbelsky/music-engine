@@ -17,42 +17,12 @@
     { key: 'overboost', text: 'OVERBOOST', col: '#ffb020' },
   ];
 
-  /* scales per engine kind (layout static `kind`). The sim always runs in rpm; `map` turns that into what the
-     tach shows. The right small gauge shows sim.boost in the kind's own units. */
-  const IDLE = () => window.ENGINE_IDLE || 850;
-  const PROFILES = {
-    piston: red => ({
-      tach: { max: Math.ceil((red + 1000) / 1000) * 1000, red, minor: 250, half: 500, major: 1000, text: v => String(v / 1000),
-        title: 'RPM × 1000', map: r => r, digits: r => String(Math.round(r / 10) * 10).padStart(4, ' ') },
-      temp: { title: 'TEMP °C' },
-      boost: { min: -1, max: 2, labels: [-1, 0, 1, 2], danger: 1.5, title: 'BOOST bar', text: v => (v >= 0 ? '+' : '') + v.toFixed(2) },
-      lamps: {},
-    }),
-    // a mill engine: redline = 200 rpm
-    steam: red => ({
-      tach: { max: 250, red: 200, minor: 10, half: 50, major: 50, text: String,
-        title: 'RPM', map: r => r * 200 / red, digits: v => String(Math.round(v)).padStart(3, ' ') },
-      temp: { title: 'TEMP °C' },
-      boost: { min: 0, max: 16, labels: [0, 4, 8, 12, 16], danger: 13, title: 'STEAM bar', text: v => v.toFixed(1) },
-      lamps: { overboost: 'SAFETY VLV' },
-    }),
-    // turbine: % rpm, ground idle ~60 %, 100 % at the (internal) redline
-    jet: red => ({
-      tach: { max: 110, red: 100, minor: 2, half: 10, major: 20, text: String, title: '% RPM',
-        map: r => r <= IDLE() ? r / IDLE() * 60 : 60 + (r - IDLE()) / Math.max(1, red - IDLE()) * 40, digits: v => v.toFixed(1).padStart(5, ' ') },
-      temp: { title: 'OIL °C' },
-      boost: { min: 0, max: 10, labels: [0, 2, 4, 6, 8, 10], danger: 8.5, title: 'EGT °C',
-        label: v => String(v * 100), text: v => String(Math.round(v * 100)) },
-      lamps: { stall: 'FLAMEOUT', overboost: 'EGT HIGH', battery: 'STARTER' },
-    }),
-  };
-
   class Dash {
     constructor(canvas) {
       this.c = canvas; this.ctx = canvas.getContext('2d');
       this.st = document.createElement('canvas'); this.sctx = this.st.getContext('2d');
       this.redline = 7000; this.color = '#ff5a1a'; this.label = 'V8 TURBO'; this.kind = 'piston';
-      this.showBpm = true; this.needle = 0; this.tempN = 70; this.boostN = 0;
+      this.showBpm = true; this.needle = 0; this.gaugeN = [70, 0];
       this.lampLvl = {}; LAMPS.forEach(l => this.lampLvl[l.key] = 0);
       this.showControls = true; this.keyAng = -50; this.pedalN = 0; this.pedalHover = false;
       this.odoUnits = 'km'; this.odoR = this.tripR = null;
@@ -77,7 +47,8 @@
       const rad = this.showRadio;
       if (w / h >= 1.25) { this.R = Math.min(0.155 * w, (rad ? 0.232 : 0.24) * h); this.cx = 0.76 * w; this.cy = (rad ? 0.35 : 0.385) * h; }
       else { this.R = Math.min(0.28 * w, (rad ? 0.13 : 0.14) * h); this.cx = 0.5 * w; this.cy = (rad ? 0.615 : 0.64) * h; }
-      this.prof = (PROFILES[this.kind] || PROFILES.piston)(Math.max(500, this.redline || 7000));
+      // scales and labels from the engine type (js/core/layout.js); the sim runs in rpm, tach.map converts
+      this.prof = window.EngineTypes.get(this.kind).dash(Math.max(500, this.redline || 7000));
       this.maxRpm = this.prof.tach.max;
     }
 
@@ -115,9 +86,7 @@
       const sr = R * 0.36;
       this.tempG = { x: cx - R * 1.2, y: cy + R * 1.02, r: sr };
       this.boostG = { x: cx + R * 1.2, y: cy + R * 1.02, r: sr };
-      const bs = this.prof.boost;
-      this._smallStatic(g, this.tempG, 60, 130, [60, 80, 100, 120], 110, this.prof.temp.title);
-      this._smallStatic(g, this.boostG, bs.min, bs.max, bs.labels, bs.danger, bs.title, bs.label);
+      for (const [G, gs] of [[this.tempG, this.prof.left], [this.boostG, this.prof.right]]) this._smallStatic(g, G, gs.min, gs.max, gs.labels, gs.danger, gs.title, gs.label);
       this._odoStatic(g);
 
       // warning lamps: round lamp + screwed metal nameplate
@@ -695,17 +664,16 @@
       });
 
       // small gauges
-      this.tempN += (sim.temp - this.tempN) * (1 - Math.exp(-dt * 4));
-      this.boostN += (sim.boost - this.boostN) * (1 - Math.exp(-dt * 10));
-      if (!isFinite(this.boostN)) this.boostN = 0;
-      const bs = this.prof.boost;
-      for (const [G, v, dg] of [[this.tempG, this.tempN, 110], [this.boostG, this.boostN, bs.danger]]) {
-        const a = G.a0 + clamp((v - G.min) / (G.max - G.min), 0, 1) * G.sw;
-        this._needle(g, G.x, G.y, a, G.r * 0.82, G.r * 0.15, G.r * 0.05, off ? '#4a3a33' : v > dg ? '#ff3322' : this.color);
+      [[this.tempG, this.prof.left], [this.boostG, this.prof.right]].forEach(([G, gs], i) => {
+        const N = this.gaugeN;
+        N[i] += (gs.value(sim) - N[i]) * (1 - Math.exp(-dt * (gs.rate || 10)));
+        if (!isFinite(N[i])) N[i] = 0;
+        const v = N[i], a = G.a0 + clamp((v - G.min) / (G.max - G.min), 0, 1) * G.sw;
+        this._needle(g, G.x, G.y, a, G.r * 0.82, G.r * 0.15, G.r * 0.05, off ? '#4a3a33' : v > gs.danger ? '#ff3322' : this.color);
         this._hub(g, G.x, G.y, G.r * 0.12);
         g.font = `700 ${G.r * 0.22}px Consolas, monospace`; g.fillStyle = '#e6e9ec';
-        if (!off) g.fillText(G === this.tempG ? Math.round(v) : bs.text(v), G.x, G.y + G.r * 0.36);
-      }
+        if (!off) g.fillText(gs.text(v), G.x, G.y + G.r * 0.36);
+      });
 
       // warning lamps
       const w = sim.warn;
@@ -724,5 +692,6 @@
       if (this.showControls) { this._keyDraw(g, this.keyC, sim, dt); this._pedalDraw(g, this.pedalR, sim, dt); }
     }
   }
+  Dash.LAMPS = LAMPS;           // lamp keys (= sim.warn keys) a type may rename
   window.Dash = Dash;
 })();

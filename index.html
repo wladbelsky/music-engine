@@ -38,7 +38,7 @@
   <b>Settings</b>
   <div class="row">Audio:
     <button id="dv-demo">Demo beat</button><button id="dv-mic">Microphone</button>
-    <label>File <input id="dv-file" type="file" accept="audio/*"></label><button id="dv-stop">Stop</button></div>
+    <label>File <input id="dv-file" type="file" accept=".mp3,.m4a,.aac,.ogg,.oga,.opus,.wav,.flac,.weba,.webm"></label><button id="dv-stop">Stop</button></div>
   <div id="dv-props"></div>
   <div class="row">Odometer:
     <button id="dv-trip">Reset trip</button><button id="dv-odo0">Reset ODO</button>
@@ -47,17 +47,23 @@
 </div>
 
 <script src="js/three.min.js"></script>
-<script src="js/audio.js"></script>
-<script src="js/sim.js"></script>
-<script src="js/engine3d.js"></script>
-<script src="js/layouts.js"></script>
-<script src="js/steam.js"></script>
-<script src="js/jet.js"></script>
-<script src="js/induction.js"></script>
-<script src="js/dash.js"></script>
-<script src="js/bg.js"></script>
-<script src="js/media.js"></script>
-<script src="js/odometer.js"></script>
+<script src="js/core/audio.js"></script>
+<script src="js/core/sim.js"></script>
+<script src="js/core/fx.js"></script>
+<script src="js/core/engine3d.js"></script>
+<script src="js/core/layout.js"></script>
+<script src="js/engines/piston.js"></script>
+<script src="js/engines/piston-layouts.js"></script>
+<script src="js/engines/steam.js"></script>
+<script src="js/engines/jet.js"></script>
+<script src="js/engines/electric.js"></script>
+<script src="js/engines/marine.js"></script>
+<script src="js/engines/rocket.js"></script>
+<script src="js/engines/induction.js"></script>
+<script src="js/core/dash.js"></script>
+<script src="js/core/bg.js"></script>
+<script src="js/core/media.js"></script>
+<script src="js/core/odometer.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

@@ -37,9 +37,10 @@
   const parseColor = s => s.split(' ').map(Number);
   const layoutCls = () => EngineLayouts.get(S.layout);
   const induction = () => Induction.effective(S.induction, layoutCls()); // what this layout can carry
-  const kind = () => layoutCls().kind || 'piston';                       // piston | steam | jet
-  // steam and jet run the sim on a fixed internal scale; the dash shows their own units (js/dash.js)
-  const redline = () => kind() === 'piston' ? S.redline : 7000;
+  const type = () => EngineTypes.get(layoutCls().kind);                  // behaviour + instruments (js/core/layout.js)
+  const kind = () => type().id;
+  // some types run the sim on a fixed internal scale; the dash shows their own units
+  const redline = () => type().redline ?? S.redline;
   const engineLabel = () => { const L = layoutCls(); return L.label(L.normCyl(S.cylinders)) + Induction.suffix(induction()); };
 
   function applySettings() {
@@ -54,7 +55,7 @@
     eng3d.setKeepOut(dash.keepOut());   // the engine stays clear of what the dash draws (radio, key/pedal, odometer...)
     $('debug').style.display = S.debug ? 'block' : 'none';
     if (!IS_WE && $('dv-turbos')) $('dv-turbos').disabled = !Induction.supported(layoutCls()); // e.g. radial: always naturally aspirated
-    if (!IS_WE && $('dv-redline')) $('dv-redline').disabled = kind() !== 'piston';               // steam / jet: fixed internal scale
+    if (!IS_WE && $('dv-redline')) $('dv-redline').disabled = type().redline != null;            // steam / jet...: fixed internal scale
   }
 
   /* ---------- Wallpaper Engine property listener ---------- */
@@ -154,7 +155,7 @@
   const PANEL = [
     ['Engine', [
       { k: 'ignition', t: 'bool', l: 'ignition', d: true },
-      { k: 'layout', t: 'select', l: 'layout', d: 'v', o: [['inline', 'Inline'], ['v', 'V'], ['boxer', 'Boxer'], ['w', 'W'], ['radial', 'Radial'], ['rotary', 'Rotary'], ['steam', 'Steam'], ['jet', 'Turbojet']] },
+      { k: 'layout', t: 'select', l: 'layout', d: 'v', o: EngineLayouts.list().map(L => [L.id, L.title || L.id]) },
       { k: 'cylinders', t: 'number', l: 'cylinders', d: 8, min: 1, max: 32 },
       { k: 'turbos', t: 'select', l: 'induction', d: '1', o: [['0', 'none'], ['1', 'turbo'], ['2', 'twin turbo'], ['4', 'quad turbo'], ['sc', 'supercharger'], ['sc2', 'twincharged']] },
       { k: 'cutaway', t: 'bool', l: 'cutaway', d: true },
@@ -200,7 +201,7 @@
         else if (it.t === 'number') { c = el('input', { id, type: 'number', min: it.min, max: it.max, style: 'width:4em' }); c.onchange = () => prop(it.k, Number(c.value)); }
         else if (it.t === 'color') { c = el('input', { id, type: 'color' }); c.oninput = () => prop(it.k, toRgb(c.value), true, c); }
         else if (it.t === 'file') {
-          c = el('input', { id, type: 'file', accept: 'image/*' });
+          c = el('input', { id, type: 'file', accept: '.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif' });   // extensions, not image/*: Android would offer the camera (and ask for it)
           c.onchange = () => { const f = c.files[0]; if (f) { prop('customimage', URL.createObjectURL(f), false); prop('background', 'custom', false); } };
         } else { // range + live value
           c = el('input', { id, type: 'range', min: it.min, max: it.max, step: it.step || 1, style: 'width:7em' });
@@ -294,12 +295,13 @@
     eng3d.update(dt, sim, S.animSpeed, S.quality);
     eng3d.render();
     dash.draw(sim, audio, dt, t, media, odo);
-    // warm glow on the background around the exhaust
+    // glow on the background around the exhaust (warm for fire, the type's own colour otherwise)
     const gp = eng3d.glowScreen();
     const gi = Math.min(1, sim.flame * 0.8 + eng3d.flash * 0.6);
     if (gp && gi > 0.01) {
+      const [r, g, b] = (type().glow || {}).css || [255, 120, 30], r2 = Math.round(r), g2 = Math.round(g * 80 / 120), b2 = Math.round(b / 3);
       glow.style.opacity = gi.toFixed(3);
-      glow.style.background = `radial-gradient(circle at ${gp.x}px ${gp.y}px, rgba(255,120,30,0.35), rgba(255,80,10,0.12) 18%, rgba(0,0,0,0) 45%)`;
+      glow.style.background = `radial-gradient(circle at ${gp.x}px ${gp.y}px, rgba(${r},${g},${b},0.35), rgba(${r2},${g2},${b2},0.12) 18%, rgba(0,0,0,0) 45%)`;
     } else glow.style.opacity = 0;
     if (S.debug && t - dbgT > 0.1) { dbgT = t; drawDebug(); }
   }

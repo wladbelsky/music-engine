@@ -19,9 +19,9 @@ test('Induction.parse: known keys, case/space tolerant, junk -> one turbo', () =
   for (const j of ['bogus', '3', 3, null, undefined, NaN, {}]) assert.equal(Induction.parse(j).key, '1', String(j));
 });
 
-test('Induction.effective / supported: radial, steam and jet carry nothing', () => {
+test('Induction.effective / supported: the radial and every non-piston engine carry nothing', () => {
   for (const id of IDS) {
-    const L = EL.get(id), none = ['radial', 'steam', 'jet'].includes(id);
+    const L = EL.get(id), none = id === 'radial' || L.kind !== 'piston';
     assert.equal(Induction.supported(L), !none, id);
     for (const k of Object.keys(Induction.OPTIONS)) {
       const e = Induction.effective(Induction.parse(k), L);
@@ -43,11 +43,13 @@ test('Induction.suffix and part order (blower before turbos, air filter only whe
   assert.equal(Induction.parts(Induction.parse('4'))[0].n, 4);
 });
 
-test('EngineLayouts registry: all 8 layouts, unknown -> V, statics', () => {
+test('EngineLayouts registry: every layout, unknown -> V, statics', () => {
   assert.deepEqual(IDS.map(id => EL.get(id).id), IDS);
   for (const j of ['zzz', undefined, '', 'V', null]) assert.equal(EL.get(j).id, 'v', String(j));
-  const kinds = Object.fromEntries(IDS.map(id => [id, EL.get(id).kind]));
-  assert.deepEqual(kinds, { inline: 'piston', v: 'piston', boxer: 'piston', w: 'piston', radial: 'piston', rotary: 'piston', steam: 'steam', jet: 'jet' });
+  // the six piston layouts share the piston type; every other engine brings its own
+  const PISTON = ['inline', 'v', 'boxer', 'w', 'radial', 'rotary'];
+  for (const id of IDS) assert.equal(EL.get(id).kind, PISTON.includes(id) ? 'piston' : id, id);
+  assert.ok(PISTON.every(id => IDS.includes(id)));
   assert.equal(EL.MAX_CYL, 32);
   assert.equal(typeof EL.turboScale, 'function');
 });
@@ -63,10 +65,13 @@ test('normCyl: every input becomes a legal count for the layout', () => {
     rotary: n => n >= 1 && n <= 32,
     steam: n => n >= 1 && n <= 8,
     jet: n => n >= 6 && n <= 16,
+    electric: n => n >= 2 && n <= 12 && n % 2 === 0,
+    marine: n => n >= 4 && n <= 12,
+    rocket: n => n >= 1 && n <= 12,
   };
   for (const id of IDS) for (const x of inputs) {
     const n = EL.get(id).normCyl(x);
-    assert.ok(Number.isInteger(n) && rules[id](n), `${id}.normCyl(${String(x)}) = ${n}`);
+    assert.ok(Number.isInteger(n) && (rules[id] || (m => m >= 1 && m <= 32))(n), `${id}.normCyl(${String(x)}) = ${n}`);
     assert.equal(EL.get(id).normCyl(n), n, `${id}: normCyl is idempotent at ${n}`);
   }
   // rounding and the documented fallbacks
@@ -78,6 +83,8 @@ test('normCyl: every input becomes a legal count for the layout', () => {
   assert.equal(EL.get('steam').normCyl('abc'), 2);
   assert.equal(EL.get('jet').normCyl('abc'), 8);
   assert.equal(EL.get('jet').normCyl(2), 6);
+  assert.equal(EL.get('electric').normCyl(5), 6);
+  assert.equal(EL.get('electric').normCyl('abc'), 4);
   assert.deepEqual({ ...EL.get('radial').split(9) }, { rows: 1, per: 9 });
   assert.deepEqual({ ...EL.get('radial').split(14) }, { rows: 2, per: 7 });
   assert.deepEqual({ ...EL.get('radial').split(32) }, { rows: 4, per: 7 });
@@ -95,6 +102,10 @@ test('labels', () => {
   assert.equal(lab('steam', 2), 'STEAM TWIN');
   assert.equal(lab('steam', 4), 'STEAM 4-CYL');
   assert.equal(lab('jet', 8), 'TURBOJET 8-CAN');
+  assert.equal(lab('electric', 4), 'DC MOTOR 4-BRUSH');
+  assert.equal(lab('marine', 6), 'MARINE DIESEL 6-CYL');
+  assert.equal(lab('rocket', 1), 'ROCKET ENGINE');
+  assert.equal(lab('rocket', 9), 'ROCKET 9-ENGINE');
 });
 
 test('turboScale: 1.25 … 1.6', () => {

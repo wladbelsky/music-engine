@@ -18,15 +18,18 @@ const layoutIds = opts('layout');
 const PANEL = (() => {
   const m = main.match(/const PANEL = (\[[\s\S]*?\n {2}\]);/);
   assert.ok(m, 'PANEL table not found in main.js');
-  return vm.runInNewContext(m[1]);
+  return vm.runInNewContext(m[1], { EngineLayouts: g.EngineLayouts });
 })();
+/* every js file below js/, as 'js/…' paths */
+const jsFiles = (dir = 'js') => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })
+  .flatMap(d => d.isDirectory() ? jsFiles(dir + '/' + d.name) : d.name.endsWith('.js') ? [dir + '/' + d.name] : []);
 const panelRows = Object.fromEntries(PANEL.flatMap(([, items]) => items).map(it => [it.k, it]));
 
 test('every script parses (incl. main.js) and index.html loads them in the documented order', () => {
   const order = scriptOrder();
-  for (const f of fs.readdirSync(path.join(ROOT, 'js')).filter(f => f.endsWith('.js'))) {
-    assert.ok(order.includes('js/' + f), `js/${f} is not loaded by index.html`);
-    if (f !== 'three.min.js') assert.doesNotThrow(() => new vm.Script(read('js/' + f), { filename: f }), f);
+  for (const f of jsFiles()) {
+    assert.ok(order.includes(f), `${f} is not loaded by index.html`);
+    if (!f.endsWith('three.min.js')) assert.doesNotThrow(() => new vm.Script(read(f), { filename: f }), f);
   }
   for (const f of order) assert.ok(fs.existsSync(path.join(ROOT, f)), `${f} missing`);
   const doc = read('CLAUDE.md').match(/Load order in `index.html`: `([^`]+)`/)[1].split(/\s*→\s*/);
@@ -38,8 +41,8 @@ test('every script parses (incl. main.js) and index.html loads them in the docum
 });
 
 test('the layout combo lists exactly the registered layouts', () => {
-  const declared = [...fs.readdirSync(path.join(ROOT, 'js')).filter(f => f.endsWith('.js') && f !== 'three.min.js')
-    .flatMap(f => [...read('js/' + f).matchAll(/\b\w+Layout\.id = '(\w+)'/g)].map(m => m[1]))];
+  const declared = [...jsFiles().filter(f => !f.endsWith('three.min.js'))
+    .flatMap(f => [...read(f).matchAll(/\b\w+Layout\.id = '(\w+)'/g)].map(m => m[1]))];
   assert.deepEqual([...declared].sort(), [...layoutIds].sort());
   for (const id of layoutIds) assert.equal(g.EngineLayouts.get(id).id, id, `${id} is not registered`);
   assert.ok(layoutIds.includes(props.layout.value));
@@ -52,9 +55,9 @@ test('forced induction combo == Induction.OPTIONS, hidden exactly for layouts th
   assert.deepEqual(hidden, none);
 });
 
-test('rev limiter is hidden exactly for the non-piston kinds', () => {
+test('rev limiter is hidden exactly for the types with a fixed internal redline', () => {
   const hidden = [...props.redline.condition.matchAll(/layout\.value != '(\w+)'/g)].map(m => m[1]).sort();
-  assert.deepEqual(hidden, layoutIds.filter(id => g.EngineLayouts.get(id).kind !== 'piston').sort());
+  assert.deepEqual(hidden, layoutIds.filter(id => g.EngineLayouts.type(id).redline != null).sort());
 });
 
 test('cylinders slider matches MAX_CYL, sliders have sane ranges, conditions name real properties', () => {

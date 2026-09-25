@@ -13,7 +13,12 @@
   'use strict';
   const T = THREE;
   const { DEG, clamp } = Engine3D.GEO;
-  const L = EngineLayouts;
+  const L = EngineLayouts, FX = EngineFX;
+  // a firebox ember: the core's falling spark (P.SPARK), but it bounces off the floor instead of falling through it
+  const P_EMBER = FX.particleKind({ dot: true, add: {
+    drag: 0.6, lift: -6.5, bounce: 0.35,
+    paint(u, c, k, s0) { const f = 1 - u; c[k] = 1.3; c[k + 1] = 0.75 + 0.25 * f; c[k + 2] = 0.35 * f; c[k + 3] = f; return s0; },
+  } });
 
   const H = 1.65;              // shaft height (the flywheel clears the plinth)
   const CRK = 0.42, ROD = 1.55;  // crank radius, connecting rod length
@@ -22,6 +27,7 @@
   const ECC = 0.075, LEAD = 120; // eccentric throw, angle ahead of the crank
   const VALVE_Y = H + 0.72, VALVE_Z = 1.25;
   const DZ = -1, Z = z => DZ * z;  // the cylinders lie towards -Z: crank, rods and flywheel face the camera
+  const BLOW_P = 0.1;          // cylinder cock blow-outs per turn at full flame, on top of the beats (like the marine relief valves)
 
   class SteamLayout extends L.base {
     static normCyl(n) { const v = Math.round(Number(n)); return isFinite(v) ? clamp(v, 1, 8) : 2; }
@@ -32,9 +38,10 @@
       this.pitch = 1.35;
       this.airFilter = false;
       this.animK = 200 / 7000 / 0.085;   // the shaft turns at the rpm the dash shows (200 at the redline)
-      this.swayK = 0.2; this.smooth = true;   // a heavy engine on a foundation
-      this.acc = { smoke: 0, spark: 0, drain: 0, vent: 0 };
-      this.vent = 0; this.fireK = 0;
+      this.swayK = 0.2; this.smooth = true;   // a heavy engine on a foundation: it shows the beat otherwise (updateFx)
+      this.acc = { smoke: 0, spark: 0, drain: 0, vent: 0, ember: 0 };
+      this.vent = 0; this.fireK = 0; this.cj = 0; this.rn = 0;
+      this.blows = [];
     }
 
     banks() { return [{ tilt: 0, m: this.n, off: 0, outer: 1, hw: 0.5 }]; }
@@ -53,15 +60,6 @@
       return this.xs.map((x, i) => ({ i, x, zo: 0, phase: i * 360 / n + (n % 2 === 0 && i >= n / 2 ? 180 / n : 0) }));
     }
 
-    /* ---- small builders (engine space) ---- */
-    _add(geo, mat, x, y, z, parent) { const m = new T.Mesh(geo, mat); m.position.set(x, y, z); (parent || this.eng).add(m); return m; }
-    _box(w, h, d, mat, x, y, z, parent) { return this._add(new T.BoxGeometry(w, h, d), mat, x, y, z, parent); }
-    _cylX(r, len, mat, x, y, z, parent, seg = 20) { const m = this._add(new T.CylinderGeometry(r, r, len, seg), mat, x, y, z, parent); m.rotation.z = Math.PI / 2; return m; }
-    _cylZ(r, len, mat, x, y, z, parent, seg = 20) { const m = this._add(new T.CylinderGeometry(r, r, len, seg), mat, x, y, z, parent); m.rotation.x = Math.PI / 2; return m; }
-    _cylY(r, len, mat, x, y, z, parent, seg = 20) { return this._add(new T.CylinderGeometry(r, r, len, seg), mat, x, y, z, parent); }
-    _tube(pts, r, mat) { const t = new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(pts), 24, r, 10, false), mat); this.eng.add(t); return t; }
-
-    buildBank() {}
 
     /* cylinder with its valve chest, guides, crosshead, rods; the crank itself comes in buildCrank */
     buildCylinder(b, bi, cd) {
@@ -161,25 +159,30 @@
     buildIntake() {
       const e = this.e, M = this.M, xb = this.xb, zb = this.zb, R = 0.85;
       this._cylY(R + 0.06, 0.35, M.dark, xb, 0.175, zb, null, 36);                     // ash pit
-      const shell = this._cylY(R, 2.5, M.dark2, xb, 0.35 + 1.25, zb, null, 40);
-      for (const y of [0.55, 1.35, 2.15, 2.8]) this._add(new T.TorusGeometry(R + 0.005, 0.02, 6, 48), M.steel, xb, y, zb).rotation.x = Math.PI / 2;
-      const top = this._add(new T.SphereGeometry(R, 40, 10, 0, Math.PI * 2, 0, Math.PI * 0.32), M.dark2, xb, 2.85 - R * Math.cos(Math.PI * 0.32), zb);
+      // the boiler rocks on the ash pit and the chimney whips on top of it (updateFx): pivot groups whose inner
+      // group undoes the offset, so the parts inside keep engine coordinates
+      const piv = (x, y, z, parent) => { const p = new T.Group(); p.position.set(x, y, z); parent.add(p); const i = new T.Group(); i.position.set(-x, -y, -z); p.add(i); return [p, i]; };
+      const [bp, B] = piv(xb, 0.35, zb, this.eng), [cp, C] = piv(xb, 2.95, zb, B);
+      this.boilerP = bp; this.boilerI = B; this.chimP = cp; this.chimI = C;
+      const shell = this._cylY(R, 2.5, M.dark2, xb, 0.35 + 1.25, zb, B, 40);
+      for (const y of [0.55, 1.35, 2.15, 2.8]) this._add(new T.TorusGeometry(R + 0.005, 0.02, 6, 48), M.steel, xb, y, zb, B).rotation.x = Math.PI / 2;
+      const top = this._add(new T.SphereGeometry(R, 40, 10, 0, Math.PI * 2, 0, Math.PI * 0.32), M.dark2, xb, 2.85 - R * Math.cos(Math.PI * 0.32), zb, B);
       // chimney with a flared cap
-      this._cylY(0.19, 1.55, M.dark, xb, 2.95 + 0.77, zb, null, 24);
-      this._add(new T.CylinderGeometry(0.3, 0.21, 0.18, 24, 1, true), M.dark, xb, 4.55, zb).material = M.dark;
-      this._add(new T.TorusGeometry(0.3, 0.025, 6, 24), M.dark, xb, 4.64, zb).rotation.x = Math.PI / 2;
+      this._cylY(0.19, 1.55, M.dark, xb, 2.95 + 0.77, zb, C, 24);
+      this._add(new T.CylinderGeometry(0.3, 0.21, 0.18, 24, 1, true), M.dark, xb, 4.55, zb, C).material = M.dark;
+      this._add(new T.TorusGeometry(0.3, 0.025, 6, 24), M.dark, xb, 4.64, zb, C).rotation.x = Math.PI / 2;
       this.tipL = new T.Vector3(xb, 4.66, zb);
       // steam dome + brass safety valve (towards the engine)
       const dx = xb + 0.42;
-      this._cylY(0.22, 0.34, M.dark2, dx, 3.0, zb, null, 24);
-      this._add(new T.SphereGeometry(0.22, 24, 8, 0, Math.PI * 2, 0, Math.PI / 2), M.dark2, dx, 3.17, zb);
-      this._cylY(0.06, 0.26, M.brass, dx, 3.42, zb, null, 12);
-      this._cylY(0.085, 0.05, M.brass, dx, 3.56, zb, null, 12);
-      const lever = this._box(0.4, 0.03, 0.03, M.brass, dx - 0.15, 3.6, zb); lever.rotation.z = -0.08;
+      this._cylY(0.22, 0.34, M.dark2, dx, 3.0, zb, B, 24);
+      this._add(new T.SphereGeometry(0.22, 24, 8, 0, Math.PI * 2, 0, Math.PI / 2), M.dark2, dx, 3.17, zb, B);
+      this._cylY(0.06, 0.26, M.brass, dx, 3.42, zb, B, 12);
+      this._cylY(0.085, 0.05, M.brass, dx, 3.56, zb, B, 12);
+      const lever = this._box(0.4, 0.03, 0.03, M.brass, dx - 0.15, 3.6, zb, B); lever.rotation.z = -0.08;
       this.valveL = new T.Vector3(dx, 3.62, zb);
       // firebox door facing the camera side, open a crack onto the glowing grate
       const dir = new T.Vector3(0.78, 0, 1).normalize(), door = new T.Group();
-      door.position.set(xb + dir.x * (R - 0.02), 0.72, zb + dir.z * (R - 0.02)); door.rotation.y = Math.atan2(dir.x, dir.z); this.eng.add(door);
+      door.position.set(xb + dir.x * (R - 0.02), 0.72, zb + dir.z * (R - 0.02)); door.rotation.y = Math.atan2(dir.x, dir.z); B.add(door);
       this._box(0.62, 0.54, 0.08, M.dark, 0, 0, 0.02, door);
       const fireMat = M.fire; this.fireMat = fireMat;
       this._add(new T.PlaneGeometry(0.44, 0.36), fireMat, 0, 0, 0.065, door);
@@ -188,15 +191,16 @@
       this._box(0.48, 0.4, 0.04, M.dark2, 0.24, 0, 0.02, hinge);
       this._cylZ(0.035, 0.06, M.steel, 0.4, 0, 0.06, hinge, 8);                          // handle
       this.doorL = door.position.clone().addScaledVector(dir, 0.35);
+      this.door = door;                                  // embers fly out of the grate (_embers)
       // pressure gauge and water glass on the front
       const gp = new T.Vector3(xb, 2.3, zb).addScaledVector(dir, R + 0.03), gauge = new T.Group();
-      gauge.position.copy(gp); gauge.rotation.y = door.rotation.y; this.eng.add(gauge);
+      gauge.position.copy(gp); gauge.rotation.y = door.rotation.y; B.add(gauge);
       this._cylZ(0.15, 0.05, M.brass, 0, 0, 0, gauge, 24);
       this._add(new T.CircleGeometry(0.125, 24), new T.MeshStandardMaterial({ color: 0xe8e2d0, roughness: 0.5 }), 0, 0, 0.03, gauge);
       this.gaugeNeedle = this._box(0.012, 0.1, 0.005, M.dark, 0, 0, 0.035, gauge); this.gaugeNeedle.geometry.translate(0, 0.045, 0);
       const wg = new T.Vector3(xb, 1.55, zb).addScaledVector(new T.Vector3(1, 0, 0.35).normalize(), R + 0.05);
-      this._cylY(0.03, 0.5, new T.MeshStandardMaterial({ color: 0x9fd0e8, transparent: true, opacity: 0.55, roughness: 0.1 }), wg.x, wg.y, wg.z, null, 8);
-      for (const s of [-1, 1]) this._cylY(0.045, 0.06, M.brass, wg.x, wg.y + s * 0.28, wg.z, null, 8);
+      this._cylY(0.03, 0.5, new T.MeshStandardMaterial({ color: 0x9fd0e8, transparent: true, opacity: 0.55, roughness: 0.1 }), wg.x, wg.y, wg.z, B, 8);
+      for (const s of [-1, 1]) this._cylY(0.045, 0.06, M.brass, wg.x, wg.y + s * 0.28, wg.z, B, 8);
       // steam main: dome -> over the flywheel -> a header along the valve chests, a drop into each
       const sz = Z(CYL_Z1 - 0.4), sy = H + 1.05, hx0 = this.x0 - 0.45, hx1 = this.xs[this.n - 1] + 0.1;
       this._tube([new T.Vector3(dx + 0.2, 3.05, zb), new T.Vector3(dx + 0.7, 3.3, zb - 0.5), new T.Vector3(this.xf + 0.3, 3.35, Z(1.2)),
@@ -241,37 +245,69 @@
     }
 
     /* ---- effects ---- */
-    _w(v) { return this.eng.localToWorld(v.clone()); }
-    glowPoint() { return this._w(this.doorL); }
+    glowPoint() { return this._w(this.doorL, this.boilerI); }
 
     _chuff(k) {                                       // a puff of exhaust steam out of the chimney
-      const e = this.e, tp = this._w(this.tipL), m = Math.max(1, Math.round((2 + 3 * k) * Math.min(1, 3 / this.n))); // fewer per chuff with more cylinders
+      const e = this.e, tp = this._w(this.tipL, this.chimI), m = Math.max(1, Math.round((2 + 3 * k) * Math.min(1, 3 / this.n))); // fewer per chuff with more cylinders
       for (let i = 0; i < m; i++) e.smoke.spawn(tp.x, tp.y, tp.z,
         (Math.random() - 0.5) * 0.6, 2.2 + 3.5 * k + Math.random(), (Math.random() - 0.5) * 0.6,
         1.3 + Math.random() * 0.9, 0.3 + 0.2 * k + Math.random() * 0.1, 4);
     }
     _sparks(m, k) {
-      const e = this.e, tp = this._w(this.tipL);
+      const e = this.e, tp = this._w(this.tipL, this.chimI);
       for (let i = 0; i < m; i++) e.flames.spawn(tp.x, tp.y, tp.z, (Math.random() - 0.5) * 2.2, 3 + Math.random() * 4 * k, (Math.random() - 0.5) * 2.2,
         0.6 + Math.random() * 0.7, 0.025 + Math.random() * 0.02, 3);
     }
     _coal(m, dark) {
-      const e = this.e, tp = this._w(this.tipL);
+      const e = this.e, tp = this._w(this.tipL, this.chimI);
       for (let i = 0; i < m; i++) e.smoke.spawn(tp.x, tp.y, tp.z, (Math.random() - 0.5) * 0.4, 1.0 + Math.random() * 0.8, (Math.random() - 0.5) * 0.4,
         2.4 + Math.random() * 1.5, dark ? 0.5 : 0.38, 0);
     }
 
-    exhaustPulse(c, sim) {
-      if (sim.state === 'running' || sim.state === 'stalling' || sim.state === 'cranking') this._chuff(clamp(0.25 + sim.throttle * 0.9 + sim.flame * 0.3, 0, 1.2));
+    /* music: a cylinder's cocks blow out, a burst of steam from under the barrel (like a locomotive's), lingering a moment */
+    _blow(c, k) {
+      const e = this.e;
+      for (const d of c.drains) {
+        const w = this._w(d);
+        for (let i = 0; i < Math.round(6 + 8 * k); i++) {
+          const sp = 2.5 + Math.random() * 3 * (0.6 + k);   // out from under the barrel towards the crank end (the camera), fanning sideways
+          e.smoke.spawn(w.x, w.y, w.z, 0.4 + (Math.random() - 0.5) * 2.4, 0.2 + Math.random() * 0.9, -DZ * sp,
+            0.9 + Math.random() * 0.6, 0.28 + Math.random() * 0.2 + 0.12 * k, 4);
+        }
+      }
+      this.blows.push({ c, t: 0.45 });
     }
 
-    fxEvent(ev, sim) {
+    /* embers out of the firebox door: a wide cone (up to 65° off the door's normal) with an upward kick, falling and
+       bouncing on the floor (P_EMBER); taken from the door, so they follow the rocking boiler */
+    _embers(m, k) {
+      const e = this.e, p = this._w(new T.Vector3(0, 0, 0.1), this.door), n = this._w(new T.Vector3(0, 0, 1.1), this.door).sub(p).normalize();
+      const side = new T.Vector3(-n.z, 0, n.x).normalize(), up = new T.Vector3().crossVectors(side, n), d = new T.Vector3();
+      for (let i = 0; i < m; i++) {
+        const th = 65 * DEG * Math.sqrt(Math.random()), ph = Math.random() * 2 * Math.PI, sp = 1.5 + Math.random() * 3 * k;
+        d.copy(n).multiplyScalar(Math.cos(th)).addScaledVector(side, Math.sin(th) * Math.cos(ph)).addScaledVector(up, Math.sin(th) * Math.sin(ph));
+        e.flames.spawn(p.x + side.x * (Math.random() - 0.5) * 0.4, p.y + (Math.random() - 0.5) * 0.3, p.z + side.z * (Math.random() - 0.5) * 0.4,
+          d.x * sp, d.y * sp + 1 + Math.random() * 1.5 * k, d.z * sp, 0.8 + Math.random() * 0.9, 0.04 + Math.random() * 0.035, P_EMBER);
+      }
+    }
+
+    exhaustPulse(c, sim) {
+      if (sim.state === 'running' || sim.state === 'stalling' || sim.state === 'cranking') this._chuff(clamp(0.25 + sim.throttle * 0.9 + sim.flame * 0.3, 0, 1.2));
+      // hard running: now and then the cylinder that just exhausted blows its cocks (two chuffs per turn per cylinder)
+      if (sim.state === 'running' && sim.flame > 0.5 && Math.random() < BLOW_P * sim.flame / (2 * this.n)) this._blow(c, 0.3 + 0.4 * sim.flame);
+    }
+
+    onEvent(ev, sim) {
       const e = this.e;
-      if (ev.type === 'backfire') { this._chuff(1.3); this._sparks(Math.round(6 + 12 * ev.k), 1 + ev.k); e.flash = Math.max(e.flash, 0.5 + 0.5 * ev.k); e.shake = Math.max(e.shake, 0.2 * ev.k); }
-      else if (ev.type === 'smoke') this._coal(Math.round(6 + 10 * ev.k), true);
+      if (ev.type === 'backfire') {
+        if (ev.k > 0.4 && e.time - (this.blowT ?? -9) > 0.25) {   // beats blow a cylinder's cocks (two on a big beat)
+          this.blowT = e.time;
+          for (let r = 0; r < (ev.k > 0.8 ? 2 : 1); r++) this._blow(e.cyls[Math.floor(Math.random() * e.cyls.length)], ev.k);
+        }
+        this._chuff(1.3); this._sparks(Math.round(6 + 12 * ev.k), 1 + ev.k); this._embers(Math.round(12 + 20 * ev.k), 0.6 + ev.k); e.flash = Math.max(e.flash, 0.5 + 0.5 * ev.k); e.shake = Math.max(e.shake, 0.2 * ev.k);
+      } else if (ev.type === 'smoke') this._coal(Math.round(6 + 10 * ev.k), true);
       else if (ev.type === 'vent') this.vent = 1.8;
       else if (ev.type === 'start') e.rock = 1;
-      return true;
     }
 
     updateFx(dt, sim, quality) {
@@ -289,6 +325,8 @@
       for (; acc.smoke >= 1; acc.smoke--) this._coal(1, sim.flame > 0.3);
       acc.spark += dt * (run ? 28 * sim.flame : 0) * (lo ? 0 : 1);
       for (; acc.spark >= 1; acc.spark--) this._sparks(1, 1);
+      acc.ember += dt * (run ? 16 * sim.flame : 0) * (lo ? 0.5 : 1);   // the roaring fire spits embers out of the door
+      for (; acc.ember >= 1; acc.ember--) this._embers(1, 0.5 + 0.5 * sim.flame);
       // drain cocks blowing while starting from cold
       const draining = sim.state === 'cranking' || (sim.state === 'running' && sim.stateT < 2.5);
       acc.drain += dt * (draining ? 30 * Math.min(this.n, 3) : 0);   // puffs/s for the whole engine, a random cock each
@@ -296,24 +334,78 @@
         const c = e.cyls[Math.floor(Math.random() * e.cyls.length)], w = this._w(c.drains[Math.random() < 0.5 ? 0 : 1]);
         e.smoke.spawn(w.x, w.y, w.z, 1.6 + Math.random(), -0.7 - Math.random() * 0.5, (Math.random() - 0.5) * 0.6, 0.7 + Math.random() * 0.5, 0.12, 4);
       }
+      // blown cocks keep hissing for a moment
+      this.blows = this.blows.filter(b => (b.t -= dt) > 0);
+      for (const b of this.blows) if (!lo && Math.random() < 0.7) {
+        const w = this._w(b.c.drains[Math.random() < 0.5 ? 0 : 1]);
+        e.smoke.spawn(w.x, w.y, w.z, (Math.random() - 0.5) * 1.2, Math.random() * 0.6, -DZ * (1.8 + Math.random() * 1.5), 0.7 + Math.random() * 0.4, 0.2, 4);
+      }
       // safety valve
       if (this.vent > 0) {
         this.vent -= dt; acc.vent += dt * 70;
-        const w = this._w(this.valveL);
+        const w = this._w(this.valveL, this.boilerI);
         for (; acc.vent >= 1; acc.vent--) e.smoke.spawn(w.x, w.y, w.z, (Math.random() - 0.5) * 0.7, 6 + Math.random() * 3, (Math.random() - 0.5) * 0.7, 1.0 + Math.random() * 0.7, 0.3, 4);
       }
       // governor balls fly out with the revs, the sleeve rides up
       const rn = clamp(sim.rpm / Math.max(500, sim.settings.redline || 7000), 0, 1.05);
       this.gov += ((0.25 + 0.75 * Math.sqrt(rn)) - this.gov) * (1 - Math.exp(-dt / 0.5));
       const phi = (18 + 40 * this.gov) * DEG;
-      this.govArms.forEach(a => { a.rotation.z = a.userData.s * phi; });
-      this.govSleeve.position.x = this.govLen - 0.47 * Math.cos(phi) * 0.6;
+      // rhythm: a mill engine on its foundation doesn't rock, so the boiler rocks on the ash pit and the chimney whips
+      // with every beat (e.jolt, the core's beat spring, sway setting included; the chimney lags a little), the governor balls jump, the
+      // gauge needle twitches; the bed shudders along the cylinders (afterSway)
+      const j = e.jolt;   // already scaled by the sway setting
+      this.cj += (j - this.cj) * (1 - Math.exp(-dt / 0.07));
+      this.boilerP.rotation.set(0.005 * j, 0, -0.008 * j);
+      this.chimP.rotation.set(0.012 * this.cj, 0, -0.028 * this.cj);
+      this.rn = rn;
+      const phi2 = phi + clamp(0.09 * j, -0.15, 0.15);
+      this.govArms.forEach(a => { a.rotation.z = a.userData.s * phi2; });
+      this.govSleeve.position.x = this.govLen - 0.47 * Math.cos(phi2) * 0.6;
       // boiler pressure gauge follows the dash's STEAM gauge
-      this.gaugeNeedle.rotation.z = (135 - 270 * clamp(sim.boost / 16, 0, 1)) * DEG;
+      this.gaugeNeedle.rotation.z = (135 - 270 * clamp(sim.boost / 16, 0, 1)) * DEG - 0.06 * j;
+    }
+
+    /* the bed shudders along the cylinders: the reciprocating masses at shaft speed, and a shove on every beat */
+    afterSway() {
+      const e = this.e, sw = isFinite(e.sway) ? Math.max(0, e.sway) : 1;
+      const dz = sw * 0.012 * this.rn * Math.sin(e.crank * DEG) + 0.015 * e.jolt;   // e.jolt carries the sway setting
+      if (dz) { e.eng.position.z += dz; e.eng.updateMatrixWorld(true); }
     }
   }
   SteamLayout.id = 'steam';
   SteamLayout.kind = 'steam';
+  SteamLayout.title = 'Steam';
   SteamLayout.turbos = false; SteamLayout.blower = false;   // no forced induction
+  SteamLayout.EMBER = P_EMBER;                               // particle kind of the firebox embers (tests)
   L.register(SteamLayout);
+
+  /* boiler pressure, bar (the dash's STEAM gauge): the fire raises it, the engine draws it down */
+  class SteamPressure {
+    constructor() { this.v = 0; this.rise = 2.2; this.fall = 3.5; }
+    target(sim, red) {
+      const draw = sim.throttle * clamp(sim.rpm / red, 0, 1.1);
+      return 10 + 6 * sim.flame + 1.6 * clamp(sim.pw - 0.4, 0, 0.6) - 1.6 * draw;   // strong peaks reach the safety valve
+    }
+    rest(sim) { return sim.state === 'off' ? 0 : 7.5; }   // a banked fire keeps some pressure up
+  }
+  EngineTypes.register({
+    id: 'steam',
+    redline: 7000,                   // the sim runs on the internal scale; the dash shows 200 rpm at its redline
+    glow: { color: 0xff7a2a, css: [255, 120, 30] },
+    sim: {
+      maxBoost: 14,
+      sources: () => [new SteamPressure()],
+      after(sim, dt, t) {            // the safety valve lifts near the top of the gauge; blowing off drops the pressure
+        if (sim.boost > sim.maxBoost * 0.97 && t - (sim._ventT ?? -99) > 3) { sim._ventT = t; sim.emit('vent', 1); for (const b of sim._src) b.v -= 1.2; }
+      },
+    },
+    // a mill engine: redline = 200 rpm
+    dash: red => ({
+      tach: { max: 250, red: 200, minor: 10, half: 50, major: 50, text: String,
+        title: 'RPM', map: r => r * 200 / red, digits: v => String(Math.round(v)).padStart(3, ' ') },
+      left: EngineTypes.tempGauge(),
+      right: { min: 0, max: 16, labels: [0, 4, 8, 12, 16], danger: 13, title: 'STEAM bar', value: s => s.boost, text: v => v.toFixed(1), rate: 10 },
+      lamps: { overboost: 'SAFETY VLV' },
+    }),
+  });
 })();
