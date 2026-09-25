@@ -14,6 +14,7 @@ The dashboard has a tachometer with shift lights, temp and boost gauges, 8 lamps
 ## Architecture (plain scripts, no build step, no ES modules)
 Load order in `index.html`: `three.min.js → audio.js → sim.js → engine3d.js → layouts.js → steam.js → jet.js → induction.js → dash.js → bg.js → media.js → odometer.js → main.js`.
 Each file is an IIFE exporting a class to `window`.
+Favicon (browser tab only): `favicon.svg` (a tachometer with a red zone) + `favicon.png` (32×32 fallback, a headless Chromium screenshot of the SVG; re-render it when the SVG changes).
 
 | File | Responsibility |
 |---|---|
