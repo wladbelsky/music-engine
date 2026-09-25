@@ -692,5 +692,6 @@
       if (this.showControls) { this._keyDraw(g, this.keyC, sim, dt); this._pedalDraw(g, this.pedalR, sim, dt); }
     }
   }
+  Dash.LAMPS = LAMPS;           // lamp keys (= sim.warn keys) a type may rename
   window.Dash = Dash;
 })();

@@ -398,5 +398,5 @@
   RotaryLayout.id = 'rotary';
 
   const reg = (cls, title) => { cls.title = title; EngineLayouts.register(cls); };
-  reg(InlineLayout, 'Inline'); reg(VLayout, 'V'); reg(BoxerLayout, 'Boxer'); reg(WLayout, 'W'); reg(RadialLayout, 'Radial'); reg(RotaryLayout, 'Rotary');
+  reg(InlineLayout, 'Inline'); reg(VLayout, 'V'); reg(BoxerLayout, 'Boxer'); reg(WLayout, 'W'); reg(RadialLayout, 'Radial'); reg(RotaryLayout, 'Rotary (Wankel)');
 })();
