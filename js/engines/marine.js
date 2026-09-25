@@ -1,15 +1,18 @@
-/* Marine diesel: a slow two-stroke crosshead engine, as in a ship's engine room.
+/* Marine diesel: a slow four-stroke crosshead engine, as in a ship's (or a WWII submarine's) engine room.
  *
  * Crank axis = X like every layout (front = +X, the chain case end). Bottom to top: bedplate with the main
  * bearings, the frame box (ghosts in cutaway) with A-frames between the cylinders and the crosshead guides,
  * the cylinder frame, the jackets, the covers (accent colour) and on top the open valve gear of the old
- * submarine and ship diesels: rockers across every head (exhaust, fuel needle, starting air) on pedestals, coil
- * valve springs, pushrods down to the open camshaft on the camera side, a starting air manifold along the top. Each cylinder is a vertical slider-crank with a crosshead: crank pin -> connecting rod -> crosshead
- * in its guides -> piston rod -> piston. Two-stroke: period 360, every cylinder fires once per turn.
+ * submarine diesels: two rockers across every head (exhaust and intake: every one of them rocks, in turn) on
+ * pedestals, coil valve springs, pushrods down to the open camshaft on the camera side (half crank speed), the
+ * charge air manifold along the top feeding the intake valves. Each cylinder is a vertical slider-crank with a
+ * crosshead: crank pin -> connecting rod -> crosshead in its guides -> piston rod -> piston. Four-stroke:
+ * period 720, every cylinder fires once in two turns (it was a two-stroke with three rockers, of which only the
+ * exhaust one visibly moved: the user found it odd).
  * The exhaust valves feed a receiver on the far side (-Z), which drives the turbocharger at the front end; the
- * compressor feeds the scavenge air receiver below it through the air cooler, with two auxiliary blowers that
- * run while the scavenge air is low. Platforms with yellow railings on the camera side give it scale.
- * sim.boost = scavenge air pressure (the dash's SCAV AIR gauge). Starting on air blows the indicator cocks;
+ * compressor feeds the charge air receiver below it through the air cooler, with two auxiliary blowers that
+ * run while the charge air is low. Platforms with yellow railings on the camera side give it scale.
+ * sim.boost = charge air pressure (the dash's CHARGE AIR gauge). Starting on air blows the indicator cocks;
  * music peaks make black smoke and soot sparks, big beats lift a cylinder relief valve (a flame out sideways). */
 (function () {
   'use strict';
@@ -24,7 +27,7 @@
   const Y_COV = Y_JK + 0.28;          // top of the cylinder covers
   const Z_R = -1.5;                   // receivers on the far side
   const Y_EXR = 6.35, R_EXR = 0.44;   // exhaust receiver
-  const Y_SCR = 4.65, R_SCR = 0.46;   // scavenge air receiver
+  const Y_SCR = 4.65, R_SCR = 0.46;   // charge air receiver
   const Z_PL = 1.25, W_PL = 0.62;     // platforms on the camera side (inner edge, width)
   // open valve gear on top (as on the old submarine and ship diesels): per cylinder three rockers across the head,
   // each tipping on a pedestal; the valve end presses a valve down against its coil spring, the other end rides on
@@ -33,13 +36,14 @@
   const Y_PIV = Y_COV + 0.66;                         // pivot height
   const Z_CAM = RK_Z + RK_B, Y_CAM = Y_CF + 0.16;     // camshaft (runs at crank speed: two-stroke)
   const Y_FOL = Y_CAM + 0.1, PUSH_L = Y_PIV - Y_FOL;  // pushrod from the follower to the rocker end
-  const Y_START = Y_COV + 0.32, Z_START = -0.62;      // starting air manifold along the top
-  const bump = (deg, a, b) => { const d = ((deg - a) % 360 + 360) % 360, w = ((b - a) % 360 + 360) % 360; return d < w ? Math.sin(Math.PI * d / w) : 0; };
+  const Y_MAN = Y_COV + 0.34, Z_MAN = -0.62;          // charge air manifold along the top
+  // cam windows in degrees of the 720-degree cycle (0 = firing TDC); a sine-shaped lift inside the window
+  const bump = (deg, a, b) => { const d = ((deg - a) % 720 + 720) % 720, w = ((b - a) % 720 + 720) % 720; return d < w ? Math.sin(Math.PI * d / w) : 0; };
   const VALVES = [
-    { dx: 0, lift: 0.075, h: 0.46, r: 0.12, cam: deg => bump(deg, 110, 250) },                    // exhaust valve, big spring
-    { dx: -0.3, lift: 0.045, h: 0.34, r: 0.07, cam: deg => bump(deg, 345, 30) },                 // fuel needle, round TDC
-    { dx: 0.3, lift: 0.06, h: 0.38, r: 0.085, cam: (deg, starting) => starting ? bump(deg, 0, 110) : 0 },   // starting air: only while starting
+    { dx: -0.2, lift: 0.075, h: 0.46, r: 0.12, open: 130, close: 380 },    // exhaust: before BDC to just past the gas-exchange TDC
+    { dx: 0.2, lift: 0.075, h: 0.46, r: 0.12, open: 340, close: 590 },     // intake: just before that TDC to after BDC (the overlap)
   ];
+  VALVES.forEach(v => { v.cam = deg => bump(deg, v.open, v.close); v.peak = (v.open + v.close) / 2; });
 
   /* firing order: a cycle through all cylinders in which no two neighbours fire one after the other (none exists
      for 4: then the usual order), found by depth-first search from cylinder 0 */
@@ -64,7 +68,7 @@
       this.animK = 120 / 7000 / 0.085;    // the shaft turns at the rpm the dash shows (120 at the redline)
       this.swayK = 0.12; this.smooth = true;
       this.acc = { smoke: 0, cock: 0, spark: 0 };
-      this.rn = 0; this.aux = 0; this.relief = 0; this.starting = false;
+      this.rn = 0; this.aux = 0; this.relief = 0;
     }
     _mats() {
       if (this.paint) return;
@@ -83,7 +87,7 @@
     }
     cylinders() {
       const order = marineOrder(this.n);
-      return this.xs.map((x, i) => ({ i, x, zo: 0, phase: order.indexOf(i) * 360 / this.n }));
+      return this.xs.map((x, i) => ({ i, x, zo: 0, phase: order.indexOf(i) * 720 / this.n }));
     }
 
     /* one cylinder: jacket, piston + rod + crosshead + connecting rod, cover with exhaust valve and actuator,
@@ -101,7 +105,7 @@
       this._cylZ(0.07, 0.2, M.steel, x + 0.14, Y_COV - 0.1, R_JK + 0.12, null, 12);              // relief valve
       // exhaust branch to the receiver, lagged
       this._tube([new T.Vector3(x, Y_COV - 0.12, -0.42), new T.Vector3(x, Y_COV - 0.05, -0.8), new T.Vector3(x, Y_EXR + 0.2, Z_R + 0.3)], 0.13, this.lagging);
-      this._tube([new T.Vector3(x + 0.3, Y_START, Z_START), new T.Vector3(x + 0.3, Y_COV + 0.15, -0.35), new T.Vector3(x + 0.3, Y_COV + 0.02, -0.16)], 0.04, M.steel);   // starting air branch
+      this._tube([new T.Vector3(x + 0.2, Y_MAN, Z_MAN), new T.Vector3(x + 0.2, Y_COV + 0.12, -0.4), new T.Vector3(x + 0.2, Y_COV + 0.02, -0.2)], 0.06, M.steel);   // charge air to the intake valve
       // moving: piston, piston rod, crosshead, connecting rod (shown in cutaway)
       const piston = this._cylY(R_CYL, 0.34, M.piston, x, 0, 0, null, 24);
       const prod = this._cylY(0.07, PROD, M.steel, x, 0, 0, null, 12);
@@ -112,7 +116,7 @@
       this._box(0.14, ROD - 0.2, 0.2, M.steel, 0, 0, 0, rod);
       this._cylX(0.16, 0.24, M.steel, 0, -ROD / 2, 0, rod, 14);                                   // big end
       this._cylX(0.12, 0.34, M.steel, 0, ROD / 2, 0, rod, 12);                                     // small end at the crosshead pin
-      return { bank: b, bi, i: cd.i, x, zo: 0, phase: cd.phase, period: 360, moving: [piston, prod, xh, rod], piston, prod, xh, rod, rockers,
+      return { bank: b, bi, i: cd.i, x, zo: 0, phase: cd.phase, period: 720, moving: [piston, prod, xh, rod], piston, prod, xh, rod, rockers,
         cock: new T.Vector3(x - 0.12, Y_COV - 0.06, R_JK + 0.2), reliefL: new T.Vector3(x + 0.14, Y_COV - 0.1, R_JK + 0.24) };
     }
 
@@ -152,9 +156,9 @@
       return G;
     }
 
-    /* vertical slider-crank with a crosshead; the exhaust valve lifts by its cam (open ~110..250 deg after TDC) */
+    /* vertical slider-crank with a crosshead; the valves lift by their cams (VALVES: windows in the 720-degree cycle) */
     animate(c, cyc) {
-      const b = cyc / 2 * DEG, py = CRK * Math.cos(b), pz = CRK * Math.sin(b);
+      const b = cyc * DEG, py = CRK * Math.cos(b), pz = CRK * Math.sin(b);   // period 720: cyc is the crank angle
       const dy = Math.sqrt(ROD * ROD - pz * pz), y = H + py + dy;                  // crosshead pin height
       c.xh.position.set(c.x, y, 0);
       c.prod.position.set(c.x, y + PROD / 2, 0);
@@ -163,9 +167,8 @@
       c.rod.rotation.x = Math.atan2(-pz, dy);
       c.throwG.rotation.x = b;
       // valve gear: the cam lifts the pushrod, the rocker tips over its pivot and pushes the valve down against its spring
-      const deg = cyc / 2;
       for (const r of c.rockers) {
-        const v = r.v, w = v.cam(deg, this.starting), L = v.lift * w, dv = L * RK_A / RK_B;
+        const v = r.v, L = v.lift * v.cam(cyc), dv = L * RK_A / RK_B;
         r.push.position.y = Y_FOL + PUSH_L / 2 + L;
         r.arm.rotation.x = -L / RK_B;
         r.spring.scale.y = (v.h - dv) / v.h;
@@ -202,19 +205,21 @@
         for (const hy of [0.5, 0.95]) this._cylX(0.025, len + 0.4, this.yellow, xm, y + hy, zr, null, 6);
         for (let k = 0; k < this.n; k++) this._box(0.04, 0.2, W_PL - 0.05, this.grating, this.xs[k], y - 0.12, Z_PL + W_PL / 2);   // brackets
       }
-      // open camshaft on the camera side: bearings at the A-frames, a lobe under every pushrod (up when its valve opens)
-      const cs = new T.Group(); cs.position.set(0, Y_CAM, Z_CAM); this.eng.add(cs); this.e.spin(cs, 1);
+      // open camshaft on the camera side (half crank speed: four-stroke), bearings at the A-frames, a lobe under every
+      // pushrod pointing up when its valve is fully open
+      const cs = new T.Group(); cs.position.set(0, Y_CAM, Z_CAM); this.eng.add(cs); this.e.spin(cs, 0.5);
       this._cylX(0.05, len + 0.2, M.steel, xm, 0, 0, cs, 10);
       const lobeG = new T.CylinderGeometry(0.07, 0.07, 0.08, 16);
       this.cylinders().forEach(cd => VALVES.forEach(v => {
-        const peak = v === VALVES[0] ? 180 : v === VALVES[1] ? 7 : 55, a = -(cd.phase + peak) * DEG;   // the lobe points up (+Y) at that crank angle
+        const a = -(cd.phase + v.peak) / 2 * DEG;   // up (+Y) at crank angle phase + peak, the camshaft at half of it
         const lobe = new T.Mesh(lobeG, M.steel); lobe.rotation.z = Math.PI / 2; lobe.position.set(cd.x + v.dx, Math.cos(a) * 0.035, Math.sin(a) * 0.035); cs.add(lobe);
       }));
       for (let i = 0; i <= this.n; i++) { const x = this.x0 + i * PITCH; this._box(0.1, 0.2, 0.18, this.paint, x, Y_CAM - 0.1, Z_CAM); }
       this._box(len + 0.2, 0.06, 0.26, this.paint, xm, Y_CF + 0.02, Z_CAM);
-      // starting air manifold along the top of the heads (the long pipe on the far side)
-      this._cylX(0.08, len + 0.4, M.steel, xm, Y_START, Z_START, null, 12);
-      for (let i = 0; i <= this.n; i++) this._box(0.06, Y_START - Y_JK, 0.06, M.dark2, this.x0 + i * PITCH, (Y_START + Y_JK) / 2, Z_START);
+      // charge air manifold along the top of the heads (the long pipe on the far side), fed from the air cooler
+      this._cylX(0.11, len + 0.4, M.steel, xm, Y_MAN, Z_MAN, null, 14);
+      for (let i = 0; i <= this.n; i++) this._box(0.06, Y_MAN - Y_JK, 0.06, M.dark2, this.x0 + i * PITCH, (Y_MAN + Y_JK) / 2, Z_MAN);
+      this._tube([new T.Vector3(this.x1 + 0.18, Y_MAN, Z_MAN), new T.Vector3(this.x1 + 0.4, Y_MAN - 0.2, Z_MAN - 0.2), new T.Vector3(this.x1 + 0.5, Y_SCR + 0.4, Z_R + 0.3)], 0.11, M.steel);
       const lx = this.x0 - 0.3, lz = Z_PL + W_PL / 2, ltop = Y_CF + 0.05;
       for (const s of [-1, 1]) this._box(0.05, ltop + 0.9, 0.05, this.yellow, lx, (ltop + 0.9) / 2, lz + s * 0.22);
       for (let y = 0.3; y < ltop; y += 0.3) this._cylZ(0.018, 0.44, this.yellow, lx, y, lz, null, 6);
@@ -244,7 +249,7 @@
     /* receivers, turbocharger, air cooler, auxiliary blowers, uptake */
     buildIntake() {
       const e = this.e, M = this.M, len = this.x1 - this.x0, xm = (this.x0 + this.x1) / 2, xt = this.x1 + 0.95;
-      // exhaust receiver (lagged) and scavenge air receiver on the far side, on brackets
+      // exhaust receiver (lagged) and charge air receiver on the far side, on brackets
       this._cylX(R_EXR, len + 0.3, this.lagging, xm, Y_EXR, Z_R, null, 28);
       for (const x of [this.x0 - 0.15, this.x1 + 0.15]) this._add(new T.SphereGeometry(R_EXR, 20, 12), this.lagging, x, Y_EXR, Z_R);
       this._cylX(R_SCR, len + 0.2, this.paint, xm, Y_SCR, Z_R, null, 28);
@@ -256,15 +261,15 @@
       this._cylX(0.62, 0.5, M.turbo, xt + 0.82, Y_EXR + 0.45, Z_R, null, 32);                     // compressor housing
       const sil = this._cylX(0.72, 0.6, M.dark2, xt + 1.35, Y_EXR + 0.45, Z_R, null, 32);
       for (let k = 0; k < 4; k++) this._add(new T.TorusGeometry(0.72, 0.02, 6, 32), M.steel, xt + 1.1 + k * 0.16, Y_EXR + 0.45, Z_R).rotation.y = Math.PI / 2;
-      // compressor wheel in the silencer mouth, spun by the scavenge air (Engine3D.compressors)
+      // compressor wheel in the silencer mouth, spun by the charge air (Engine3D.compressors)
       const wheel = new T.Group(); wheel.position.set(xt + 1.66, Y_EXR + 0.45, Z_R); this.eng.add(wheel); e.compressors.push(wheel);
       for (let k = 0; k < 8; k++) { const bl = new T.Mesh(new T.BoxGeometry(0.03, 0.5, 0.14), M.steel); bl.position.y = 0.3; const p = new T.Group(); p.rotation.x = k * Math.PI / 4; p.add(bl); bl.rotation.y = 0.5; wheel.add(p); }
       this._cylX(0.14, 0.08, M.cover, 0.02, 0, 0, wheel, 14);
       this._cylX(0.66, 0.02, M.dark, xt + 1.62, Y_EXR + 0.45, Z_R, null, 32);                    // dark throat behind the wheel
-      // compressor outlet -> air cooler -> scavenge receiver
+      // compressor outlet -> air cooler -> charge air receiver
       this._tube([new T.Vector3(xt + 0.82, Y_EXR, Z_R + 0.35), new T.Vector3(xt + 0.7, Y_SCR + 0.8, Z_R + 0.4), new T.Vector3(this.x1 + 0.5, Y_SCR + 0.35, Z_R + 0.1)], 0.26, M.turbo);
       this._box(0.9, 0.9, 1.0, this.paint, this.x1 + 0.5, Y_SCR - 0.1, Z_R);
-      // auxiliary blowers on the scavenge receiver: fan wheels in a scroll, turned by their own motors
+      // auxiliary blowers on the charge air receiver: fan wheels in a scroll, turned by their own motors
       this.auxFans = [];
       for (const x of [xm - len * 0.25, xm + len * 0.25]) {
         this._cylZ(0.34, 0.22, M.dark2, x, Y_SCR - R_SCR - 0.2, Z_R - 0.45, null, 24);
@@ -303,7 +308,7 @@
     /* every exhaust valve opening: a puff up the funnel, heavier and darker with load and music peaks */
     exhaustPulse(c, sim) {
       if (!(sim.state === 'running' || sim.state === 'stalling')) return;
-      const k = clamp(0.2 + 0.6 * sim.throttle + 0.8 * sim.flame, 0, 1.4), m = Math.max(1, Math.round((1 + 2 * k) * Math.min(1, 6 / this.n)));
+      const k = clamp(0.2 + 0.6 * sim.throttle + 0.8 * sim.flame, 0, 1.4), m = Math.max(1, Math.round((1.5 + 3 * k) * Math.min(1, 6 / this.n)));   // one exhaust per two turns: bigger puffs
       this._puff(m, k, FX.P.FIRE, sim.flame > 0.3);
       if (sim.flame > 0.3 && Math.random() < 0.4 * sim.flame) this._soot(1 + Math.round(2 * sim.flame), 1 + sim.flame);
     }
@@ -355,12 +360,11 @@
           e.flames.spawn(p.x, p.y, p.z, (Math.random() - 0.3) * 0.6, 0.6 + Math.random(), 1.5 + Math.random() * 1.5, 0.25, 0.25 + Math.random() * 0.15, FX.P.FIRE);
         }
       }
-      // auxiliary blowers: run while the scavenge air is low, coast down after (step capped: 6 blades)
+      // auxiliary blowers: run while the charge air is low, coast down after (step capped: 6 blades)
       const auxT = on && sim.boost < 0.45 ? 1 : 0;
       this.aux += (auxT - this.aux) * (1 - Math.exp(-dt / (auxT > this.aux ? 0.8 : 1.5)));
       this.auxFans.forEach(f => { f.rotation.z += Math.min(dt * this.aux * 30, 0.4 * Math.PI / 3); });
       this.rn = clamp(sim.rpm / Math.max(500, sim.settings.redline || 7000), 0, 1.1);
-      this.starting = sim.state === 'cranking';     // the starting air valves only work while it turns over on air
     }
 
     /* axial shudder: the crankshaft's axial vibration at shaft speed, and a shove along the shaft on every beat */
@@ -376,9 +380,9 @@
   MarineLayout.turbos = false; MarineLayout.blower = false;   // it has its own turbocharger and blowers
   L.register(MarineLayout);
 
-  /* scavenge air pressure, bar (the dash's SCAV AIR gauge): turbocharged, so it lags and needs revs and load;
+  /* charge air pressure, bar (the dash's CHARGE AIR gauge): turbocharged, so it lags and needs revs and load;
      the auxiliary blowers hold a little while the key is on */
-  class ScavengeAir {
+  class ChargeAir {
     constructor() { this.v = 0; this.rise = 1.5; this.fall = 0.7; }
     target(sim, red) { return 0.25 + 3.2 * clamp(sim.throttle * 1.1, 0, 1) * clamp((sim.rpm - 1200) / Math.max(500, red * 0.8 - 1200), 0, 1) + 0.3 * sim.flame; }
     rest(sim) { return sim.state === 'off' ? 0 : 0.2; }
@@ -388,8 +392,8 @@
     redline: 7000,                     // internal scale; the dash shows 120 rpm at its redline
     glow: { color: 0xff7a2a, css: [255, 120, 30] },
     sim: {
-      maxBoost: 3.6,                   // SCAV HIGH from 3.35 bar
-      sources: () => [new ScavengeAir()],
+      maxBoost: 3.6,                   // CHARGE HIGH from 3.35 bar
+      sources: () => [new ChargeAir()],
       crank: { time: 1.8, rpm: 900, wobble: 60, rise: 4, fire: 1100 },   // turned over on starting air, slowly
       stall: { rpm: 300, stumble: 200, pops: false },
     },
@@ -397,8 +401,8 @@
       tach: { max: 140, red: 120, minor: 5, half: 10, major: 20, text: String, title: 'RPM',
         map: r => r * 120 / red, digits: v => String(Math.round(v)).padStart(3, ' ') },
       left: EngineTypes.tempGauge('JACKET °C'),
-      right: { min: 0, max: 4, labels: [0, 1, 2, 3, 4], danger: 3.4, title: 'SCAV AIR bar', value: s => s.boost, text: v => v.toFixed(2), rate: 6 },
-      lamps: { stall: 'SHUTDOWN', battery: 'START AIR', oil: 'LUB OIL', redline: 'OVERSPEED', overboost: 'SCAV HIGH', check: 'ALARM' },
+      right: { min: 0, max: 4, labels: [0, 1, 2, 3, 4], danger: 3.4, title: 'CHARGE AIR bar', value: s => s.boost, text: v => v.toFixed(2), rate: 6 },
+      lamps: { stall: 'SHUTDOWN', battery: 'START AIR', oil: 'LUB OIL', redline: 'OVERSPEED', overboost: 'CHARGE HIGH', check: 'ALARM' },
     }),
   });
 })();

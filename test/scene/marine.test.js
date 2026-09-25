@@ -1,5 +1,5 @@
 'use strict';
-/* The marine diesel: crosshead kinematics, two-stroke firing, the scavenge air and its blowers */
+/* The marine diesel: crosshead kinematics, four-stroke firing and valve gear, the charge air and its blowers */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { world, fakeAudio } = require('../helpers/scene');
@@ -16,7 +16,7 @@ test('marine: crosshead on the bore axis, rod joins crank pin and crosshead, pis
       assert.ok(Math.abs(c.xh.position.z) < 1e-9 && Math.abs(c.xh.position.x - c.x) < 1e-9, 'crosshead leaves its guides');
       assert.ok(Math.abs(c.piston.position.y - c.xh.position.y - 2.15 - 0.17) < 1e-9, 'piston rigid on the crosshead');
       // rod ends: big end at the crank pin, small end at the crosshead pin
-      const b = cyc / 2 * Math.PI / 180, pin = new T.Vector3(c.x, 1.3 + 0.5 * Math.cos(b), 0.5 * Math.sin(b));
+      const b = cyc * Math.PI / 180, pin = new T.Vector3(c.x, 1.3 + 0.5 * Math.cos(b), 0.5 * Math.sin(b));
       const up = new T.Vector3(0, 1, 0).applyEuler(c.rod.rotation), big = c.rod.position.clone().addScaledVector(up, -1), small = c.rod.position.clone().addScaledVector(up, 1);
       assert.ok(big.distanceTo(pin) < 1e-6, `big end off the pin at ${cyc}`);
       assert.ok(small.distanceTo(c.xh.position) < 1e-6, `small end off the crosshead at ${cyc}`);
@@ -26,26 +26,26 @@ test('marine: crosshead on the bore axis, rod joins crank pin and crosshead, pis
   }
 });
 
-test('marine: two-stroke, every cylinder once per turn, evenly spaced, never two neighbours in a row (from 5 up)', () => {
+test('marine: four-stroke, every cylinder once in two turns, evenly spaced, never two neighbours in a row (from 5 up)', () => {
   for (const n of [4, 5, 6, 7, 8, 9, 10, 11, 12]) {
     const W = world({ dash: false });
     W.build(n, 'marine', '0');
     const cyls = W.e.cyls;
-    assert.ok(cyls.every(c => c.period === 360));
+    assert.ok(cyls.every(c => c.period === 720));
     const order = [...cyls].sort((a, b) => a.phase - b.phase);
-    order.forEach((c, k) => assert.ok(Math.abs(c.phase - k * 360 / n) < 1e-9, `${n}: phase ${c.phase}`));
+    order.forEach((c, k) => assert.ok(Math.abs(c.phase - k * 720 / n) < 1e-9, `${n}: phase ${c.phase}`));
     if (n >= 5) for (let k = 0; k < n; k++) assert.notEqual(Math.abs(order[k].i - order[(k + 1) % n].i), 1, `${n}: ${order[k].i} then ${order[(k + 1) % n].i}`);
   }
 });
 
-test('marine: the scavenge air lags the load, the auxiliary blowers run only while it is low', () => {
+test('marine: the charge air lags the load, the auxiliary blowers run only while it is low', () => {
   const W = world({ dash: false });
   W.build(6, 'marine', '1');
   const lay = W.e.lay, spin = () => lay.auxFans[0].rotation.z;
   W.frame(60);                                           // key on, cranking on air
   let r0 = spin(); W.frame(30); assert.ok(spin() - r0 > 0.5, 'blowers run at start');
   W.rev(4);
-  assert.ok(W.sim.boost > 2, `scavenge air flat out ${W.sim.boost}`);
+  assert.ok(W.sim.boost > 2, `charge air flat out ${W.sim.boost}`);
   W.frame(300); r0 = spin(); W.frame(30); assert.ok(spin() - r0 < 0.1, 'blowers stop with the turbo making the air');
   assert.ok(W.e.compressors.length === 1);
 });
@@ -58,4 +58,24 @@ test('marine: the sim scale — 120 rpm at the redline on the dash, starting air
   for (let i = 0; i < 150; i++) { t += 1 / 30; sim.update(1 / 30, a, t); if (sim.state === 'cranking') crankT += 1 / 30; }
   assert.equal(sim.state, 'running');
   assert.ok(crankT > 1.5, `turned over on air for ${crankT.toFixed(2)} s`);
+});
+
+test('marine: two rockers per head, every one of them rocks in a cycle, and most of them in any one turn', () => {
+  const W = world({ dash: false });
+  W.build(8, 'marine', '0');
+  const e = W.e, cyls = e.cyls;
+  assert.ok(cyls.every(c => c.rockers.length === 2));
+  const span = new Map(), seen = new Set();
+  for (let crank = 0; crank < 720; crank += 5) {
+    for (const c of cyls) {
+      e.lay.animate(c, e._cyc(c, crank), crank);
+      for (const r of c.rockers) {
+        const a = Math.abs(r.arm.rotation.x), s0 = span.get(r) || 0;
+        span.set(r, Math.max(s0, a));
+        if (crank < 360 && a > 0.03) seen.add(r);
+      }
+    }
+  }
+  for (const [r, a] of span) assert.ok(a > 0.1, `a rocker only tips ${a.toFixed(3)} rad`);
+  assert.ok(seen.size >= cyls.length, `only ${seen.size} of ${cyls.length * 2} rockers move in the first turn`);
 });
