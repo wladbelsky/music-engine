@@ -14,11 +14,11 @@ function check(id, nIn, ind) {
   const L = EL.get(id), n = L.normCyl(nIn), eff = Induction.effective(Induction.parse(ind), L);
   assert.equal(e.n, n, tag);
   assert.equal(e.layout, id, tag);
-  // cylinders and exhausts
-  if (id === 'jet') { assert.equal(e.cyls.length, 0, tag); assert.equal(e.stacks.length, 0, tag); }
-  else if (id === 'steam') { assert.equal(e.cyls.length, n, tag); assert.equal(e.stacks.length, 0, tag); assert.ok(e.cyls.every(c => c.period === 180)); }
+  // cylinders (none without banks: the turbojet), and zoomie stacks on the piston layouts only
+  assert.equal(e.cyls.length, e.banks.length ? n : 0, tag);
+  if (id === 'steam') assert.ok(e.cyls.every(c => c.period === 180), tag);
+  if (!(e.lay instanceof g.PistonLayout)) assert.equal(e.stacks.length, 0, tag);
   else {
-    assert.equal(e.cyls.length, n, tag);
     assert.equal(e.stacks.length, n, tag);
     for (const c of e.stacks) {
       assert.ok([c.tip.x, c.tip.y, c.tip.z].every(Number.isFinite), tag);

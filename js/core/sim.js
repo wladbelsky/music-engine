@@ -11,6 +11,10 @@
      Its sources come from the engine type (js/core/layout.js): each has a target and its own rise/fall time,
      the value is the max of all of them. */
 
+  /* starting and stalling, overridable per engine type (type.sim.crank / type.sim.stall) */
+  const CRANK = { time: 0.9, rpm: 230, wobble: 70, rise: 20, fire: 1500 };   // starter speed, its lumpiness, rpm when it fires
+  const STALL = { rpm: 380, stumble: 500, pops: true };                    // dying revs, random stumbles, backfire pops
+
   class EngineSim {
     constructor() {
       this.state = 'off';            // off | lamptest | cranking | running | stalling | stalled
@@ -49,6 +53,7 @@
 
     update(dt, a, t) {
       const s = this.settings, red = Math.max(250, s.redline || 7000);
+      const ts = this.type().sim, crank = Object.assign({}, CRANK, ts.crank), stall = Object.assign({}, STALL, ts.stall);
       const beats = a.takeBeats();
       // one NaN (junk input) would otherwise stick in these accumulators for good
       for (const k of ['rpm', 'kick', 'throttle', 'pedal', 'temp', 'flame', 'stateT']) if (!isFinite(this[k])) this[k] = k === 'temp' ? 72 : 0;
@@ -80,7 +85,7 @@
           if (wake && this.stateT > 0.4) { this.state = 'cranking'; this.stateT = 0; }
           break;
         case 'cranking':
-          if (this.stateT > 0.9) { this.state = 'running'; this.stateT = 0; this.emit('start'); this.emit('smoke', 1); this.rpm = 1500; }
+          if (this.stateT > crank.time) { this.state = 'running'; this.stateT = 0; this.emit('start'); this.emit('smoke', 1); this.rpm = crank.fire; }
           break;
       }
 
@@ -95,10 +100,10 @@
         target = Math.max(target, IDLE + (red * 1.05 - IDLE) * Math.pow(this.pedal, 1.3));
         target += Math.sin(t * 7.3) * 18 + Math.sin(t * 13.1) * 10; // idle wobble
       } else if (this.state === 'stalling') {
-        target = 380 + (Math.random() < 0.15 ? 500 : 0); rise = 10; fall = 3;
-        if (Math.random() < dt * 1.2) this.emit('backfire', 0.3);
+        target = stall.rpm + (Math.random() < 0.15 ? stall.stumble : 0); rise = 10; fall = 3;
+        if (Math.random() < dt * 1.2 && stall.pops) this.emit('backfire', 0.3);
       } else if (this.state === 'cranking') {
-        target = 230 + Math.sin(this.stateT * 38) * 70; rise = 20; fall = 20;
+        target = crank.rpm + Math.sin(this.stateT * 38) * crank.wobble; rise = crank.rise; fall = 20;
       } else {
         target = 0; fall = this.state === 'stalled' ? 4 : 3;
       }

@@ -12,6 +12,7 @@
  *   sim.maxBoost    top of the right gauge's channel (sim.boost); the OVERBOOST lamp lights at 0.93 of it
  *   sim.sources(settings, maxBoost) -> [{v, rise, fall, target(sim, red), rest?(sim)}]  what drives sim.boost
  *   sim.after(sim, dt, t)   optional, once per update after the boost (extra events: steam's safety valve)
+ *   sim.crank / sim.stall   optional overrides of the start and stall behaviour (js/core/sim.js CRANK / STALL)
  *   dash(red) -> { tach, left, right, lamps }  scales and labels (js/core/dash.js draws them)
  *
  * Layout class (EngineLayouts.register): extends BaseLayout (or a relative) with statics

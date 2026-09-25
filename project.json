@@ -63,6 +63,10 @@
           {
             "label": "Turbojet",
             "value": "jet"
+          },
+          {
+            "label": "Electric (DC motor)",
+            "value": "electric"
           }
         ],
         "order": 6
@@ -98,7 +102,7 @@
           }
         ],
         "order": 7,
-        "condition": "layout.value != 'radial' && layout.value != 'steam' && layout.value != 'jet'"
+        "condition": "layout.value != 'radial' && layout.value != 'steam' && layout.value != 'jet' && layout.value != 'electric'"
       },
       "cutaway": {
         "text": "Cutaway block (shows pistons)",
@@ -177,7 +181,7 @@
       },
       "redline": {
         "text": "Rev limiter (RPM)",
-        "condition": "layout.value != 'steam' && layout.value != 'jet'",
+        "condition": "layout.value != 'steam' && layout.value != 'jet' && layout.value != 'electric'",
         "type": "slider",
         "value": 7000,
         "min": 5000,
