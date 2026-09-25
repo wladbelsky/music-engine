@@ -1,8 +1,7 @@
 /* Engine3D + Dash in Node (see load.js): the real THREE scene graph, no WebGL. */
 'use strict';
-const { load } = require('./load');
+const { load, LAYOUT_IDS: IDS } = require('./load');
 
-const IDS = ['inline', 'v', 'boxer', 'w', 'radial', 'rotary', 'steam', 'jet'];
 const INDUCTION = ['0', '1', '2', '4', 'sc', 'sc2'];
 
 /* the analyzer fields the sim reads */

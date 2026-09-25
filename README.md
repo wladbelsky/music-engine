@@ -79,9 +79,9 @@ The wallpaper itself has no build step; `package.json` is only for the tests (No
 
 ```
 npm install
+npx playwright install chromium   # once: the browser for test:e2e
 npm run test:unit    # unit + scene tests in Node, ~30 s, no browser
 npm run test:e2e     # the page in headless Chromium with SwiftShader WebGL, ~4 min
-npx playwright install chromium   # once, if Playwright has no browser yet
 ```
 
 - `test/unit`: audio analysis (BPM, silence, junk input), the engine state machine and boost sources, layouts' cylinder rules, forced induction, odometer, radio info, dash scales and hit areas, and `project.json` ↔ code ↔ settings panel consistency.

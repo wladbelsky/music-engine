@@ -2,14 +2,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { load } = require('../helpers/load');
+const { fakeAudio } = require('../helpers/scene');
 
-/* the sim only reads these fields of the analyzer */
-function fakeAudio(o = {}) {
-  return Object.assign({
-    silentTime: 0, level: 0.3, bpm: 128, conf: 0.8, intensity: 0.5, power: 0.5, beats: [],
-    takeBeats() { const b = this.beats; this.beats = []; return b; },
-  }, o);
-}
 const MUSIC = { silentTime: 0, level: 0.3, intensity: 0.5, power: 0.5 };
 const SILENCE = { level: 0, intensity: 0, power: 0 };
 

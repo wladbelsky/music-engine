@@ -1,11 +1,10 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { load } = require('../helpers/load');
+const { load, LAYOUT_IDS: IDS } = require('../helpers/load');
 
 const g = load();
 const { Induction, EngineLayouts: EL } = g;
-const IDS = ['inline', 'v', 'boxer', 'w', 'radial', 'rotary', 'steam', 'jet'];
 const JUNK = ['abc', NaN, undefined, null, '', -3, 0, Infinity, -Infinity, '7.6', 7.4, '  12 ', 1e9, {}, []];
 
 test('Induction.parse: known keys, case/space tolerant, junk -> one turbo', () => {
