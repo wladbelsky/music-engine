@@ -92,3 +92,16 @@ test('the key is kept like a setting in the browser; clicks on the panel never r
   assert.deepEqual(P.errors, []);
   await P.ctx.close();
 });
+
+test('file pickers list extensions, not audio/* or image/* (Android asks for the microphone / camera for those)', async () => {
+  const P = await open(browser, '');
+  const acc = await P.page.evaluate(() => [...document.querySelectorAll('input[type=file]')].map(i => [i.id, i.accept]));
+  assert.ok(acc.length >= 2, JSON.stringify(acc));
+  for (const [id, a] of acc) {
+    assert.ok(!/\*/.test(a), `${id}: accept="${a}" has a wildcard`);
+    assert.ok(/^(\.\w+,)*\.\w+$/.test(a), `${id}: accept="${a}" is not a list of extensions`);
+  }
+  assert.ok(acc.find(([id]) => id === 'dv-file')[1].includes('.mp3'));
+  assert.deepEqual(P.errors, []);
+  await P.ctx.close();
+});

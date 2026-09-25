@@ -201,7 +201,7 @@
         else if (it.t === 'number') { c = el('input', { id, type: 'number', min: it.min, max: it.max, style: 'width:4em' }); c.onchange = () => prop(it.k, Number(c.value)); }
         else if (it.t === 'color') { c = el('input', { id, type: 'color' }); c.oninput = () => prop(it.k, toRgb(c.value), true, c); }
         else if (it.t === 'file') {
-          c = el('input', { id, type: 'file', accept: 'image/*' });
+          c = el('input', { id, type: 'file', accept: '.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif' });   // extensions, not image/*: Android would offer the camera (and ask for it)
           c.onchange = () => { const f = c.files[0]; if (f) { prop('customimage', URL.createObjectURL(f), false); prop('background', 'custom', false); } };
         } else { // range + live value
           c = el('input', { id, type: 'range', min: it.min, max: it.max, step: it.step || 1, style: 'width:7em' });
