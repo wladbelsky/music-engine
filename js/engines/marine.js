@@ -2,8 +2,9 @@
  *
  * Crank axis = X like every layout (front = +X, the chain case end). Bottom to top: bedplate with the main
  * bearings, the frame box (ghosts in cutaway) with A-frames between the cylinders and the crosshead guides,
- * the cylinder frame, the jackets, the covers (accent colour) with the exhaust valves and their hydraulic
- * actuators. Each cylinder is a vertical slider-crank with a crosshead: crank pin -> connecting rod -> crosshead
+ * the cylinder frame, the jackets, the covers (accent colour) and on top the open valve gear of the old
+ * submarine and ship diesels: rockers across every head (exhaust, fuel needle, starting air) on pedestals, coil
+ * valve springs, pushrods down to the open camshaft on the camera side, a starting air manifold along the top. Each cylinder is a vertical slider-crank with a crosshead: crank pin -> connecting rod -> crosshead
  * in its guides -> piston rod -> piston. Two-stroke: period 360, every cylinder fires once per turn.
  * The exhaust valves feed a receiver on the far side (-Z), which drives the turbocharger at the front end; the
  * compressor feeds the scavenge air receiver below it through the air cooler, with two auxiliary blowers that
@@ -25,6 +26,20 @@
   const Y_EXR = 6.35, R_EXR = 0.44;   // exhaust receiver
   const Y_SCR = 4.65, R_SCR = 0.46;   // scavenge air receiver
   const Z_PL = 1.25, W_PL = 0.62;     // platforms on the camera side (inner edge, width)
+  // open valve gear on top (as on the old submarine and ship diesels): per cylinder three rockers across the head,
+  // each tipping on a pedestal; the valve end presses a valve down against its coil spring, the other end rides on
+  // a pushrod from the open camshaft on the camera side
+  const RK_Z = 0.42, RK_A = 0.5, RK_B = 0.6;          // pivot z, lever to the valve (at RK_Z - RK_A), to the pushrod
+  const Y_PIV = Y_COV + 0.66;                         // pivot height
+  const Z_CAM = RK_Z + RK_B, Y_CAM = Y_CF + 0.16;     // camshaft (runs at crank speed: two-stroke)
+  const Y_FOL = Y_CAM + 0.1, PUSH_L = Y_PIV - Y_FOL;  // pushrod from the follower to the rocker end
+  const Y_START = Y_COV + 0.32, Z_START = -0.62;      // starting air manifold along the top
+  const bump = (deg, a, b) => { const d = ((deg - a) % 360 + 360) % 360, w = ((b - a) % 360 + 360) % 360; return d < w ? Math.sin(Math.PI * d / w) : 0; };
+  const VALVES = [
+    { dx: 0, lift: 0.075, h: 0.46, r: 0.12, cam: deg => bump(deg, 110, 250) },                    // exhaust valve, big spring
+    { dx: -0.3, lift: 0.045, h: 0.34, r: 0.07, cam: deg => bump(deg, 345, 30) },                 // fuel needle, round TDC
+    { dx: 0.3, lift: 0.06, h: 0.38, r: 0.085, cam: (deg, starting) => starting ? bump(deg, 0, 110) : 0 },   // starting air: only while starting
+  ];
 
   /* firing order: a cycle through all cylinders in which no two neighbours fire one after the other (none exists
      for 4: then the usual order), found by depth-first search from cylinder 0 */
@@ -49,7 +64,7 @@
       this.animK = 120 / 7000 / 0.085;    // the shaft turns at the rpm the dash shows (120 at the redline)
       this.swayK = 0.12; this.smooth = true;
       this.acc = { smoke: 0, cock: 0, spark: 0 };
-      this.rn = 0; this.aux = 0; this.relief = 0;
+      this.rn = 0; this.aux = 0; this.relief = 0; this.starting = false;
     }
     _mats() {
       if (this.paint) return;
@@ -80,14 +95,13 @@
       this._add(new T.TorusGeometry(R_JK + 0.005, 0.025, 6, 28), M.steel, x, Y_JK - 0.25, 0).rotation.x = Math.PI / 2;
       // cover: accent, exhaust valve housing, actuator on top, fuel valves, indicator cock and relief valve on the camera side
       this._cylY(R_JK + 0.04, 0.28, M.cover, x, Y_JK + 0.14, 0, null, 28);
-      this._cylY(0.2, 0.42, M.dark2, x, Y_COV + 0.21, 0, null, 18);
-      const act = this._box(0.26, 0.2, 0.3, M.dark2, x, Y_COV + 0.52, 0);
-      const spindle = this._cylY(0.05, 0.3, M.steel, x, Y_COV + 0.72, 0, null, 10);
-      for (const s of [-1, 1]) this._cylY(0.045, 0.22, M.steel, x + s * 0.24, Y_COV + 0.08, -0.12, null, 8);
+      for (const [dx, dz] of [[-0.36, -0.3], [0.36, -0.3], [-0.36, 0.3], [0.36, 0.3]]) this._cylY(0.06, 0.07, M.steel, x + dx, Y_COV + 0.035, dz, null, 6);  // cover nuts
+      const rockers = VALVES.map(v => this._rocker(x + v.dx, v));
       this._cylZ(0.035, 0.18, M.brass, x - 0.12, Y_COV - 0.06, R_JK + 0.1, null, 8);             // indicator cock
       this._cylZ(0.07, 0.2, M.steel, x + 0.14, Y_COV - 0.1, R_JK + 0.12, null, 12);              // relief valve
       // exhaust branch to the receiver, lagged
-      this._tube([new T.Vector3(x, Y_COV + 0.3, -0.16), new T.Vector3(x, Y_COV + 0.3, -0.7), new T.Vector3(x, Y_EXR + 0.2, Z_R + 0.3)], 0.13, this.lagging);
+      this._tube([new T.Vector3(x, Y_COV - 0.12, -0.42), new T.Vector3(x, Y_COV - 0.05, -0.8), new T.Vector3(x, Y_EXR + 0.2, Z_R + 0.3)], 0.13, this.lagging);
+      this._tube([new T.Vector3(x + 0.3, Y_START, Z_START), new T.Vector3(x + 0.3, Y_COV + 0.15, -0.35), new T.Vector3(x + 0.3, Y_COV + 0.02, -0.16)], 0.04, M.steel);   // starting air branch
       // moving: piston, piston rod, crosshead, connecting rod (shown in cutaway)
       const piston = this._cylY(R_CYL, 0.34, M.piston, x, 0, 0, null, 24);
       const prod = this._cylY(0.07, PROD, M.steel, x, 0, 0, null, 12);
@@ -98,8 +112,44 @@
       this._box(0.14, ROD - 0.2, 0.2, M.steel, 0, 0, 0, rod);
       this._cylX(0.16, 0.24, M.steel, 0, -ROD / 2, 0, rod, 14);                                   // big end
       this._cylX(0.12, 0.34, M.steel, 0, ROD / 2, 0, rod, 12);                                     // small end at the crosshead pin
-      return { bank: b, bi, i: cd.i, x, zo: 0, phase: cd.phase, period: 360, moving: [piston, prod, xh, rod], piston, prod, xh, rod, spindle, act,
+      return { bank: b, bi, i: cd.i, x, zo: 0, phase: cd.phase, period: 360, moving: [piston, prod, xh, rod], piston, prod, xh, rod, rockers,
         cock: new T.Vector3(x - 0.12, Y_COV - 0.06, R_JK + 0.2), reliefL: new T.Vector3(x + 0.14, Y_COV - 0.1, R_JK + 0.24) };
+    }
+
+    /* one rocker with its pedestal, valve spring and stem, pushrod (shared geometry per valve kind) */
+    _rocker(x, v) {
+      const M = this.M, G = this._geo(v), zv = RK_Z - RK_A;
+      this._add(G.ped, this.paint, x, (Y_COV + Y_PIV) / 2 - 0.05, RK_Z);
+      const arm = new T.Group(); arm.position.set(x, Y_PIV, RK_Z); this.eng.add(arm);
+      const m = (geo, mat, y, z) => { const o = new T.Mesh(geo, mat); o.position.set(0, y, z); arm.add(o); return o; };
+      m(G.arm, this.paint, 0.02, (RK_B - RK_A) / 2);
+      m(G.boss, M.steel, 0, 0).rotation.z = Math.PI / 2;                                  // the pivot boss and its cap
+      m(G.cap, M.dark2, 0, 0).rotation.z = Math.PI / 2;
+      m(G.pad, M.steel, -0.06, -RK_A);                                                    // adjusting screw on the valve
+      m(G.fork, M.steel, -0.02, RK_B);                                                    // clevis on the pushrod
+      const spring = this._add(G.spring, M.dark, x, Y_COV, zv);
+      const stem = this._add(G.stem, M.steel, x, Y_COV + v.h + 0.1, zv);
+      const push = this._add(G.push, M.steel, x, Y_FOL + PUSH_L / 2, Z_CAM);
+      return { v, arm, spring, stem, push };
+    }
+    _geo(v) {
+      const G = this._g || (this._g = {}), k = v.h;
+      if (!G.ped) {
+        G.ped = new T.BoxGeometry(0.1, Y_PIV - Y_COV - 0.05, 0.16);
+        G.arm = new T.BoxGeometry(0.07, 0.09, RK_A + RK_B + 0.08);
+        G.boss = new T.CylinderGeometry(0.085, 0.085, 0.16, 16); G.cap = new T.CylinderGeometry(0.05, 0.05, 0.18, 12);
+        G.pad = new T.CylinderGeometry(0.025, 0.025, 0.1, 8);
+        G.fork = new T.BoxGeometry(0.1, 0.12, 0.09);
+        G.push = new T.CylinderGeometry(0.028, 0.028, PUSH_L, 8);
+      }
+      if (!G['spring' + k]) {                         // a helix from y 0 to h (scaled down as the valve opens)
+        const pts = [], turns = 6.5;
+        for (let i = 0; i <= 120; i++) { const t = i / 120, a = t * turns * Math.PI * 2; pts.push(new T.Vector3(Math.cos(a) * v.r, t * k, Math.sin(a) * v.r)); }
+        G['spring' + k] = new T.TubeGeometry(new T.CatmullRomCurve3(pts), 160, 0.018, 5, false);
+        G['stem' + k] = new T.CylinderGeometry(0.03, 0.03, 0.22, 8);
+      }
+      G.spring = G['spring' + k]; G.stem = G['stem' + k];
+      return G;
     }
 
     /* vertical slider-crank with a crosshead; the exhaust valve lifts by its cam (open ~110..250 deg after TDC) */
@@ -112,8 +162,15 @@
       c.rod.position.set(c.x, H + py + dy / 2, pz / 2);
       c.rod.rotation.x = Math.atan2(-pz, dy);
       c.throwG.rotation.x = b;
-      const deg = cyc / 2, lift = deg > 110 && deg < 250 ? Math.sin(Math.PI * (deg - 110) / 140) : 0;
-      c.spindle.position.y = Y_COV + 0.72 + 0.12 * lift;
+      // valve gear: the cam lifts the pushrod, the rocker tips over its pivot and pushes the valve down against its spring
+      const deg = cyc / 2;
+      for (const r of c.rockers) {
+        const v = r.v, w = v.cam(deg, this.starting), L = v.lift * w, dv = L * RK_A / RK_B;
+        r.push.position.y = Y_FOL + PUSH_L / 2 + L;
+        r.arm.rotation.x = -L / RK_B;
+        r.spring.scale.y = (v.h - dv) / v.h;
+        r.stem.position.y = Y_COV + v.h + 0.1 - dv;
+      }
     }
 
     /* bedplate, frame box (ghost), A-frames, crosshead guides, cylinder frame, chain case, platforms, ladder */
@@ -145,6 +202,19 @@
         for (const hy of [0.5, 0.95]) this._cylX(0.025, len + 0.4, this.yellow, xm, y + hy, zr, null, 6);
         for (let k = 0; k < this.n; k++) this._box(0.04, 0.2, W_PL - 0.05, this.grating, this.xs[k], y - 0.12, Z_PL + W_PL / 2);   // brackets
       }
+      // open camshaft on the camera side: bearings at the A-frames, a lobe under every pushrod (up when its valve opens)
+      const cs = new T.Group(); cs.position.set(0, Y_CAM, Z_CAM); this.eng.add(cs); this.e.spin(cs, 1);
+      this._cylX(0.05, len + 0.2, M.steel, xm, 0, 0, cs, 10);
+      const lobeG = new T.CylinderGeometry(0.07, 0.07, 0.08, 16);
+      this.cylinders().forEach(cd => VALVES.forEach(v => {
+        const peak = v === VALVES[0] ? 180 : v === VALVES[1] ? 7 : 55, a = -(cd.phase + peak) * DEG;   // the lobe points up (+Y) at that crank angle
+        const lobe = new T.Mesh(lobeG, M.steel); lobe.rotation.z = Math.PI / 2; lobe.position.set(cd.x + v.dx, Math.cos(a) * 0.035, Math.sin(a) * 0.035); cs.add(lobe);
+      }));
+      for (let i = 0; i <= this.n; i++) { const x = this.x0 + i * PITCH; this._box(0.1, 0.2, 0.18, this.paint, x, Y_CAM - 0.1, Z_CAM); }
+      this._box(len + 0.2, 0.06, 0.26, this.paint, xm, Y_CF + 0.02, Z_CAM);
+      // starting air manifold along the top of the heads (the long pipe on the far side)
+      this._cylX(0.08, len + 0.4, M.steel, xm, Y_START, Z_START, null, 12);
+      for (let i = 0; i <= this.n; i++) this._box(0.06, Y_START - Y_JK, 0.06, M.dark2, this.x0 + i * PITCH, (Y_START + Y_JK) / 2, Z_START);
       const lx = this.x0 - 0.3, lz = Z_PL + W_PL / 2, ltop = Y_CF + 0.05;
       for (const s of [-1, 1]) this._box(0.05, ltop + 0.9, 0.05, this.yellow, lx, (ltop + 0.9) / 2, lz + s * 0.22);
       for (let y = 0.3; y < ltop; y += 0.3) this._cylZ(0.018, 0.44, this.yellow, lx, y, lz, null, 6);
@@ -241,7 +311,8 @@
     onEvent(ev, sim) {
       const e = this.e;
       if (ev.type === 'backfire') {
-        if (ev.k > 0.4) {                               // a cylinder relief valve lifts: a flame out sideways, a bang
+        if (ev.k > 0.75 && e.time - (this.reliefT ?? -9) > 1.5) {   // a cylinder relief valve lifts (big beats only): a flame out sideways, a bang
+          this.reliefT = e.time;
           const c = e.cyls[Math.floor(Math.random() * e.cyls.length)], p = this._w(c.reliefL), d = new T.Vector3(0.2, 0.25, 1).applyQuaternion(this.eng.quaternion).normalize();
           for (let i = 0; i < Math.round(6 + 10 * ev.k); i++) {
             const sp = 2 + Math.random() * 3 * (1 + ev.k);
@@ -289,6 +360,7 @@
       this.aux += (auxT - this.aux) * (1 - Math.exp(-dt / (auxT > this.aux ? 0.8 : 1.5)));
       this.auxFans.forEach(f => { f.rotation.z += Math.min(dt * this.aux * 30, 0.4 * Math.PI / 3); });
       this.rn = clamp(sim.rpm / Math.max(500, sim.settings.redline || 7000), 0, 1.1);
+      this.starting = sim.state === 'cranking';     // the starting air valves only work while it turns over on air
     }
 
     /* axial shudder: the crankshaft's axial vibration at shaft speed, and a shove along the shaft on every beat */
