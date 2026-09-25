@@ -93,6 +93,8 @@
      A kind = how a particle moves and looks over its life u (0..1). Each has a variant for the additive pool
      (`add`, Engine3D.flames: light) and the normal one (`norm`, Engine3D.smoke); one missing = the other is used.
      {drag (1/s), lift (up acceleration, negative = falls), paint(u, col, k, s0) -> size (writes rgba at col[k]),
+      bounce: optional, the particle hits the floor (ParticleSystem.floorY, the ground plane) and bounces back up
+      with this fraction of its speed, sliding on at half its speed along the floor (no bounce = falls through it),
       dot: a clean round point instead of a billowy sprite}. particleKind(def) registers one, returns its id. */
   const KINDS = [];
   const fireAdd = alphaK => ({                  // white-blue core -> yellow -> orange -> red -> gone
@@ -135,6 +137,7 @@
       this.s0 = new Float32Array(max); this.kind = new Uint8Array(max);
       this.col = new Float32Array(max * 4); this.size = new Float32Array(max); this.seed = new Float32Array(max * 3);
       this.cursor = 0; this.additive = additive;
+      this.floorY = 0;                              // the ground plane (Engine3D.ground), for kinds that bounce
       const g = new T.BufferGeometry();
       this.aPos = new T.BufferAttribute(this.pos, 3); this.aPos.setUsage(T.DynamicDrawUsage);
       this.aCol = new T.BufferAttribute(this.col, 4); this.aCol.setUsage(T.DynamicDrawUsage);
@@ -193,6 +196,7 @@
         const j = i * 3, drag = Math.exp(-dt * d.drag);
         v[j] *= drag; v[j + 1] = v[j + 1] * drag + dt * d.lift; v[j + 2] *= drag;
         p[j] += v[j] * dt; p[j + 1] += v[j + 1] * dt; p[j + 2] += v[j + 2] * dt;
+        if (d.bounce !== undefined && p[j + 1] < this.floorY) { p[j + 1] = this.floorY; v[j + 1] = -v[j + 1] * d.bounce; v[j] *= 0.5; v[j + 2] *= 0.5; }
         this.size[i] = d.paint(u, c, i * 4, this.s0[i]);
       }
       this.aPos.needsUpdate = true; this.aCol.needsUpdate = true; this.aSize.needsUpdate = true;

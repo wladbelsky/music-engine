@@ -13,7 +13,12 @@
   'use strict';
   const T = THREE;
   const { DEG, clamp } = Engine3D.GEO;
-  const L = EngineLayouts;
+  const L = EngineLayouts, FX = EngineFX;
+  // a firebox ember: the core's falling spark (P.SPARK), but it bounces off the floor instead of falling through it
+  const P_EMBER = FX.particleKind({ dot: true, add: {
+    drag: 0.6, lift: -6.5, bounce: 0.35,
+    paint(u, c, k, s0) { const f = 1 - u; c[k] = 1.3; c[k + 1] = 0.75 + 0.25 * f; c[k + 2] = 0.35 * f; c[k + 3] = f; return s0; },
+  } });
 
   const H = 1.65;              // shaft height (the flywheel clears the plinth)
   const CRK = 0.42, ROD = 1.55;  // crank radius, connecting rod length
@@ -273,13 +278,16 @@
       this.blows.push({ c, t: 0.45 });
     }
 
-    /* embers out of the firebox door: along the door's normal, up and fanning out, then falling (the boiler rocks, so via the door) */
+    /* embers out of the firebox door: a wide cone (up to 65° off the door's normal) with an upward kick, falling and
+       bouncing on the floor (P_EMBER); taken from the door, so they follow the rocking boiler */
     _embers(m, k) {
-      const e = this.e, p = this._w(new T.Vector3(0, 0, 0.1), this.door), d = this._w(new T.Vector3(0, 0, 1.1), this.door).sub(p);
+      const e = this.e, p = this._w(new T.Vector3(0, 0, 0.1), this.door), n = this._w(new T.Vector3(0, 0, 1.1), this.door).sub(p).normalize();
+      const side = new T.Vector3(-n.z, 0, n.x).normalize(), up = new T.Vector3().crossVectors(side, n), d = new T.Vector3();
       for (let i = 0; i < m; i++) {
-        const sp = 1.5 + Math.random() * 3 * k, up = 1.2 + Math.random() * 2.8 * k, sd = (Math.random() - 0.5) * 1.6;
-        e.flames.spawn(p.x + (Math.random() - 0.5) * 0.3, p.y + (Math.random() - 0.5) * 0.25, p.z,
-          d.x * sp - d.z * sd, up, d.z * sp + d.x * sd, 0.6 + Math.random() * 0.8, 0.04 + Math.random() * 0.035, 3);
+        const th = 65 * DEG * Math.sqrt(Math.random()), ph = Math.random() * 2 * Math.PI, sp = 1.5 + Math.random() * 3 * k;
+        d.copy(n).multiplyScalar(Math.cos(th)).addScaledVector(side, Math.sin(th) * Math.cos(ph)).addScaledVector(up, Math.sin(th) * Math.sin(ph));
+        e.flames.spawn(p.x + side.x * (Math.random() - 0.5) * 0.4, p.y + (Math.random() - 0.5) * 0.3, p.z + side.z * (Math.random() - 0.5) * 0.4,
+          d.x * sp, d.y * sp + 1 + Math.random() * 1.5 * k, d.z * sp, 0.8 + Math.random() * 0.9, 0.04 + Math.random() * 0.035, P_EMBER);
       }
     }
 
@@ -368,6 +376,7 @@
   SteamLayout.kind = 'steam';
   SteamLayout.title = 'Steam';
   SteamLayout.turbos = false; SteamLayout.blower = false;   // no forced induction
+  SteamLayout.EMBER = P_EMBER;                               // particle kind of the firebox embers (tests)
   L.register(SteamLayout);
 
   /* boiler pressure, bar (the dash's STEAM gauge): the fire raises it, the engine draws it down */

@@ -43,7 +43,7 @@ test('steam: the firebox spits embers out of its door with the music (falling sp
     const at = F.cursor, p = lay._w(new T.Vector3(0, 0, 0.1), lay.door);
     orig(m, k); n += m;
     assert.ok(Math.hypot(F.pos[at * 3] - p.x, F.pos[at * 3 + 1] - p.y, F.pos[at * 3 + 2] - p.z) < 0.25, 'ember starts at the firebox door');
-    assert.equal(F.kind[at], W.g.EngineFX.P.SPARK);
+    assert.equal(F.kind[at], W.g.EngineLayouts.get('steam').EMBER);
   };
   W.frame(30, 1 / 30, () => { W.sim.flame = 1; });
   assert.ok(n >= 5, `only ${n} embers in a second at full flame`);
@@ -52,4 +52,26 @@ test('steam: the firebox spits embers out of its door with the music (falling sp
   W.sim.pedalIn = false; Object.assign(W.audio, { intensity: 0.2, power: 0.2 });
   W.frame(60); n = 0; W.frame(150);
   assert.equal(n, 0, 'embers on a calm run');
+});
+
+test('steam: embers fly out in a wide cone and bounce on the floor instead of falling through it', () => {
+  const W = world({ dash: false, seed: 4 });
+  W.build(2, 'steam', '0');
+  W.rev(1);
+  const lay = W.e.lay, F = W.e.flames, T = W.g.THREE, K = W.g.EngineLayouts.get('steam').EMBER;
+  const p = lay._w(new T.Vector3(0, 0, 0.1), lay.door), n = lay._w(new T.Vector3(0, 0, 1.1), lay.door).sub(p).normalize();
+  F.clear(); const at = F.cursor; lay._embers(200, 1);
+  let wide = 0;
+  for (let i = 0; i < 200; i++) {
+    const j = (at + i) % F.max, v = new T.Vector3(F.vel[j * 3], 0, F.vel[j * 3 + 2]), h = v.length();
+    if (h > 0.5 && Math.acos(Math.max(-1, Math.min(1, v.dot(new T.Vector3(n.x, 0, n.z).normalize()) / h))) > 35 * Math.PI / 180) wide++;
+  }
+  assert.ok(wide > 30, `only ${wide} of 200 embers fan out more than 35° sideways`);
+  let low = Infinity, landed = 0;
+  for (let f = 0; f < 45; f++) {
+    F.update(1 / 30);
+    for (let j = 0; j < F.max; j++) if (F.life[j] > 0 && F.kind[j] === K) { low = Math.min(low, F.pos[j * 3 + 1]); if (F.pos[j * 3 + 1] < F.floorY + 1e-6) landed++; }
+  }
+  assert.ok(low >= F.floorY - 1e-9, `an ember fell through the floor to ${low}`);
+  assert.ok(landed > 0, 'no ember reached the floor');
 });
