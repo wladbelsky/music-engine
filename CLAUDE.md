@@ -64,7 +64,6 @@ Favicon (browser tab only): `favicon.svg` (a tachometer with a red zone) + `favi
 - `test/helpers/scene.js`: `world({w, h, dash})` wires Engine3D + Dash like main.js (`dash.resize → setKeepOut(keepOut()) → eng3d.resize`), `build(n, id, ind)`, `frame(n, dt, each)`, `rev(secs)` (to running, pedal down), `fakeAudio()`.
 - `test/unit` (no THREE rendering), `test/scene` (real scene graph, no pixels), `test/e2e` (`page.js`: `open(browser, query, {we})` with a fake WE API when `we`, `__t.beat(bpm)` feeds audio in the page, `__t.raf` = pending rAF callbacks, `__t.intervals30` = 30 Hz intervals (DemoSource), `__t.pixels({only: 'engine'|'fx', keepOut, near})` renders and reads the GL canvas back in the same task; `props(page, {...})` = applyUserProperties + wait for frames).
 - Rendering is tested by rules, not golden images (the user's choice): no NaN vertex/matrix, fit points and opaque engine pixels outside `Dash.keepOut()`, lowest vertex ≥ floor while rocking, flame particles born at `tipW`, additive effects with `opaque === 0`.
-- Known finding kept as a `todo` test (doesn't fail CI): multi-row radials don't fire evenly across rows (14 = 2×7 fires in pairs, 27/28 uneven); each row is even.
 - Mutation-checked: reverting the old bugs (unclamped BPM refinement, `requestAnimationFrame` in `setPaused`, `setupDev()` ×3, plain additive blending, no keep-out fit, no `mountY`/`lift`, no NaN reset, one exhaust pulse per frame, no spinner pitch cap, grounding on unposed parts) makes the matching test fail.
 
 Manual checks: headless Chromium + SwiftShader:
