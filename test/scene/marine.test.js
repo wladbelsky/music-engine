@@ -112,3 +112,14 @@ test('marine: at full flame the relief valves lift about twice as often as they 
   W.frame(90, 1 / 30, (W2, i) => { W.sim.flame = 1; if (i % 10 === 0) W.sim.events.push({ type: 'backfire', k: 0.6 }); });
   assert.ok(n >= 9, `only ${n} relief valve lifts in 3 s`);
 });
+
+test('marine: the crankshaft ends inside the chain case, not flush with its front face (its end showed through)', () => {
+  for (const n of [4, 8, 12]) {
+    const W = world({ dash: false });
+    W.build(n, 'marine', '0');
+    const T = W.g.THREE, lay = W.e.lay;
+    W.e.eng.updateMatrixWorld(true);
+    const shaft = new T.Box3().setFromObject(lay.shaft), cc = new T.Box3().setFromObject(lay.chainCase);
+    assert.ok(shaft.max.x < cc.max.x - 0.05 && shaft.max.x > cc.min.x, `${n}: shaft ends at ${shaft.max.x.toFixed(3)}, case ${cc.min.x.toFixed(3)}..${cc.max.x.toFixed(3)}`);
+  }
+});

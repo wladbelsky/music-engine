@@ -89,6 +89,7 @@
       const shaft = new T.Group(); shaft.position.y = y; this.eng.add(shaft); this.e.spin(shaft, 1);
       const main = new T.Mesh(new T.CylinderGeometry(0.11, 0.11, len, 16), this.M.steel);
       main.rotation.z = Math.PI / 2; main.position.x = x; shaft.add(main);
+      return main;
     }
   }
   BaseLayout.kind = 'piston';

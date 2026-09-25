@@ -198,7 +198,7 @@
       // crankcase doors on the camera side
       this.xs.forEach(x => { const d = this._cylZ(0.26, 0.04, M.dark2, x, 1.9, 1.02, null, 20); d.scale.set(1, 1.35, 1); });
       // chain case at the front end
-      this._box(0.42, Y_CF - Y_BED + 0.2, 1.6, this.paint, this.x1 + 0.24, (Y_BED + Y_CF) / 2 + 0.1, 0);
+      this.chainCase = this._box(0.42, Y_CF - Y_BED + 0.2, 1.6, this.paint, this.x1 + 0.24, (Y_BED + Y_CF) / 2 + 0.1, 0);
       this._box(0.05, 1.8, 1.0, M.cover, this.x1 + 0.47, Y_BED + 1.8, 0);
       // platforms with gratings and railings on the camera side, a ladder at the back end
       for (const y of [H + ROD + 0.1, Y_CF + 0.05]) {
@@ -231,7 +231,9 @@
     /* crankshaft: main shaft, big webs per throw, the flywheel and the turning gear at the back end */
     buildCrank(cyls) {
       const M = this.M;
-      this._mainShaft(this.frontX - this.rearX + 0.2, (this.frontX + this.rearX) / 2 - 0.1, H);
+      // from behind the flywheel into the chain case: ending flush with the case's front face, its end showed through as a dot
+      const sx0 = this.rearX - 0.2, sx1 = this.frontX - 0.15;
+      this.shaft = this._mainShaft(sx1 - sx0, (sx0 + sx1) / 2, H);
       const webG = new T.BoxGeometry(0.12, CRK + 0.6, 0.62), pinG = new T.CylinderGeometry(0.15, 0.15, 0.4, 14);
       cyls.forEach(c => {
         const g = new T.Group(); g.position.set(c.x, H, 0); this.eng.add(g); c.throwG = g; c.moving.push(g);
