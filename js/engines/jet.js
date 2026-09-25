@@ -27,8 +27,8 @@
       super(e, n);
       this.airFilter = false;
       this.animK = 0.3;                   // real speed visible from idle up; above that the blur discs take over
-      this.swayK = 0.35; this.smooth = true;   // the stand barely rocks; the engine rides in it instead (_ride)
-      this.I = 0; this.burst = 0; this.open = 0; this.burn = 0; this.acc = 0; this.push = 0;
+      this.swayK = 0.35; this.smooth = true;   // the core's rocking only (the stand's forward lean was removed: the user didn't like it)
+      this.I = 0; this.burst = 0; this.open = 0; this.burn = 0; this.acc = 0;
     }
 
     banks() { return []; }
@@ -85,17 +85,12 @@
       for (const [x, z] of [[1.4, -0.3], [2.1, 0.3]]) {
         const pump = this._mesh(new T.CylinderGeometry(0.1, 0.1, 0.22, 12), M.steel); pump.position.set(x, -1.14, z);   // clear of the floor when the nose dips
       }
-      // stand: two cradles on rails, the engine sits in them. The legs are springy: each one pivots on its foot, the
-      // cradles ride on top (group W), so a kick makes the whole stand lean like a parallelogram (_ride)
+      // stand: two cradles on legs and rails, the engine sits in them
       const fy = -HC, y0 = fy + 0.06;
-      this.W = new T.Group(); this.S.add(this.W); this.legs = []; this.LEG = -y0;
       for (const x of [1.9, -2.3]) {
         const r = (x > 0 ? casingR(x) : R_PIPE) + 0.06;
-        const cr = this._mesh(new T.TorusGeometry(r, 0.05, 8, 32, Math.PI), M.dark, this.W); cr.rotation.set(Math.PI, Math.PI / 2, 0); cr.position.x = x;
-        for (const s of [-1, 1]) {
-          const lg = new T.Group(); lg.position.set(x, y0, s * (r + 0.05)); this.S.add(lg); this.legs.push(lg);
-          const leg = this._mesh(new T.BoxGeometry(0.1, this.LEG, 0.1), M.dark, lg); leg.position.y = this.LEG / 2;
-        }
+        const cr = this._mesh(new T.TorusGeometry(r, 0.05, 8, 32, Math.PI), M.dark, this.S); cr.rotation.set(Math.PI, Math.PI / 2, 0); cr.position.x = x;
+        for (const s of [-1, 1]) { const leg = this._mesh(new T.BoxGeometry(0.1, -y0, 0.1), M.dark, this.S); leg.position.set(x, y0 / 2, s * (r + 0.05)); }
         const foot = this._mesh(new T.BoxGeometry(0.18, 0.06, 2 * r + 0.5), M.dark, this.S); foot.position.set(x, fy + 0.03, 0);
       }
       for (const s of [-1, 1]) { const rail = this._mesh(new T.BoxGeometry(4.8, 0.08, 0.1), M.dark, this.S); rail.position.set(-0.2, fy + 0.04, s * 0.7); }
@@ -214,21 +209,13 @@
         d.x * (5 + Math.random() * 5) * k, (Math.random() - 0.3) * 2, (Math.random() - 0.5) * 2, 0.4 + Math.random() * 0.4, 0.025 + Math.random() * 0.02, 3);
     }
 
-    /* the stand gives with the thrust: its springy legs lean forward (+X, towards the thrust mount) and the cradles
-       and the engine ride on top, level, like a parallelogram: a steady lean with the thrust (more with the
-       afterburner), a kick on every beat that swings back and forth (e.jolt, the core's beat spring), a tremor at high
-       revs. (It used to slide along its own axis and dip the nose about its middle: the user found that unnatural.)
-       The feet and rails stay put, so grounding and framing don't change. */
+    /* the engine sits still in its stand; it rocks with the core's sway (roll about its axis, beat jolts included)
+       and gets a small tremor at high revs. (A forward lean of the stand on springy legs with the thrust and the
+       beats was tried and removed: the user didn't like how it looked. Before that it slid along its own axis.) */
     _ride(dt, sim, run) {
       const e = this.e, sw = isFinite(e.sway) ? Math.max(0, e.sway) : 1, rn = clamp(sim.rpm / Math.max(500, sim.settings.redline || 7000), 0, 1.1);
-      const push = run ? 0.02 * sim.throttle + 0.035 * clamp(this.I, 0, 1.2) : 0;
-      this.push += (push - this.push) * (1 - Math.exp(-dt / 0.35));
       const trem = run ? 0.0035 * rn * Math.sin(e.time * 71) * Math.sin(e.time * 53.3) * sw : 0;
-      const a = clamp(0.5 * (this.push * sw + 0.05 * e.jolt) / this.LEG, -0.06, 0.06);   // leg lean (half of the first try: that looked like it would break the stand); e.jolt carries the sway setting
-      const dx = this.LEG * Math.sin(a), dy = -this.LEG * (1 - Math.cos(a));
-      this.legs.forEach(l => { l.rotation.z = -a; });
-      this.W.position.set(dx, dy, 0);
-      this.J.position.set(dx, HC + dy + trem, 0);
+      this.J.position.set(0, HC + trem, 0);
       this.J.rotation.set(trem * 0.4, 0, 0);
       this.S.updateMatrixWorld(true); this.J.updateMatrixWorld(true);
     }

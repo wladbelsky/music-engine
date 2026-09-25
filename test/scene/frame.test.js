@@ -43,30 +43,28 @@ function beatMotion(id, sway) {
   W.e.sway = sway;
   W.rev(0.1); W.sim.pedalIn = false;
   Object.assign(W.audio, { intensity: 0.8, power: 0.8 });
-  const ch = { jolt: [], engZ: [], jx: [], jrot: [], cradle: [], chim: [], boiler: [] }, L = W.e.lay;
+  const ch = { jolt: [], engZ: [], roll: [], jx: [], chim: [], boiler: [] }, L = W.e.lay;
   W.frame(120, 1 / 30, (W2, i) => {
     if (i % 15 === 0) W.audio.beats.push(1);
-    ch.jolt.push(W.e.jolt); ch.engZ.push(W.e.eng.position.z);
-    if (L.J) { ch.jx.push(L.J.position.x); ch.jrot.push(L.legs[0].rotation.z); ch.cradle.push(L.W.position.x - L.J.position.x); }
+    ch.jolt.push(W.e.jolt); ch.engZ.push(W.e.eng.position.z); ch.roll.push(W.e.eng.rotation.x);
+    if (L.J) ch.jx.push(L.J.position.x);
     if (L.chimP) { ch.chim.push(L.chimP.rotation.z); ch.boiler.push(L.boilerP.rotation.z); }
   });
   const span = a => a.length ? Math.max(...a) - Math.min(...a) : 0;
   return Object.fromEntries(Object.entries(ch).map(([k, a]) => [k, span(a)]));
 }
 
-test('jet and steam show the beat although they barely rock: the jet stand leans on its springy legs, the boiler and chimney rock', () => {
+test('jet and steam show the beat although they barely rock: the jet just rocks (no forward lean), the boiler and chimney rock', () => {
   const jet = beatMotion('jet', 1), steam = beatMotion('steam', 1);
   assert.ok(jet.jolt > 0.8, `beat spring ${jet.jolt}`);
-  assert.ok(jet.jx > 0.025 && jet.jx < 0.075, `jet surge ${jet.jx}`);           // half the first version (0.128): it looked like it would break the stand
-  assert.ok(jet.jrot > 0.015 && jet.jrot < 0.065, `jet stand legs lean ${jet.jrot}`);
-  assert.ok(jet.cradle < 1e-9, 'the cradles ride with the engine');
+  assert.ok(jet.jx < 1e-9, `jet surges forward ${jet.jx}`);   // the stand's forward lean was removed (the user didn't like it)
+  assert.ok(jet.roll > 0.008, `jet rocking ${jet.roll}`);
   assert.ok(steam.chim > 0.012, `chimney ${steam.chim}`);
   assert.ok(steam.boiler > 0.004, `boiler ${steam.boiler}`);
   assert.ok(steam.engZ > 0.015, `steam bed ${steam.engZ}`);
   // sway 0 switches it all off
   const jet0 = beatMotion('jet', 0), steam0 = beatMotion('steam', 0);
-  for (const [k, v] of Object.entries(jet0)) assert.ok(v < 1e-3 || k === 'jx', `jet ${k} ${v} with sway 0`);
-  assert.ok(jet0.jx < 0.05, `jet surge ${jet0.jx} with sway 0`);   // only the steady thrust push, scaled by sway too
+  for (const [k, v] of Object.entries(jet0)) assert.ok(v < 1e-3, `jet ${k} ${v} with sway 0`);
   for (const [k, v] of Object.entries(steam0)) assert.ok(v < 1e-3, `steam ${k} ${v} with sway 0`);
 });
 
