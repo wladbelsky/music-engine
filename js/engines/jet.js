@@ -9,7 +9,6 @@
   'use strict';
   const T = THREE;
   const { DEG, clamp } = Engine3D.GEO;
-  const { addBlend, FIRE_RAMP } = Engine3D.FX;
   const L = EngineLayouts;
 
   const HC = 1.3;                                   // axis height above the floor
@@ -19,45 +18,6 @@
   /* casing radius along the engine (front to back) */
   const casingR = x => x > X_C0 ? 0.8 : x > X_C1 ? 0.7 + 0.1 * (x - X_C1) / (X_C0 - X_C1) : x > X_B1 ? 0.74 : 0.68;
   const hubR = x => 0.27 + 0.15 * (X_C0 - x) / (X_C0 - X_C1);
-
-  const AB_VS = `
-    uniform vec3 uOrigin; uniform vec3 uDir; uniform float uLen; uniform float uWidth;
-    varying vec2 vUv;
-    void main(){
-      float y = position.y;
-      vec3 p = uOrigin + uDir * (y * uLen);
-      vec3 side = normalize(cross(uDir, normalize(cameraPosition - p)));
-      p += side * position.x * uWidth * (1.0 + 0.7 * y);
-      vUv = vec2(position.x + 0.5, y);
-      gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
-    }`;
-  const AB_FS = `
-    uniform sampler2D uNoise; uniform float uTime; uniform float uInt; uniform float uSeed; uniform float uLen; uniform float uDiam;
-    varying vec2 vUv;
-    ${FIRE_RAMP}
-    void main(){
-      float y = vUv.y, x = (vUv.x - 0.5) * 2.0, z = y * uLen;
-      vec2 q = vec2(vUv.x * 0.7 + uSeed, z * 0.3 - uTime * 3.2);
-      float n = texture2D(uNoise, q).r;
-      float n2 = texture2D(uNoise, q * 2.3 + vec2(0.37, -uTime * 2.1)).g;
-      x += (n2 - 0.5) * 0.35 * y;
-      // plume: nozzle-wide at first, narrowing into a ragged tip
-      float r = mix(0.62, 0.3, smoothstep(0.2, 1.0, y));
-      float body = (1.0 - smoothstep(r * 0.45, r, abs(x))) * (1.0 - smoothstep(0.35, 1.0, y + (n - 0.5) * 0.45));
-      body *= smoothstep(0.0, 0.03, y) * (0.3 + 0.6 * n);
-      // shock diamonds: pinched bright knots at a fixed spacing, fading downstream
-      float ph = fract(z / uDiam - 0.35);
-      float pinch = 0.22 + 0.5 * abs(ph - 0.5);
-      float knot = exp(-pow((ph - 0.5) * 4.5, 2.0)) * (1.0 - smoothstep(pinch * 0.3, pinch, abs(x))) * (1.0 - smoothstep(0.05, 0.7, y));
-      // between the knots a translucent orange body, the knots themselves yellow-white
-      float temp = body * (0.9 - 0.6 * y) + knot * 0.8;
-      vec3 col = fireRamp(temp) * body * 1.1;
-      col += vec3(1.0, 0.85, 0.55) * knot * 1.8;
-      // blue-violet sheath near the nozzle
-      float sheath = smoothstep(r * 0.2, r * 0.8, abs(x)) * (1.0 - smoothstep(r * 0.8, r * 1.05, abs(x))) * (1.0 - smoothstep(0.0, 0.45, y));
-      col += vec3(0.35, 0.4, 1.0) * sheath * (0.5 + n);
-      gl_FragColor = vec4(col * uInt, 0.0);
-    }`;
 
   class JetLayout extends L.base {
     static normCyl(n) { const v = Math.round(Number(n)); return isFinite(v) ? clamp(v, 6, 16) : 8; }
@@ -219,19 +179,7 @@
     }
 
     /* the afterburner plume: a camera-facing ribbon along -X (world space, like the flame jets) */
-    buildExhaust() {
-      const g = new T.BufferGeometry(), verts = [], idx = [], SEG = 24;
-      for (let k = 0; k <= SEG; k++) { verts.push(-0.5, k / SEG, 0, 0.5, k / SEG, 0); if (k < SEG) idx.push(k * 2, k * 2 + 1, k * 2 + 2, k * 2 + 1, k * 2 + 3, k * 2 + 2); }
-      g.setAttribute('position', new T.Float32BufferAttribute(verts, 3)); g.setIndex(idx);
-      const m = new T.ShaderMaterial({
-        uniforms: { uNoise: { value: this.e.noise }, uTime: { value: 0 }, uInt: { value: 0 }, uSeed: { value: Math.random() },
-          uOrigin: { value: new T.Vector3() }, uDir: { value: new T.Vector3(-1, 0, 0) }, uLen: { value: 3 }, uWidth: { value: 1.2 }, uDiam: { value: 1.1 } },
-        vertexShader: AB_VS, fragmentShader: AB_FS, transparent: true, depthWrite: false, side: T.DoubleSide,
-      });
-      addBlend(m); m.toneMapped = false;
-      this.plume = new T.Mesh(g, m); this.plume.frustumCulled = false; this.plume.renderOrder = 11; this.plume.visible = false;
-      this.e.root.add(this.plume);
-    }
+    buildExhaust() { this.plume = EngineFX.plume(this.e.noise, this.e.root, { len: 3, width: 1.2, diam: 1.1 }); }
 
     frameBox(box) { box.min.x -= 1.2; }                 // room for the plume
     glowPoint() { return this.I > 0.02 ? this._w(this.nozzleL).add(this._dirW().multiplyScalar(1.2)) : this._w(this.nozzleL); }

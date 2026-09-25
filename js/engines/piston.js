@@ -8,7 +8,7 @@
   'use strict';
   const T = THREE;
   const { P, CR, ROD, BORE, DECK, DEG, clamp, firingOrder } = Engine3D.GEO;
-  const { addBlend, JET_VS, JET_FS } = Engine3D.FX;
+  const { addBlend, JET_VS, JET_FS, ribbon } = EngineFX;
   const MAX_CYL = EngineLayouts.MAX_CYL;
   // any input -> integer 1..MAX_CYL (non-numeric -> 8)
   const cap = n => { const v = Math.round(Number(n)); return isFinite(v) ? clamp(v, 1, MAX_CYL) : 8; };
@@ -221,10 +221,7 @@
       lip.quaternion.setFromUnitVectors(new T.Vector3(0, 0, 1), dir); this.eng.add(lip);
       c.tip = p4.clone().addScaledVector(dir, 0.02); c.dir = dir;
       c.pulse = 0; c.burst = 0; c.jetI = 0;
-      const jg = new T.BufferGeometry();
-      const verts = [], idx = [], SEG = 12;
-      for (let k = 0; k <= SEG; k++) { verts.push(-0.5, k / SEG, 0, 0.5, k / SEG, 0); if (k < SEG) idx.push(k * 2, k * 2 + 1, k * 2 + 2, k * 2 + 1, k * 2 + 3, k * 2 + 2); }
-      jg.setAttribute('position', new T.Float32BufferAttribute(verts, 3)); jg.setIndex(idx);
+      const jg = ribbon(12);
       const jm = new T.ShaderMaterial({
         uniforms: { uNoise: { value: e.noise }, uTime: { value: 0 }, uInt: { value: 0 }, uSeed: { value: Math.random() },
           uOrigin: { value: new T.Vector3() }, uDir: { value: new T.Vector3(0, 1, 0) }, uLen: { value: 1 }, uWidth: { value: 0.3 }, uBend: { value: 0.25 } },
