@@ -43,22 +43,23 @@ function beatMotion(id, sway) {
   W.e.sway = sway;
   W.rev(0.1); W.sim.pedalIn = false;
   Object.assign(W.audio, { intensity: 0.8, power: 0.8 });
-  const ch = { jolt: [], engZ: [], jx: [], jrot: [], chim: [], boiler: [] }, L = W.e.lay;
+  const ch = { jolt: [], engZ: [], jx: [], jrot: [], cradle: [], chim: [], boiler: [] }, L = W.e.lay;
   W.frame(120, 1 / 30, (W2, i) => {
     if (i % 15 === 0) W.audio.beats.push(1);
     ch.jolt.push(W.e.jolt); ch.engZ.push(W.e.eng.position.z);
-    if (L.J) { ch.jx.push(L.J.position.x); ch.jrot.push(L.J.rotation.z); }
+    if (L.J) { ch.jx.push(L.J.position.x); ch.jrot.push(L.legs[0].rotation.z); ch.cradle.push(L.W.position.x - L.J.position.x); }
     if (L.chimP) { ch.chim.push(L.chimP.rotation.z); ch.boiler.push(L.boilerP.rotation.z); }
   });
   const span = a => a.length ? Math.max(...a) - Math.min(...a) : 0;
   return Object.fromEntries(Object.entries(ch).map(([k, a]) => [k, span(a)]));
 }
 
-test('jet and steam show the beat although they barely rock: the jet rides in its stand, the boiler and chimney rock', () => {
+test('jet and steam show the beat although they barely rock: the jet stand leans on its springy legs, the boiler and chimney rock', () => {
   const jet = beatMotion('jet', 1), steam = beatMotion('steam', 1);
   assert.ok(jet.jolt > 0.8, `beat spring ${jet.jolt}`);
   assert.ok(jet.jx > 0.05, `jet surge ${jet.jx}`);
-  assert.ok(jet.jrot > 0.006, `jet nose dip ${jet.jrot}`);
+  assert.ok(jet.jrot > 0.03, `jet stand legs lean ${jet.jrot}`);
+  assert.ok(jet.cradle < 1e-9, 'the cradles ride with the engine');
   assert.ok(steam.chim > 0.012, `chimney ${steam.chim}`);
   assert.ok(steam.boiler > 0.004, `boiler ${steam.boiler}`);
   assert.ok(steam.engZ > 0.015, `steam bed ${steam.engZ}`);

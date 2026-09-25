@@ -85,13 +85,16 @@
       for (const [x, z] of [[1.4, -0.3], [2.1, 0.3]]) {
         const pump = this._mesh(new T.CylinderGeometry(0.1, 0.1, 0.22, 12), M.steel); pump.position.set(x, -1.14, z);   // clear of the floor when the nose dips
       }
-      // stand: two cradles on rails, the engine hangs in them
-      const fy = -HC;
+      // stand: two cradles on rails, the engine sits in them. The legs are springy: each one pivots on its foot, the
+      // cradles ride on top (group W), so a kick makes the whole stand lean like a parallelogram (_ride)
+      const fy = -HC, y0 = fy + 0.06;
+      this.W = new T.Group(); this.S.add(this.W); this.legs = []; this.LEG = -y0;
       for (const x of [1.9, -2.3]) {
         const r = (x > 0 ? casingR(x) : R_PIPE) + 0.06;
-        const cr = this._mesh(new T.TorusGeometry(r, 0.05, 8, 32, Math.PI), M.dark, this.S); cr.rotation.set(Math.PI, Math.PI / 2, 0); cr.position.x = x;
+        const cr = this._mesh(new T.TorusGeometry(r, 0.05, 8, 32, Math.PI), M.dark, this.W); cr.rotation.set(Math.PI, Math.PI / 2, 0); cr.position.x = x;
         for (const s of [-1, 1]) {
-          const leg = this._mesh(new T.BoxGeometry(0.1, -fy - 0.05, 0.1), M.dark, this.S); leg.position.set(x, fy / 2, s * (r + 0.05));
+          const lg = new T.Group(); lg.position.set(x, y0, s * (r + 0.05)); this.S.add(lg); this.legs.push(lg);
+          const leg = this._mesh(new T.BoxGeometry(0.1, this.LEG, 0.1), M.dark, lg); leg.position.y = this.LEG / 2;
         }
         const foot = this._mesh(new T.BoxGeometry(0.18, 0.06, 2 * r + 0.5), M.dark, this.S); foot.position.set(x, fy + 0.03, 0);
       }
@@ -211,17 +214,23 @@
         d.x * (5 + Math.random() * 5) * k, (Math.random() - 0.3) * 2, (Math.random() - 0.5) * 2, 0.4 + Math.random() * 0.4, 0.025 + Math.random() * 0.02, 3);
     }
 
-    /* the engine rides in the stand's cradles: thrust shoves it forward against the thrust mount (+X, more with the
-       afterburner), every beat kicks it forward and dips the nose (thrust line above the mounts: e.jolt, the core's
-       beat spring), high revs make it tremble. The stand stays put, so grounding and framing don't change. */
+    /* the stand gives with the thrust: its springy legs lean forward (+X, towards the thrust mount) and the cradles
+       and the engine ride on top, level, like a parallelogram: a steady lean with the thrust (more with the
+       afterburner), a kick on every beat that swings back and forth (e.jolt, the core's beat spring), a tremor at high
+       revs. (It used to slide along its own axis and dip the nose about its middle: the user found that unnatural.)
+       The feet and rails stay put, so grounding and framing don't change. */
     _ride(dt, sim, run) {
       const e = this.e, sw = isFinite(e.sway) ? Math.max(0, e.sway) : 1, rn = clamp(sim.rpm / Math.max(500, sim.settings.redline || 7000), 0, 1.1);
       const push = run ? 0.02 * sim.throttle + 0.035 * clamp(this.I, 0, 1.2) : 0;
       this.push += (push - this.push) * (1 - Math.exp(-dt / 0.35));
-      const j = e.jolt, trem = run ? 0.0035 * rn * Math.sin(e.time * 71) * Math.sin(e.time * 53.3) : 0;
-      this.J.position.set(this.push * sw + 0.05 * j, HC + trem * sw, 0);   // e.jolt carries the sway setting already
-      this.J.rotation.set(trem * 0.4 * sw, 0, -0.006 * j);
-      this.J.updateMatrixWorld(true);
+      const trem = run ? 0.0035 * rn * Math.sin(e.time * 71) * Math.sin(e.time * 53.3) * sw : 0;
+      const a = clamp((this.push * sw + 0.05 * e.jolt) / this.LEG, -0.12, 0.12);   // leg lean; e.jolt carries the sway setting
+      const dx = this.LEG * Math.sin(a), dy = -this.LEG * (1 - Math.cos(a));
+      this.legs.forEach(l => { l.rotation.z = -a; });
+      this.W.position.set(dx, dy, 0);
+      this.J.position.set(dx, HC + dy + trem, 0);
+      this.J.rotation.set(trem * 0.4, 0, 0);
+      this.S.updateMatrixWorld(true); this.J.updateMatrixWorld(true);
     }
 
     updateFx(dt, sim, quality) {
