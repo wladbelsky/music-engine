@@ -82,7 +82,7 @@
     _cylZ(r, len, mat, x, y, z, parent, seg = 20) { const m = this._add(new T.CylinderGeometry(r, r, len, seg), mat, x, y, z, parent); m.rotation.x = Math.PI / 2; return m; }
     _cylY(r, len, mat, x, y, z, parent, seg = 20) { return this._add(new T.CylinderGeometry(r, r, len, seg), mat, x, y, z, parent); }
     _tube(pts, r, mat, parent) { const t = new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(pts), 24, r, 10, false), mat); (parent || this.eng).add(t); return t; }
-    _w(v) { return this.eng.localToWorld(v.clone()); }
+    _w(v, obj) { return (obj || this.eng).localToWorld(v.clone()); }   // local point -> world
     /* crank / eccentric shaft along X, turning with the crank */
     _mainShaft(len, x = 0) {
       const shaft = new T.Group(); this.eng.add(shaft); this.e.spin(shaft, 1);

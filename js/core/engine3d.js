@@ -47,7 +47,7 @@
 
       this.accent = new T.Color(0.75, 0.08, 0.06);
       this.cutaway = true; this.quality = 'high';
-      this.crank = 0; this.crankTotal = 0; this.heat = 0; this.flash = 0; this.rock = 0;
+      this.crank = 0; this.crankTotal = 0; this.heat = 0; this.flash = 0; this.rock = 0; this.jolt = 0; this.joltV = 0; this._kick0 = 0;
       this._rotM = new T.Matrix4(); this._eul = new T.Euler(); this.lift = 0; this.mountY = 0; this.sway = 1; this.lean = 0; this.vibA = 0; this.ph1 = 0; this.ph2 = 0; this.ph3 = 0; this.phI = 0;
       this.root = null;
       this.w = 1; this.h = 1;
@@ -407,7 +407,7 @@
     update(dt, sim, animSpeed, quality) {
       if (!this.root) return;
       // one NaN in these accumulators (e.g. from a bad setting) would hide the engine for good
-      for (const k of ['crank', 'crankTotal', 'heat', 'flash', 'rock', 'lean', 'vibA', 'ph1', 'ph2', 'ph3', 'phI', 'lift']) if (!isFinite(this[k])) this[k] = 0;
+      for (const k of ['crank', 'crankTotal', 'heat', 'flash', 'rock', 'lean', 'vibA', 'ph1', 'ph2', 'ph3', 'phI', 'lift', 'jolt', 'joltV', '_kick0']) if (!isFinite(this[k])) this[k] = 0;
       if (!isFinite(this.mountY)) this.mountY = this.baseY || 0;
       for (const s of this.spinners) if (!isFinite(s.a)) s.a = 0;
       const rpm = sim.rpm;
@@ -458,6 +458,7 @@
       // flame light
       this.flash *= Math.exp(-dt / 0.08);
       // vibration / camera shake
+      this._jolt(dt, sim);
       this._sway(dt, sim);
       const gp = lay.glowPoint();
       if (gp) this.flameLight.position.copy(gp).add(new T.Vector3(0, 0.4, 0));
@@ -468,6 +469,18 @@
         this.camera.position.copy(this.camBase);
         if (this.shake > 0.001) this.camera.position.add(new T.Vector3((Math.random() - 0.5), (Math.random() - 0.5), (Math.random() - 0.5)).multiplyScalar(this.shake * 0.06));
       }
+    }
+
+    /* beat spring for the layouts: a damped oscillator (~4.5 Hz, dies out in ~0.4 s) kicked by every beat (the rise
+       of sim.kick), about 1 on a typical beat, up to 2.5; the sway setting is already in it. Engines that don't rock on their mounts
+       (on a stand, on a foundation) show the rhythm with it in their own way (js/engines/jet.js, steam.js) */
+    _jolt(dt, sim) {
+      const kick = sim.kick || 0, dk = Math.max(0, kick - this._kick0), sw = isFinite(this.sway) ? Math.max(0, this.sway) : 1;
+      this._kick0 = kick;
+      const w = 2 * Math.PI * 4.5, z = 0.3, n = Math.max(1, Math.ceil(dt * 240)), h = dt / n;
+      this.joltV += Math.min(3, dk / 500 * sw) * w;
+      for (let i = 0; i < n; i++) { this.joltV += (-w * w * this.jolt - 2 * z * w * this.joltV) * h; this.jolt += this.joltV * h; }
+      if (Math.abs(this.jolt) > 2.5) { this.jolt = Math.sign(this.jolt) * 2.5; this.joltV = 0; }
     }
 
     _sway(dt, sim) {
@@ -487,7 +500,8 @@
       let pitch = A * (0.35 * Math.sin(this.ph1 * 0.71 + 1.3) + 0.18 * Math.sin(this.ph3));
       let bounce = A * 0.9 * Math.sin(this.ph2 * 1.13) + A * 0.4 * Math.sin(this.ph3);
       if (on && rpm < 1400 && !this.lay.smooth) roll += 0.006 * k * (Math.sin(this.phI) + 0.5 * Math.sin(this.phI * 2.3 + 0.7)) * (1 - rpm / 1400);
-      roll += (sim.kick / red) * 0.03 * k;                              // beat jolts
+      const kb = (isFinite(this.sway) ? Math.max(0, this.sway) : 1) * (this.lay.beatK ?? this.lay.swayK ?? 1);
+      roll += (sim.kick / red) * 0.03 * kb;                             // beat jolts
       if (sim.state === 'stalling') { roll += (Math.random() - 0.5) * 0.025 * k; pitch += (Math.random() - 0.5) * 0.01 * k; }
       if (sim.state === 'cranking') roll += Math.sin(sim.stateT * 38) * 0.012 * k;
       this.rock *= Math.exp(-dt / 0.35);
@@ -496,7 +510,7 @@
       // the pivot stays the engine's own axis; the mounts hold it up by the clearance its current rocking needs
       // (envelope of the terms above). A swing past that (random stall jolts) lifts it
       // at once and lets it settle back slowly, so nothing sinks through the floor
-      let rEnv = Math.abs(this.lean * k) + A * 1.2 + Math.abs(sim.kick / red) * 0.03 * k + this.rock * 0.035 * k;
+      let rEnv = Math.abs(this.lean * k) + A * 1.2 + Math.abs(sim.kick / red) * 0.03 * kb + this.rock * 0.035 * k;
       if (on && rpm < 1400 && !this.lay.smooth) rEnv += 0.009 * k * (1 - rpm / 1400);
       if (sim.state === 'cranking') rEnv += 0.012 * k;
       const mt = this._mountTarget(rEnv, A * 0.53, A * 0.78);

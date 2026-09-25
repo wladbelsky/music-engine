@@ -27,16 +27,20 @@
       super(e, n);
       this.airFilter = false;
       this.animK = 0.3;                   // real speed visible from idle up; above that the blur discs take over
-      this.swayK = 0.35; this.smooth = true;
-      this.I = 0; this.burst = 0; this.open = 0; this.burn = 0; this.acc = 0;
+      this.swayK = 0.35; this.smooth = true;   // the stand barely rocks; the engine rides in it instead (_ride)
+      this.I = 0; this.burst = 0; this.open = 0; this.burn = 0; this.acc = 0; this.push = 0;
     }
 
     banks() { return []; }
     dims() { this.frontX = X_IN + 0.35; this.rearX = X_N - PETAL_L; this.len = this.frontX - this.rearX; }
 
-    get J() {                            // everything hangs off one group on the engine axis
+    get J() {                            // the engine hangs off one group on its axis: it rides in the stand's cradles
       if (!this._J) { this._J = new T.Group(); this._J.position.y = HC; this.eng.add(this._J); }
       return this._J;
+    }
+    get S() {                            // the stand, same frame as J but fixed
+      if (!this._S) { this._S = new T.Group(); this._S.position.y = HC; this.eng.add(this._S); }
+      return this._S;
     }
     _mesh(geo, mat, parent) { const m = new T.Mesh(geo, mat); (parent || this.J).add(m); return m; }
     /* a lathe along X from (x, r) points, front to back (built back to front: rising y keeps the normals outward) */
@@ -79,19 +83,19 @@
       const tw = this._mesh(new T.CylinderGeometry(0.06, 0.06, 0.25, 10), M.dark2); tw.position.set(1.7, -0.78, 0);
       const tank = this._mesh(new T.CylinderGeometry(0.16, 0.16, 0.9, 16), M.dark2); tank.rotation.z = Math.PI / 2; tank.position.set(1.2, -0.62, 0.52);
       for (const [x, z] of [[1.4, -0.3], [2.1, 0.3]]) {
-        const pump = this._mesh(new T.CylinderGeometry(0.1, 0.1, 0.22, 12), M.steel); pump.position.set(x, -1.2, z);
+        const pump = this._mesh(new T.CylinderGeometry(0.1, 0.1, 0.22, 12), M.steel); pump.position.set(x, -1.14, z);   // clear of the floor when the nose dips
       }
       // stand: two cradles on rails, the engine hangs in them
       const fy = -HC;
       for (const x of [1.9, -2.3]) {
         const r = (x > 0 ? casingR(x) : R_PIPE) + 0.06;
-        const cr = this._mesh(new T.TorusGeometry(r, 0.05, 8, 32, Math.PI), M.dark); cr.rotation.set(Math.PI, Math.PI / 2, 0); cr.position.x = x;
+        const cr = this._mesh(new T.TorusGeometry(r, 0.05, 8, 32, Math.PI), M.dark, this.S); cr.rotation.set(Math.PI, Math.PI / 2, 0); cr.position.x = x;
         for (const s of [-1, 1]) {
-          const leg = this._mesh(new T.BoxGeometry(0.1, -fy - 0.05, 0.1), M.dark); leg.position.set(x, fy / 2, s * (r + 0.05));
+          const leg = this._mesh(new T.BoxGeometry(0.1, -fy - 0.05, 0.1), M.dark, this.S); leg.position.set(x, fy / 2, s * (r + 0.05));
         }
-        const foot = this._mesh(new T.BoxGeometry(0.18, 0.06, 2 * r + 0.5), M.dark); foot.position.set(x, fy + 0.03, 0);
+        const foot = this._mesh(new T.BoxGeometry(0.18, 0.06, 2 * r + 0.5), M.dark, this.S); foot.position.set(x, fy + 0.03, 0);
       }
-      for (const s of [-1, 1]) { const rail = this._mesh(new T.BoxGeometry(4.8, 0.08, 0.1), M.dark); rail.position.set(-0.2, fy + 0.04, s * 0.7); }
+      for (const s of [-1, 1]) { const rail = this._mesh(new T.BoxGeometry(4.8, 0.08, 0.1), M.dark, this.S); rail.position.set(-0.2, fy + 0.04, s * 0.7); }
     }
 
     /* the spool: shaft, compressor, turbine; cans are static */
@@ -175,15 +179,16 @@
         const p = new T.Group(); h.add(p); this._mesh(pg, this.pipeMat, p); this.petals.push(p);
       }
       this._ring(X_N + 0.2, R_PIPE + 0.06, 0.035, M.steel);   // actuator ring
-      this.nozzleL = new T.Vector3(X_N - PETAL_L * 0.9, HC, 0);
+      this.nozzleL = new T.Vector3(X_N - PETAL_L * 0.9, 0, 0);   // in J
     }
 
     /* the afterburner plume: a camera-facing ribbon along -X (world space, like the flame jets) */
     buildExhaust() { this.plume = EngineFX.plume(this.e.noise, this.e.root, { len: 3, width: 1.2, diam: 1.1 }); }
 
     frameBox(box) { box.min.x -= 1.2; }                 // room for the plume
-    glowPoint() { return this.I > 0.02 ? this._w(this.nozzleL).add(this._dirW().multiplyScalar(1.2)) : this._w(this.nozzleL); }
-    _dirW() { return new T.Vector3(-1, 0, 0).applyQuaternion(this.eng.quaternion); }
+    glowPoint() { return this.I > 0.02 ? this._wJ(this.nozzleL).add(this._dirW().multiplyScalar(1.2)) : this._wJ(this.nozzleL); }
+    _wJ(v) { return this.J.localToWorld(v.clone()); }
+    _dirW() { return new T.Vector3(-1, 0, 0).applyQuaternion(this.J.getWorldQuaternion(new T.Quaternion())); }
 
     exhaustPulse() {}
     onEvent(ev, sim) {
@@ -196,14 +201,27 @@
       else if (ev.type === 'smoke') this._smoke(Math.round(6 + 10 * ev.k));
     }
     _smoke(m) {
-      const e = this.e, p = this._w(this.nozzleL), d = this._dirW();
+      const e = this.e, p = this._wJ(this.nozzleL), d = this._dirW();
       for (let i = 0; i < m; i++) e.smoke.spawn(p.x, p.y, p.z, d.x * (1.5 + Math.random() * 2), d.y + Math.random() * 0.5, (Math.random() - 0.5) * 0.6,
         1.6 + Math.random(), 0.45 + Math.random() * 0.2, 0);
     }
     _sparks(m, k) {
-      const e = this.e, p = this._w(this.nozzleL), d = this._dirW();
+      const e = this.e, p = this._wJ(this.nozzleL), d = this._dirW();
       for (let i = 0; i < m; i++) e.flames.spawn(p.x, p.y + (Math.random() - 0.5) * 0.5, p.z + (Math.random() - 0.5) * 0.5,
         d.x * (5 + Math.random() * 5) * k, (Math.random() - 0.3) * 2, (Math.random() - 0.5) * 2, 0.4 + Math.random() * 0.4, 0.025 + Math.random() * 0.02, 3);
+    }
+
+    /* the engine rides in the stand's cradles: thrust shoves it forward against the thrust mount (+X, more with the
+       afterburner), every beat kicks it forward and dips the nose (thrust line above the mounts: e.jolt, the core's
+       beat spring), high revs make it tremble. The stand stays put, so grounding and framing don't change. */
+    _ride(dt, sim, run) {
+      const e = this.e, sw = isFinite(e.sway) ? Math.max(0, e.sway) : 1, rn = clamp(sim.rpm / Math.max(500, sim.settings.redline || 7000), 0, 1.1);
+      const push = run ? 0.02 * sim.throttle + 0.035 * clamp(this.I, 0, 1.2) : 0;
+      this.push += (push - this.push) * (1 - Math.exp(-dt / 0.35));
+      const j = e.jolt, trem = run ? 0.0035 * rn * Math.sin(e.time * 71) * Math.sin(e.time * 53.3) : 0;
+      this.J.position.set(this.push * sw + 0.05 * j, HC + trem * sw, 0);   // e.jolt carries the sway setting already
+      this.J.rotation.set(trem * 0.4 * sw, 0, -0.006 * j);
+      this.J.updateMatrixWorld(true);
     }
 
     updateFx(dt, sim, quality) {
@@ -236,11 +254,12 @@
         b.mat.opacity = clamp((over * b.B / 20 - 0.3) / 0.4, 0, b.cap);
         b.rings.forEach(r => { r.visible = b.mat.opacity > 0.01; });
       }
+      this._ride(dt, sim, run);
       // plume
       const u = this.plume.material.uniforms;
       this.plume.visible = I > 0.02;
       if (this.plume.visible) {
-        const d = this._dirW(), p = this._w(new T.Vector3(X_N - PETAL_L * 0.85, HC, 0));
+        const d = this._dirW(), p = this._wJ(new T.Vector3(X_N - PETAL_L * 0.85, 0, 0));
         u.uOrigin.value.copy(p); u.uDir.value.copy(d); u.uTime.value = e.time;
         u.uInt.value = Math.min(1.5, I) * flick;
         u.uLen.value = 1.8 + 4.0 * Math.min(1.3, I);

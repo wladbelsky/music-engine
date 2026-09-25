@@ -25,7 +25,7 @@ test('the rocking engine never sinks through the floor, and a still one sits on 
     let worst = Infinity;
     const sample = (W2, i) => { if (i % 6 === 0) worst = Math.min(worst, lowest(W)); };
     W.rev(0.1);
-    W.frame(150, 1 / 30, (W2, i) => { W.sim.pedalIn = Math.floor(i / 20) % 2 === 0; sample(W2, i); }); // blips: lean + kick
+    W.frame(150, 1 / 30, (W2, i) => { W.sim.pedalIn = Math.floor(i / 20) % 2 === 0; if (i % 14 === 0) W.audio.beats.push(1); sample(W2, i); }); // blips: lean + kick, hard beats
     W.sim.pedalIn = false; W.audio.level = 0; W.audio.intensity = W.audio.power = 0;
     W.frame(200, 1 / 30, sample);                         // stall with its random jolts
     assert.ok(worst > -0.005, `${id}: sank ${(-worst * 100).toFixed(1)} cm under the floor`);
@@ -34,6 +34,39 @@ test('the rocking engine never sinks through the floor, and a still one sits on 
     assert.ok(Math.abs(W.e.mountY - W.e.baseY) < 1e-3, `${id}: still engine hovers (mountY ${W.e.mountY}, base ${W.e.baseY})`);
     assert.ok(Math.abs(lowest(W) - 0.02) < 0.01, `${id}: resting bottom at ${lowest(W)}`);
   }
+});
+
+/* how far the parts that show the beat move over a few seconds of hard beats (max - min per channel) */
+function beatMotion(id, sway) {
+  const W = world({ seed: 5 });
+  W.build(8, id, '0');
+  W.e.sway = sway;
+  W.rev(0.1); W.sim.pedalIn = false;
+  Object.assign(W.audio, { intensity: 0.8, power: 0.8 });
+  const ch = { jolt: [], engZ: [], jx: [], jrot: [], chim: [], boiler: [] }, L = W.e.lay;
+  W.frame(120, 1 / 30, (W2, i) => {
+    if (i % 15 === 0) W.audio.beats.push(1);
+    ch.jolt.push(W.e.jolt); ch.engZ.push(W.e.eng.position.z);
+    if (L.J) { ch.jx.push(L.J.position.x); ch.jrot.push(L.J.rotation.z); }
+    if (L.chimP) { ch.chim.push(L.chimP.rotation.z); ch.boiler.push(L.boilerP.rotation.z); }
+  });
+  const span = a => a.length ? Math.max(...a) - Math.min(...a) : 0;
+  return Object.fromEntries(Object.entries(ch).map(([k, a]) => [k, span(a)]));
+}
+
+test('jet and steam show the beat although they barely rock: the jet rides in its stand, the boiler and chimney rock', () => {
+  const jet = beatMotion('jet', 1), steam = beatMotion('steam', 1);
+  assert.ok(jet.jolt > 0.8, `beat spring ${jet.jolt}`);
+  assert.ok(jet.jx > 0.05, `jet surge ${jet.jx}`);
+  assert.ok(jet.jrot > 0.006, `jet nose dip ${jet.jrot}`);
+  assert.ok(steam.chim > 0.012, `chimney ${steam.chim}`);
+  assert.ok(steam.boiler > 0.004, `boiler ${steam.boiler}`);
+  assert.ok(steam.engZ > 0.015, `steam bed ${steam.engZ}`);
+  // sway 0 switches it all off
+  const jet0 = beatMotion('jet', 0), steam0 = beatMotion('steam', 0);
+  for (const [k, v] of Object.entries(jet0)) assert.ok(v < 1e-3 || k === 'jx', `jet ${k} ${v} with sway 0`);
+  assert.ok(jet0.jx < 0.05, `jet surge ${jet0.jx} with sway 0`);   // only the steady thrust push, scaled by sway too
+  for (const [k, v] of Object.entries(steam0)) assert.ok(v < 1e-3, `steam ${k} ${v} with sway 0`);
 });
 
 test('flame jets and fireballs start at the stack tips in world space (after sway)', () => {
