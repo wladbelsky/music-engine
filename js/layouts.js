@@ -303,10 +303,21 @@
       this.framePad = 0.5;                               // the stubs fire outward all round
     }
     rowX(r) { return ((this.rows - 1) / 2 - r) * this.rowGap; }  // row 0 at the front
+    /* row r: crank pin r·360/rows (balanced crank), barrels turned by `stagger`, `flip` = which half of the row
+       takes the second turn. A row fires every 2u (u = 360/per) from stagger + pin + flip·u; solving that for
+       r·2u/rows interleaves the rows, so the whole engine fires every 720/n. Two rows keep the half-cylinder
+       stagger; 3-4 rows land on distinct u/rows offsets (gcd(per - 2, rows) = 1), no barrel behind another. */
+    rowFire(r) {
+      const u = 360 / this.per, x = (((r * (2 - this.per) / this.rows) % 2) + 2) % 2, flip = x >= 1 - 1e-9 ? 1 : 0;
+      return { stagger: Math.max(0, x - flip) * u, flip, pin: r * 360 / this.rows };
+    }
     banks() {
       const out = [];
-      for (let r = 0; r < this.rows; r++) for (let k = 0; k < this.per; k++)
-        out.push({ tilt: k * 360 / this.per + r * 180 / this.per, m: 1, off: this.rowX(r), outer: 1, hw: 0.5, row: r, k });
+      for (let r = 0; r < this.rows; r++) {
+        const f = this.rowFire(r);
+        for (let k = 0; k < this.per; k++)
+          out.push({ tilt: k * 360 / this.per + f.stagger, m: 1, off: this.rowX(r), outer: 1, hw: 0.5, row: r, k, pin: f.pin, flip: f.flip });
+      }
       return out;
     }
     dims() {
@@ -317,9 +328,8 @@
     }
     cylinders(b) {
       const D = DECK + this.lift, x = b.off;
-      // one pin per row (rows 360/rows apart), every other cylinder fires: odd count -> even 720/per spacing
-      const pinOff = this.rows > 1 ? b.row * 360 / this.rows : 0;
-      return [{ i: 0, x, zo: 0, phase: b.tilt + pinOff + 360 * (b.k % 2),
+      // one pin per row, every other cylinder fires: odd count -> even 720/per in the row; rows interleave (rowFire)
+      return [{ i: 0, x, zo: 0, phase: b.tilt + b.pin + 360 * ((b.k + b.flip) % 2),
         port: new T.Vector3(x + 0.46, D + 0.18, 0), intake: new T.Vector3(x - 0.46, D + 0.1, 0) }];
     }
 

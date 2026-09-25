@@ -21,7 +21,7 @@ const crankPin = c => c.throwG.localToWorld(V(0, CR, 0));
 test('slider-crank layouts: the rod joins crank pin and piston pin, full stroke, TDC at the firing point', () => {
   sim.ignition = false;                  // poses only, nothing may move on its own; the later tests need the key on
   try {
-  for (const [id, n] of [['inline', 4], ['v', 8], ['boxer', 6], ['w', 12], ['radial', 9], ['radial', 14], ['inline', 1]]) {
+  for (const [id, n] of [['inline', 4], ['v', 8], ['boxer', 6], ['w', 12], ['radial', 9], ['radial', 14], ['radial', 28], ['inline', 1]]) {
     W.build(n, id, '0');
     for (const c of e.cyls) {
       let top = -Infinity, bot = Infinity, topAt = 0;
@@ -48,7 +48,7 @@ test('slider-crank layouts: the rod joins crank pin and piston pin, full stroke,
 });
 
 test('radial: every cylinder of a row runs on the same crank pin (master-rod style)', () => {
-  for (const n of [9, 14, 27]) {
+  for (const n of [9, 14, 27, 28]) {
     W.build(n, 'radial', '0');
     for (const crank of [0, 37, 250, 511]) {
       poseAt(crank);
@@ -81,7 +81,7 @@ test('radial: firing is evenly spaced within each row', () => {
     for (const [r, cs] of rows) for (const d of gaps(cs)) assert.ok(Math.abs(d - 720 / cs.length) < 1e-6, `radial ${e.n} row ${r}: gap ${d}`);
   }
 });
-test('radial: rows interleave, no two cylinders fire together', { todo: 'multi-row radials fire unevenly (14: pairs fire at once; 27/28 uneven gaps)' }, () => {
+test('radial: rows interleave, no two cylinders fire together', () => {
   for (const n of [14, 18, 27, 28]) {
     W.build(n, 'radial', '0');
     for (const d of gaps(e.cyls)) assert.ok(Math.abs(d - 720 / e.n) < 1e-6, `radial ${e.n}: gap ${d.toFixed(1)} vs ${(720 / e.n).toFixed(1)}`);
