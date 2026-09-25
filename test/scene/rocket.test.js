@@ -5,8 +5,8 @@ const assert = require('node:assert/strict');
 const { world, fakeAudio } = require('../helpers/scene');
 const { load } = require('../helpers/load');
 
-test('rocket: cluster of 1..30, nozzles never overlap and sit inside the thrust frame, the lowest bell clears the floor', () => {
-  for (let n = 1; n <= 30; n++) {
+test('rocket: cluster of 1..12 (more is clamped), nozzles never overlap and sit inside the thrust frame, the lowest bell clears the floor', () => {
+  for (let n = 1; n <= 12; n++) {
     const W = world({ dash: false });
     W.build(n, 'rocket', '0');
     const lay = W.e.lay, en = lay.engines;
@@ -20,6 +20,9 @@ test('rocket: cluster of 1..30, nozzles never overlap and sit inside the thrust 
     }
     assert.ok(Math.abs(W.e.box.min.y - 0.02) < 1e-6);
   }
+  const W = world({ dash: false });
+  W.build(32, 'rocket', '0');
+  assert.equal(W.e.lay.engines.length, 12);
 });
 
 test('rocket: plumes start at the nozzle exits and follow the gimbals; the ignition flashes green', () => {

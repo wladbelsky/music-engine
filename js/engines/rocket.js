@@ -1,9 +1,9 @@
 /* Rocket: liquid-fuel rocket engines on a horizontal test stand.
  *
  * Axis = X like every layout: the thrust plate faces the dash (+X side), the nozzles point to -X, so the plumes
- * run off to the left like the turbojet's. `n` = engines in the cluster (1..30): one, a ring (2..4), a centre
- * engine inside a ring (5..9, 9 = 8 + 1), or an inner and an outer ring (10..30, 30 = 6 + 24); the engines get
- * smaller as there are more. Each engine: bell nozzle (glows with heat), combustion chamber, injector dome,
+ * run off to the left like the turbojet's. `n` = engines in the cluster (1..12): one, a ring (2..4), a centre
+ * engine inside a ring (5..9, 9 = 8 + 1), or an inner and an outer ring (10..12, 12 = 3 + 9; more looked silly
+ * small); the engines get smaller as there are more. Each engine: bell nozzle (glows with heat), combustion chamber, injector dome,
  * gimbal block and actuators, turbopump with its gas generator exhaust beside the bell (dark, fuel-rich smoke).
  * No pistons: banks() is empty, the engines hang off the cluster group. Plumes = EngineFX.plume with shock
  * diamonds, tinted green for a moment at ignition (TEA-TEB); the start sequence chills down first (vapour),
@@ -21,7 +21,7 @@
 
   /* cluster positions in engine pitches: rings from the inside out, the outer ring as tight as it can be */
   function cluster(n) {
-    const rings = n === 1 ? [1] : n <= 4 ? [n] : n <= 9 ? [1, n - 1] : n < 20 ? [3, n - 3] : [6, n - 6];
+    const rings = n === 1 ? [1] : n <= 4 ? [n] : n <= 9 ? [1, n - 1] : [3, n - 3];
     const out = []; let prev = -1;
     rings.forEach((m, j) => {
       let r = m === 1 ? 0 : Math.max(prev + 1, 1 / (2 * Math.sin(Math.PI / m)));
@@ -33,13 +33,13 @@
   }
 
   class RocketLayout extends L.base {
-    static normCyl(n) { const v = Math.round(Number(n)); return isFinite(v) ? clamp(v, 1, 30) : 1; }
+    static normCyl(n) { const v = Math.round(Number(n)); return isFinite(v) ? clamp(v, 1, 12) : 1; }
     static label(n) { return n === 1 ? 'ROCKET ENGINE' : 'ROCKET ' + n + '-ENGINE'; }
 
     constructor(e, n) {
       super(e, n);
       this.swayK = 0.3; this.smooth = true;
-      this.I = 0; this.burst = 0; this.heat = 0; this.green = 0; this.acc = { vap: 0, gg: 0 }; this.detail = n <= 9;
+      this.I = 0; this.burst = 0; this.heat = 0; this.green = 0; this.acc = { vap: 0, gg: 0 };
       this.dim = 1 / Math.sqrt(1 + 0.15 * (n - 1));
     }
     static cluster(n) { return cluster(n); }
@@ -83,7 +83,7 @@
         this._add(new T.SphereGeometry(0.21, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), M.steel, 0.64, 0, 0, k).rotation.z = -Math.PI / 2;   // injector dome
         this._box(0.16, 0.2, 0.2, M.dark2, X_GIM - 0.08, 0, 0, k);                              // gimbal block
         const e = { g, k, p, j, ggL: null };
-        if (this.detail) {
+        {
           // turbopump beside the chamber, its gas generator exhaust along the bell, propellant lines, actuators
           const side = p.y >= 0 ? 1 : -1;
           this._cylX(0.11, 0.42, M.steel, 0.42, side * 0.42, 0, k, 16);
@@ -207,7 +207,7 @@
       acc.vap += dt * (st === 'cranking' && sim.stateT < crankT - 0.3 ? 18 : 0);
       for (; acc.vap >= 1; acc.vap--) this._vapour(this.engines[Math.floor(Math.random() * few)], 1);
       // gas generator exhaust: dark, fuel-rich smoke beside each bell
-      acc.gg += dt * (st === 'running' && this.detail ? (2 + 4 * I) * this.engines.length : 0) * (quality === 'low' ? 0.4 : 1);
+      acc.gg += dt * (st === 'running' ? (2 + 4 * I) * this.engines.length : 0) * (quality === 'low' ? 0.4 : 1);
       for (; acc.gg >= 1; acc.gg--) {
         const en = this.engines[Math.floor(Math.random() * this.engines.length)]; if (!en.ggL) continue;
         const p = en.k.localToWorld(en.ggL.clone()), d = this._dirW(en);

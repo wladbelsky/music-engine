@@ -67,7 +67,7 @@ test('normCyl: every input becomes a legal count for the layout', () => {
     jet: n => n >= 6 && n <= 16,
     electric: n => n >= 2 && n <= 12 && n % 2 === 0,
     marine: n => n >= 4 && n <= 12,
-    rocket: n => n >= 1 && n <= 30,
+    rocket: n => n >= 1 && n <= 12,
   };
   for (const id of IDS) for (const x of inputs) {
     const n = EL.get(id).normCyl(x);
