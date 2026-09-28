@@ -108,7 +108,7 @@ The core (sim, 3D scene, dash, settings) knows no engine by name. An engine is o
 ## Files
 
 ```
-index.html               markup and script loading
+index.html               markup, script loading and the loading splash (a tachometer sweeping while the engine is built)
 project.json             wallpaper description and properties for WE
 preview.jpg              preview
 js/core/audio.js         audio analysis: BPM, beats, loudness, silence; demo and browser audio sources
