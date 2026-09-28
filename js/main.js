@@ -23,7 +23,7 @@
   const media = new MediaInfo();
   const odo = new Odometer();
   const glow = $('glow');
-  let paused = false, needRebuild = true;
+  let paused = false, needRebuild = true, booted = false, weProps = !IS_WE; // weProps: WE has sent its properties (splash)
   const MIN_REDLINE = 500, MAX_REDLINE = 15000;
 
   // browser only: the settings panel choices survive a reload (WE keeps its own property values)
@@ -61,6 +61,7 @@
   /* ---------- Wallpaper Engine property listener ---------- */
   window.wallpaperPropertyListener = {
     applyUserProperties(p) {
+      if (booted) weProps = true;         // WE's own first call (ours is the init below): the splash waits for it
       const v = k => p[k] !== undefined ? p[k].value : undefined;
       let bgChanged = false, rebuild = false, q = false;
       for (const k in p) if (p[k] && p[k].value !== undefined) raw[k] = p[k].value;
@@ -275,6 +276,25 @@
   bg.set({ preset: S.background, bgcolor: S.bgcolor, dim: S.bgdim });
   window.wallpaperPropertyListener.applyUserProperties(init);
   syncPanel();
+  booted = true;
+
+  /* ---------- splash (#splash in index.html, painted before the scripts run) ---------- */
+  // fades out once the user's engine is on screen: its build has been rendered and shown, in WE the
+  // properties have arrived (the first frame builds the default V8, WE sends the real layout a moment
+  // later), and a custom background image has loaded; a cap so it can never stay up for good
+  const splash = $('splash');
+  let sinceBuild = 0, firstFrameT = 0;
+  function splashCheck() {
+    if (!splash || splash.classList.contains('gone')) return;
+    const now = performance.now();                 // not the frame's start: the first frame (build, shaders) is the slow one
+    if (!firstFrameT) firstFrameT = now;
+    const late = now - firstFrameT > 2500;          // WE sent nothing / the image hangs: show what there is
+    if (sinceBuild < 2 || (!late && (!weProps || bg.loading))) return;
+    splash.classList.add('gone');
+    const drop = () => splash.remove();
+    splash.addEventListener('transitionend', drop, { once: true });
+    setTimeout(drop, 800);              // no transitionend (hidden tab, reduced effects...)
+  }
 
   /* ---------- loop ---------- */
   // exactly one rAF chain: WE may send setPaused(false) without a pause before it, or pause+unpause
@@ -288,7 +308,7 @@
     if (S.fps > 0 && now - last < 1000 / S.fps - 2) return;
     const step = Math.max(0, (now - last) / 1000), dt = Math.min(0.1, Math.max(0.001, step)); last = now;
     const t = now / 1000;
-    if (needRebuild) { needRebuild = false; eng3d.build(S.cylinders, S.layout, S.induction); eng3d.setCutaway(S.cutaway); eng3d.resize(...viewSize()); dash.set({ label: engineLabel() }); }
+    if (needRebuild) { needRebuild = false; eng3d.build(S.cylinders, S.layout, S.induction); eng3d.setCutaway(S.cutaway); eng3d.resize(...viewSize()); dash.set({ label: engineLabel() }); sinceBuild = 0; }
     audio.tick(t);
     sim.update(dt, audio, t);
     odo.update(Math.min(step, 1), sim, now); // real time (low FPS caps), but not a whole hidden-tab gap
@@ -304,6 +324,7 @@
       glow.style.background = `radial-gradient(circle at ${gp.x}px ${gp.y}px, rgba(${r},${g},${b},0.35), rgba(${r2},${g2},${b2},0.12) 18%, rgba(0,0,0,0) 45%)`;
     } else glow.style.opacity = 0;
     if (S.debug && t - dbgT > 0.1) { dbgT = t; drawDebug(); }
+    sinceBuild++; splashCheck();
   }
 
   function drawDebug() {

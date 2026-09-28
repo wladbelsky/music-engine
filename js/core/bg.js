@@ -95,12 +95,16 @@
   };
 
   class Background {
-    constructor(canvas) { this.c = canvas; this.g = canvas.getContext('2d'); this.opt = { preset: 'garage', dim: 0.2 }; this.img = null; }
+    constructor(canvas) { this.c = canvas; this.g = canvas.getContext('2d'); this.opt = { preset: 'garage', dim: 0.2 }; this.img = null; this.loading = null; }
     set(o) {
       Object.assign(this.opt, o);
       if (o.image !== undefined) {
-        this.img = null;
-        if (o.image) { const im = new Image(); im.onload = () => { this.img = im; this.draw(); }; im.onerror = () => { this.img = null; this.draw(); }; im.src = o.image; }
+        this.img = null; this.loading = null;  // loading = the image still on its way (the splash waits for it)
+        if (o.image) {
+          const im = new Image(); this.loading = im;
+          const done = () => { if (this.loading === im) this.loading = null; };
+          im.onload = () => { done(); this.img = im; this.draw(); }; im.onerror = () => { done(); this.img = null; this.draw(); }; im.src = o.image;
+        }
       }
       this.draw();
     }
