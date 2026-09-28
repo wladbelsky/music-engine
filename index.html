@@ -36,12 +36,17 @@
   #splash .needle { position: absolute; left: 0; top: 0; width: 100%; height: 100%; will-change: transform;
     transform: rotate(-128deg); animation: sp-rev 2.6s ease-in-out infinite; }
   #splash .name { color: #ff5a1a; font: 600 3.2vmin "Segoe UI", Arial, sans-serif; letter-spacing: .55em; margin-right: -.55em;
-    text-shadow: 0 0 1.2vmin rgba(255, 90, 26, .45); }
+    text-shadow: 0 0 1.2vmin rgba(255, 90, 26, .45); position: relative; }
+  /* the dots hang off the right edge, so LOADING itself stays centred under the dial */
+  #splash .dots { position: absolute; left: 100%; top: 0; letter-spacing: .25em; }
+  #splash .dots i { font-style: normal; opacity: .15; will-change: opacity; animation: sp-dot 1.2s linear infinite; }
+  #splash .dots i:nth-child(2) { animation-delay: .2s; } #splash .dots i:nth-child(3) { animation-delay: .4s; }
+  @keyframes sp-dot { 0%, 60%, 100% { opacity: .15; } 15%, 40% { opacity: 1; } }
   /* ignition sweep into the red, back to idle, a blip */
   @keyframes sp-rev { 0% { transform: rotate(-128deg); } 22% { transform: rotate(100deg); } 30% { transform: rotate(88deg); }
     55% { transform: rotate(-108deg); } 70% { transform: rotate(-40deg); } 86%, 100% { transform: rotate(-128deg); } }
   @media (orientation: portrait) { #splash .dial { width: 44vmin; height: 44vmin; } #splash .name { font-size: 4.4vmin; } }
-  @media (prefers-reduced-motion: reduce) { #splash .needle { animation: none; transform: rotate(-108deg); } }
+  @media (prefers-reduced-motion: reduce) { #splash .needle { animation: none; transform: rotate(-108deg); } #splash .dots i { animation: none; opacity: 1; } }
 </style>
 </head>
 <body>
@@ -59,7 +64,7 @@
     <svg class="needle" viewBox="0 0 200 200"><path d="M97 116 L100 26 L103 116 Z" fill="#ff5a1f"/></svg>
     <svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="11" fill="#2a2d31" stroke="#a7adb4" stroke-width="3"/></svg>
   </div>
-  <div class="name">MUSIC ENGINE</div>
+  <div class="name">LOADING<span class="dots"><i>.</i><i>.</i><i>.</i></span></div>
 </div>
 <canvas id="bg"></canvas>
 <div id="glow"></div>
