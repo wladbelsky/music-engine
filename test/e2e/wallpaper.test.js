@@ -122,8 +122,8 @@ test('pause stops the loop; any setPaused sequence leaves exactly one rAF chain'
   assert.equal(await ev(() => __dbg.eng3d.renderer.info.render.frame), f0, 'renders while paused');
   assert.equal(await pending(), 0);
   await ev(() => window.wallpaperPropertyListener.setPaused(false));
-  await P.page.waitForTimeout(300);
-  assert.ok(await ev(() => __dbg.eng3d.renderer.info.render.frame) > f0);
+  // the next frame, not a fixed 300 ms: after the heavy tests SwiftShader draws one every 200–300 ms
+  await until(P.page, f => __dbg.eng3d.renderer.info.render.frame > f, f0, 5000, 'a frame after unpause');
   assert.equal(await pending(), 1);
   // the FPS limit from WE's general properties skips frames but keeps one chain
   await ev(() => window.wallpaperPropertyListener.applyGeneralProperties({ fps: 10 }));
