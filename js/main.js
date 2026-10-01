@@ -180,8 +180,8 @@
       { k: 'debug', t: 'bool', l: 'debug', d: false },
     ]],
     ['Background', [
-      { k: 'background', t: 'select', l: '', d: 'garage', o: [['garage', 'Garage'], ['carbon', 'Carbon'], ['gradient', 'Gradient'], ['custom', 'Custom image']] },
-      { k: 'bgcolor', t: 'color', l: 'gradient', d: '0.12 0.13 0.16' },
+      { k: 'background', t: 'select', l: 'preset', d: 'garage', o: [['garage', 'Garage'], ['carbon', 'Carbon'], ['gradient', 'Gradient'], ['custom', 'Custom image']] },
+      { k: 'bgcolor', t: 'color', l: 'gradient colour', d: '0.12 0.13 0.16' },
       { k: 'customimage', t: 'file', l: 'image' },
       { k: 'bgdim', t: 'range', l: 'dimming %', d: 20, min: 0, max: 90 },
     ]],
@@ -192,29 +192,31 @@
     const root = $('dv-props'), el = (tag, a = {}) => Object.assign(document.createElement(tag), a);
     const ctl = {};
     const prop = (k, v, keep = true, src = null) => { apply(k, v, keep); syncPanel(src); }; // show what was applied (clamped / fallback)
-    for (const [group, items] of PANEL) {
-      const row = el('div', { className: 'row' }); row.append(group + ':');
+    for (const [group, items] of PANEL) { // one collapsible card per group, one labelled row per control
+      const card = el('details', { className: 'grp', open: true }), body = el('div', { className: 'body' });
+      card.append(el('summary', { textContent: group }), body);
       for (const it of items) {
-        const id = 'dv-' + it.k, lab = el('label');
+        const id = 'dv-' + it.k, row = el('label', { className: 'row' }), cell = el('span', { className: 'ctl' });
         let c;
         if (it.t === 'select') { c = el('select', { id }); for (const [v, txt] of it.o) c.append(el('option', { value: v, textContent: txt })); c.onchange = () => prop(it.k, c.value, !(it.k === 'background' && c.value === 'custom')); } // the image itself can't be kept
         else if (it.t === 'bool') { c = el('input', { id, type: 'checkbox' }); c.onchange = () => prop(it.k, c.checked); }
-        else if (it.t === 'number') { c = el('input', { id, type: 'number', min: it.min, max: it.max, style: 'width:4em' }); c.onchange = () => prop(it.k, Number(c.value)); }
+        else if (it.t === 'number') { c = el('input', { id, type: 'number', min: it.min, max: it.max }); c.onchange = () => prop(it.k, Number(c.value)); }
         else if (it.t === 'color') { c = el('input', { id, type: 'color' }); c.oninput = () => prop(it.k, toRgb(c.value), true, c); }
         else if (it.t === 'file') {
           c = el('input', { id, type: 'file', accept: 'image/*' });
           c.onchange = () => { const f = c.files[0]; if (f) { prop('customimage', URL.createObjectURL(f), false); prop('background', 'custom', false); } };
+          const pick = el('span', { className: 'btn', textContent: 'Choose…' }); cell.append(pick); // the label opens the hidden input
         } else { // range + live value
-          c = el('input', { id, type: 'range', min: it.min, max: it.max, step: it.step || 1, style: 'width:7em' });
-          const out = el('span', { className: 'val' }); c.out = out;
+          c = el('input', { id, type: 'range', min: it.min, max: it.max, step: it.step || 1 });
+          c.out = el('span', { className: 'val' });
           c.oninput = () => prop(it.k, Number(c.value), true, c);
         }
         ctl[it.k] = { it, c };
-        if (it.t === 'bool') lab.append(c, ' ' + it.l); else lab.append(it.l ? it.l + ' ' : '', c);
-        if (c.out) lab.append(' ', c.out);
-        row.append(lab);
+        cell.append(c); if (c.out) cell.append(c.out);
+        row.append(el('span', { textContent: it.l }), cell);
+        body.append(row);
       }
-      root.append(row);
+      root.append(card);
     }
     // controls show the applied value: clamped numbers, and the fallback for junk select values
     const applied = { layout: () => layoutCls().id, turbos: () => S.induction.key, odounits: () => S.odoUnits, background: () => S.background, quality: () => S.quality, cylinders: () => S.cylinders, redline: () => S.redline, ignition: () => sim.ignition };
@@ -245,10 +247,15 @@
 
   function setupDev() {
     const panel = $('devpanel'); panel.style.display = 'block';
-    const stopSrc = () => { if (devSrc && devSrc.stop) devSrc.stop(); if (devSrc && devSrc.id) clearInterval(devSrc.id); if (devSrc && devSrc.el) devSrc.el.pause(); devSrc = null; media.clear(); };
+    const player = filePlayer();
+    const stopSrc = () => { if (devSrc && devSrc.stop) devSrc.stop(); if (devSrc && devSrc.id) clearInterval(devSrc.id); if (devSrc && devSrc.el) devSrc.el.pause(); devSrc = null; media.clear(); player.attach(null); };
     $('dv-demo').onclick = () => { stopSrc(); devSrc = new DemoSource(onAudio); };
     $('dv-mic').onclick = async () => { stopSrc(); const s = new WebAudioSource(onAudio); try { await s.startMic(); devSrc = s; } catch (e) { alert('Microphone unavailable: ' + e.message); } };
-    $('dv-file').onchange = e => { const f = e.target.files[0]; if (!f) return; stopSrc(); const s = new WebAudioSource(onAudio); s.startFile(f); devSrc = s; media.fromFile(f.name, s.el); };
+    $('dv-file').onchange = e => {
+      const f = e.target.files[0]; if (!f) return;
+      stopSrc(); const s = new WebAudioSource(onAudio); s.startFile(f); devSrc = s; media.fromFile(f.name, s.el); player.attach(s.el, f.name);
+      e.target.value = ''; // picking the same file again starts it again
+    };
     $('dv-stop').onclick = stopSrc;
     const prop = (k, val, keep = true) => { window.wallpaperPropertyListener.applyUserProperties({ [k]: { value: val } }); if (keep) remember(k, val); };
     buildPanel(prop);
@@ -263,6 +270,35 @@
       if (e.code === 'KeyD' && !(e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName))) showPanel(panel.style.display === 'none');
     });
     if (qs.get('demo')) devSrc = new DemoSource(onAudio);
+  }
+
+  // the panel's file player: play/pause, seek bar and time for the <audio> element of the picked file;
+  // follows the element's own events (only the current element's: an old one's late 'pause' must not count)
+  function filePlayer() {
+    const box = $('dv-player'), btn = $('dv-play'), seek = $('dv-seek'), time = $('dv-time');
+    const mmss = s => { s = Math.max(0, Math.floor(s || 0)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+    let el = null, drag = false;
+    const show = () => {
+      if (!el) return;
+      const d = el.duration, ok = Number.isFinite(d) && d > 0;
+      seek.disabled = !ok; seek.max = ok ? d : 0;
+      if (!drag) seek.value = el.currentTime;
+      time.textContent = mmss(drag ? seek.value : el.currentTime) + ' / ' + (ok ? mmss(d) : '–:––');
+      btn.textContent = el.paused ? '▶' : '❚❚';
+    };
+    btn.onclick = () => { if (!el) return; if (el.paused) el.play().catch(() => {}); else el.pause(); };
+    seek.addEventListener('pointerdown', () => { drag = true; });
+    window.addEventListener('pointerup', () => { if (drag) { drag = false; show(); } });
+    seek.oninput = () => { if (el) { el.currentTime = Number(seek.value); show(); } };
+    return {
+      attach(a, name) {
+        el = a; box.hidden = !a;
+        if (!a) return;
+        $('dv-track').textContent = $('dv-track').title = name;
+        for (const ev of ['play', 'pause', 'timeupdate', 'loadedmetadata', 'durationchange', 'seeked']) a.addEventListener(ev, () => { if (el === a) show(); });
+        show();
+      },
+    };
   }
 
   /* ---------- initial state: saved panel settings, then URL overrides (testing) ---------- */
