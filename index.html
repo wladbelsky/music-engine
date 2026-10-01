@@ -53,6 +53,11 @@
   #dv-play { width: 32px; height: 28px; padding: 0; flex: none; }
   #dv-time { opacity: .7; font-variant-numeric: tabular-nums; white-space: nowrap; }
   #dv-track { opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* phone: the panel takes the whole screen, opaque (the dash showed through it) */
+  @media (max-width: 500px) {
+    #devpanel { width: 100vw; background: #0c0d0f; border-right: none; }
+    #devpanel .head { background: #101114; }
+  }
   /* splash: plain HTML/CSS, painted with the first frame of the page (before the scripts run);
      main.js fades it out once the user's engine has rendered */
   #splash { position: absolute; inset: 0; z-index: 10; pointer-events: none; display: flex; flex-direction: column;
