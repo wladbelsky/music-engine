@@ -226,7 +226,7 @@
     }
     startFile(file) {
       const el = new Audio(URL.createObjectURL(file));
-      el.loop = true; el.play();
+      el.loop = true; el.play().catch(() => {}); // a refused autoplay shows as paused (the panel's ▶)
       this.el = el;
       this._init(ctx => ctx.createMediaElementSource(el), true);
     }

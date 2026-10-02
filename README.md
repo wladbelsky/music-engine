@@ -66,7 +66,7 @@ The steam engine and the turbojet use their own dash scales: steam shows the sha
 
 ## Testing without Wallpaper Engine
 
-Open `index.html` in Chrome. A **Settings** panel will appear: demo beat, microphone, audio file, engine and background selection. **Hide** leaves a small **Settings** button in the top-left corner to bring it back; `D` toggles the panel too. The panel has every setting of the WE version and remembers them between visits (except a custom background image); URL parameters override them without being saved. It also has buttons to reset TRIP, the odometer and the saved settings. The radio is off by default: tick `radio` (or add `?showradio=true`); it shows the name of the audio file you picked (`Artist - Title.mp3` is split into artist and title), otherwise `AUX`.
+Open `index.html` in Chrome. A **Settings** sidebar will appear on the left, in collapsible sections: demo beat, microphone or an audio file (with play/pause and a seek bar while it plays), engine, behaviour, dash and background settings. **Hide** leaves a small **Settings** button in the top-left corner to bring it back; `D` toggles the panel too. The panel has every setting of the WE version and remembers them between visits (except a custom background image); URL parameters override them without being saved. It also has buttons to reset TRIP, the odometer and the saved settings. The radio is off by default: tick `radio` (or add `?showradio=true`); it shows the name of the audio file you picked (`Artist - Title.mp3` is split into artist and title), otherwise `AUX`.
 The microphone requires a local server:
 
 ```

@@ -92,3 +92,47 @@ test('the key is kept like a setting in the browser; clicks on the panel never r
   assert.deepEqual(P.errors, []);
   await P.ctx.close();
 });
+
+// a short mono 16-bit sine WAV
+function wav(secs, hz = 220, rate = 8000) {
+  const n = Math.round(secs * rate), b = Buffer.alloc(44 + n * 2);
+  b.write('RIFF', 0); b.writeUInt32LE(36 + n * 2, 4); b.write('WAVEfmt ', 8); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(rate, 24); b.writeUInt32LE(rate * 2, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i++) b.writeInt16LE(Math.round(Math.sin(2 * Math.PI * hz * i / rate) * 12000), 44 + i * 2);
+  return b;
+}
+
+test('the file player: play/pause follows the element and the radio, the seek bar moves the track', async () => {
+  const P = await open(browser, '');
+  const pg = P.page;
+  await pg.evaluate(() => { document.getElementById('devpanel').style.display = 'block'; });
+  assert.equal(await pg.isVisible('#dv-player'), false, 'no player without a file');
+  await pg.setInputFiles('#dv-file', { name: 'Some Artist - Some Song.wav', mimeType: 'audio/wav', buffer: wav(4) });
+  await until(pg, () => !document.getElementById('dv-seek').disabled, null, 10000, 'duration known');
+  assert.equal(await pg.isVisible('#dv-player'), true);
+  assert.ok(Math.abs(await pg.evaluate(() => Number(document.getElementById('dv-seek').max)) - 4) < 0.05, 'seek bar spans the track');
+  assert.equal(await pg.textContent('#dv-track'), 'Some Artist - Some Song.wav');
+  assert.deepEqual(await pg.evaluate(() => [__dbg.media.artist, __dbg.media.title]), ['Some Artist', 'Some Song']);
+
+  // whatever autoplay did, the button toggles the element and shows its state; the radio follows
+  const setPaused = async want => {
+    if (await pg.evaluate(() => __dbg.media._el.paused) !== want) await pg.click('#dv-play');
+    await until(pg, w => __dbg.media._el.paused === w && __dbg.media.state === (w ? 'paused' : 'playing'), want, 5000, 'paused ' + want);
+    assert.equal(await pg.textContent('#dv-play'), want ? '▶' : '❚❚');
+  };
+  await setPaused(true);
+  await setPaused(false);
+  await setPaused(true);
+
+  await pg.evaluate(() => { const s = document.getElementById('dv-seek'); s.value = 2; s.dispatchEvent(new Event('input')); });
+  assert.ok(Math.abs(await pg.evaluate(() => __dbg.media._el.currentTime) - 2) < 0.1, 'seeked to 2 s');
+  assert.equal(await pg.textContent('#dv-time'), '0:02 / 0:04');
+
+  await setPaused(false);
+  const el = await pg.evaluateHandle(() => __dbg.media._el);
+  await pg.click('#dv-stop');
+  assert.equal(await pg.isVisible('#dv-player'), false, 'Stop hides the player');
+  assert.equal(await el.evaluate(a => a.paused), true, 'Stop pauses the file');
+  assert.deepEqual(P.errors, []);
+  await P.ctx.close();
+});
