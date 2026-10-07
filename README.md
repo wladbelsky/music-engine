@@ -1,5 +1,7 @@
 # Music Engine: audio-reactive wallpaper for Wallpaper Engine
 
+[![tests](https://github.com/wladbelsky/music-engine/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/wladbelsky/music-engine/actions/workflows/ci.yml)
+
 A web wallpaper with a 3D engine. The engine revs up to the music, and on the most powerful moments flames shoot out of the exhaust. On the right is a dashboard: tachometer, temperature, boost, warning lamps, an ignition key, a throttle pedal, an odometer and a car radio that shows what's playing.
 
 **[Get it on Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3806831743)** · **[Live demo](https://wladbelsky.github.io/music-engine/)**
