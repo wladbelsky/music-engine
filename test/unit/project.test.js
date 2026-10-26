@@ -44,6 +44,8 @@ test('every script parses (incl. main.js) and index.html loads them in the docum
     assert.ok(Math.max(g.readUInt16LE(6), g.readUInt16LE(8)) <= 256, 'preview.gif is over 256 px');
     assert.ok(g.length < 1024 * 1024, 'preview.gif is over 1 MB');
   }
+  for (const [, img] of read('README.md').matchAll(/!\[[^\]]*\]\(([^)]+)\)/g))   // the README's images (screenshots/)
+    if (!/^https?:/.test(img)) assert.ok(fs.existsSync(path.join(ROOT, img)), `README image ${img} missing`);
 });
 
 test('the layout combo lists exactly the registered layouts', () => {
