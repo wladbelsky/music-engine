@@ -8,9 +8,11 @@
     "test:unit": "node --test --test-reporter=spec \"test/unit/*.test.js\" \"test/scene/*.test.js\"",
     "test:e2e": "node --test --test-reporter=spec --test-concurrency=1 \"test/e2e/*.test.js\"",
     "baseline": "node tools/baseline.js",
-    "sync:project": "node tools/sync-project.js"
+    "sync:project": "node tools/sync-project.js",
+    "preview": "node tools/preview.js"
   },
   "devDependencies": {
+    "gifenc": "1.0.3",
     "playwright": "1.56.1"
   },
   "engines": {

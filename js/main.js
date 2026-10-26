@@ -343,7 +343,12 @@
     rafId = requestAnimationFrame(loop);
     if (S.fps > 0 && now - last < 1000 / S.fps - 2) return;
     const step = Math.max(0, (now - last) / 1000), dt = Math.min(0.1, Math.max(0.001, step)); last = now;
-    const t = now / 1000;
+    frame(dt, now / 1000, step, now);
+    sinceBuild++; splashCheck();
+  }
+
+  /* one frame of the wallpaper; also driven with a fixed step by tools/preview.js (loop paused) */
+  function frame(dt, t, step = dt, now = t * 1000) {
     if (needRebuild) { needRebuild = false; eng3d.build(S.cylinders, S.layout, S.induction); eng3d.setCutaway(S.cutaway); eng3d.resize(...viewSize()); dash.set({ label: engineLabel() }); sinceBuild = 0; }
     audio.tick(t);
     sim.update(dt, audio, t);
@@ -360,7 +365,6 @@
       glow.style.background = `radial-gradient(circle at ${gp.x}px ${gp.y}px, rgba(${r},${g},${b},0.35), rgba(${r2},${g2},${b2},0.12) 18%, rgba(0,0,0,0) 45%)`;
     } else glow.style.opacity = 0;
     if (S.debug && t - dbgT > 0.1) { dbgT = t; drawDebug(); }
-    sinceBuild++; splashCheck();
   }
 
   function drawDebug() {
@@ -375,5 +379,5 @@
   }
 
   startLoop();
-  window.__dbg = { audio, sim, eng3d, dash, media, odo, S };
+  window.__dbg = { audio, sim, eng3d, dash, media, odo, S, frame };
 })();

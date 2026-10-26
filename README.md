@@ -6,7 +6,13 @@ A web wallpaper with a 3D engine. The engine revs up to the music, and on the mo
 
 **[Get it on Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3806831743)** · **[Live demo](https://wladbelsky.github.io/music-engine/)**
 
-![preview](preview.jpg)
+![V8 turbo at the redline, the car radio on](screenshots/v8.jpg)
+
+| Turbojet with afterburner | Rocket cluster on a test stand | Steam mill engine |
+|---|---|---|
+| ![Turbojet](screenshots/jet.jpg) | ![Rocket engines](screenshots/rocket.jpg) | ![Steam engine](screenshots/steam.jpg) |
+| **Radial (2 × 7)** | **Marine diesel** | **DC motor** |
+| ![Radial engine](screenshots/radial.jpg) | ![Marine diesel](screenshots/marine.jpg) | ![DC motor](screenshots/electric.jpg) |
 
 ## Controls
 
@@ -89,6 +95,7 @@ npm run test:unit    # unit + scene tests in Node, ~30 s, no browser
 npm run test:e2e     # the page in headless Chromium with SwiftShader WebGL, ~4 min
 npm run baseline     # re-record test/fixtures/baseline.json (only after an intended change to an engine)
 npm run sync:project # rewrite the layout combo and conditions in project.json from the engine registry
+npm run preview      # render the Workshop preview GIF and README screenshot candidates into test-results/preview/ ("-- gif" or "-- jet" for some)
 ```
 
 - `test/unit`: audio analysis (BPM, silence, junk input), the engine state machine and boost sources, layouts' cylinder rules, forced induction, odometer, radio info, dash scales and hit areas, and `project.json` ↔ code ↔ settings panel consistency. `contract.test.js` checks every registered engine type and layout (statics, dash profile, a whole song through the sim, project.json in sync); `baseline.test.js` compares sim traces, the dash's drawing calls and scene numbers of the existing engines with `test/fixtures/baseline.json`, so a change for one engine can't quietly alter another.
@@ -97,7 +104,7 @@ npm run sync:project # rewrite the layout combo and conditions in project.json f
 
 GitHub Actions runs both on every push to `master` and on pull requests (`.github/workflows/ci.yml`).
 
-Don't publish `node_modules/`, `test/`, `tools/`, `.github/` or `package*.json` to the Workshop: the wallpaper needs only `index.html`, `project.json`, `preview.jpg` and `js/`.
+Don't publish `node_modules/`, `test/`, `tools/`, `screenshots/`, `.github/` or `package*.json` to the Workshop: the wallpaper needs only `index.html`, `project.json`, `preview.gif` and `js/`.
 
 ## Adding an engine
 
@@ -112,7 +119,8 @@ The core (sim, 3D scene, dash, settings) knows no engine by name. An engine is o
 ```
 index.html               markup, script loading and the loading splash (a tachometer sweeping while the engine is built)
 project.json             wallpaper description and properties for WE
-preview.jpg              preview
+preview.gif              Workshop preview: 256x256 animated GIF (npm run preview)
+screenshots/             the screenshots in this README (npm run preview)
 js/core/audio.js         audio analysis: BPM, beats, loudness, silence; demo and browser audio sources
 js/core/sim.js           engine model: states, RPM, boost channel, temperature, flames, lamps, key, pedal
 js/core/fx.js            shared effects: particles and their kinds, noise, flame-jet and plume shaders
@@ -132,7 +140,7 @@ js/engines/rocket.js     rocket engines on a test stand: cluster, plumes, igniti
 js/engines/induction.js  forced induction options, boost sources and parts: air filter, turbos, Roots blower
 js/main.js               glue: WE properties, audio, input, main loop, settings panel
 js/three.min.js          Three.js r149 (MIT, license in js/three.LICENSE.txt)
-tools/                   baseline and sync-project scripts (Node)
+tools/                   baseline, sync-project and preview scripts (Node)
 test/                    automated tests (node:test + Playwright), see Tests
 .github/                 CI workflow
 ```
