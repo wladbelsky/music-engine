@@ -90,7 +90,12 @@ function load({ scripts, seed = 12345 } = {}) {
   const list = scripts || scriptOrder().filter(s => !/main\.js$/.test(s));
   for (const f of list) {
     new vm.Script(read(f), { filename: path.join(ROOT, f) }).runInContext(g);
-    if (/three(\.min)?\.js$/.test(f)) vm.runInContext(STUBS, g);
+    if (/three(\.min)?\.js$/.test(f)) {
+      vm.runInContext(STUBS, g);
+      // three itself draws random numbers while it loads (uuids of its internal objects), a different count in
+      // every release: seed again after it, so the traces don't depend on the three version
+      vm.runInContext(SEEDED.replace('__SEED__', String(seed)), g);
+    }
   }
   g.run = (code, timeout) => vm.runInContext(code, g, timeout ? { timeout } : undefined); // timeout (ms) also stops endless loops
   g.fakeCanvas = fakeCanvas;
