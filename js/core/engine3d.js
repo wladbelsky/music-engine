@@ -4,7 +4,7 @@
 (function () {
   'use strict';
   const T = THREE;
-  const { makeNoiseTexture, ParticleSystem } = window.EngineFX;
+  const { makeNoiseTexture, ParticleSystem, addBlend } = window.EngineFX;
   const DEG = Math.PI / 180;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -24,6 +24,8 @@
   /* three r155+ lights are physical. The scene was lit by eye with the old ones, which were PI times brighter for
      the same number (LEGACY). The flame light's intensity is still written in the old units: FLAME_K converts it. */
   const LEGACY = Math.PI, FLAME_K = 2.1, SHADOW_R = 2, COMPILE_CAP = 4000;
+  const HOT = 2;
+  const BLOOM = { strength: 0.03, radius: 0.3, threshold: 1.2 };
 
   class Engine3D {
     constructor(canvas) {
@@ -34,6 +36,10 @@
       // so colour management stays off (the lighting maths is linear either way)
       T.ColorManagement.enabled = false; r.outputColorSpace = T.SRGBColorSpace;
       r.toneMapping = T.ACESFilmicToneMapping; r.toneMappingExposure = 1.05;
+      // an HDR frame buffer needs float render targets (always there in WebGL 2 on desktop; the fallback draws
+      // straight to the canvas like quality low)
+      this.hdr = !!(r.extensions && (r.extensions.has('EXT_color_buffer_float') || r.extensions.has('EXT_color_buffer_half_float')));
+      this.post = null;
       r.shadowMap.enabled = true; r.shadowMap.type = T.PCFShadowMap;   // hardware PCF; the softness is key.shadow.radius
 
       this.scene = new T.Scene();
@@ -100,6 +106,7 @@
       const ms = q === 'high' ? 2048 : 1024;
       if (this.key.shadow.mapSize.x !== ms) { this.key.shadow.mapSize.set(ms, ms); if (this.key.shadow.map) { this.key.shadow.map.dispose(); this.key.shadow.map = null; } }
       this.ground.visible = q !== 'low';
+      this._setPost(q !== 'low' && this.hdr);
       this.resize(this.w, this.h);
     }
 
@@ -237,6 +244,8 @@
     }
 
     _materials() {
+      // glowing metal goes above white at full heat (HOT), so it blooms; the intensities stay 0..1-ish as before
+      const hot = (r, g, b) => new T.Color(r, g, b).multiplyScalar(HOT);
       const std = (c, m, r, extra) => new T.MeshStandardMaterial(Object.assign({ color: c, metalness: m, roughness: r }, extra || {}));
       return {
         block: std(0x2c2f34, 0.85, 0.45),
@@ -244,19 +253,19 @@
         head: std(0x70757d, 0.92, 0.34),
         cover: std(this.accent.clone(), 0.55, 0.28),
         steel: std(0xa9adb3, 1.0, 0.25),
-        piston: std(0xb0b4ba, 1.0, 0.3, { emissive: new T.Color(1.0, 0.45, 0.12), emissiveIntensity: 0 }),
+        piston: std(0xb0b4ba, 1.0, 0.3, { emissive: hot(1.0, 0.45, 0.12), emissiveIntensity: 0 }),
         dark: std(0x141518, 0.3, 0.65),
         dark2: std(0x202226, 0.7, 0.45),
         spark: new T.MeshBasicMaterial({ color: 0x331a0a }),
-        header: std(0xa89a8e, 1.0, 0.28, { emissive: new T.Color(1.0, 0.32, 0.06), emissiveIntensity: 0 }),
-        soot: std(0x17120f, 0.4, 0.85, { side: T.DoubleSide, emissive: new T.Color(1.0, 0.38, 0.08), emissiveIntensity: 0 }),
+        header: std(0xa89a8e, 1.0, 0.28, { emissive: hot(1.0, 0.32, 0.06), emissiveIntensity: 0 }),
+        soot: std(0x17120f, 0.4, 0.85, { side: T.DoubleSide, emissive: hot(1.0, 0.38, 0.08), emissiveIntensity: 0 }),
         pulley: std(0x2b2d31, 0.9, 0.35),
         turbo: std(0x9a9ea5, 0.95, 0.3),
-        turboHot: std(0x6b5e55, 0.9, 0.4, { emissive: new T.Color(1.0, 0.3, 0.05), emissiveIntensity: 0 }),
+        turboHot: std(0x6b5e55, 0.9, 0.4, { emissive: hot(1.0, 0.3, 0.05), emissiveIntensity: 0 }),
         blower: std(0xc4c8ce, 0.95, 0.28),
         blowerCase: std(0xb4b8be, 0.95, 0.3),   // ghosts in cutaway mode so the rotors show
         brass: std(0xc8a24a, 1.0, 0.3),
-        fire: std(0x2a1208, 0.2, 0.8, { emissive: new T.Color(1.0, 0.42, 0.1), emissiveIntensity: 0 }), // firebox door, combustor cans
+        fire: std(0x2a1208, 0.2, 0.8, { emissive: hot(1.0, 0.42, 0.1), emissiveIntensity: 0 }), // firebox door, combustor cans
         edge: new T.LineBasicMaterial({ color: 0x9aa3ad, transparent: true, opacity: 0.35 }),
       };
     }
@@ -314,6 +323,7 @@
     resize(w, h, dashSide) {
       this.w = w; this.h = h; if (dashSide) this.dashSide = dashSide;
       this.renderer.setSize(w, h, false);
+      if (this.post) { this.post.composer.setPixelRatio(this.renderer.getPixelRatio()); this.post.composer.setSize(w, h); }
       this._frame();
     }
     _frame() {
@@ -573,7 +583,28 @@
       const done = () => { if (id === this._compileId) this.compiling = false; };
       this.compiling = true;
       setTimeout(done, COMPILE_CAP);
-      try { r.compileAsync(this.scene, this.camera).then(done, done); } catch (e) { done(); }
+      // the programs differ per target (no tone mapping / encoding into the HDR buffer): compile for the one in use
+      try {
+        if (this.post) r.setRenderTarget(this.post.composer.readBuffer);
+        r.compileAsync(this.scene, this.camera).then(done, done);
+      } catch (e) { done(); }
+      if (this.post) r.setRenderTarget(null);
+    }
+
+    /* Post-processing (quality medium/high): the scene goes into a linear half-float buffer (MSAA), the parts brighter
+       than white bloom, and the whole frame is tone mapped and encoded at the end (OutputPass reads the renderer's
+       toneMapping/exposure). The bloom is added with addBlend, so like every other glow here it leaves the
+       canvas's alpha alone and shows over the page's background. Low draws straight to the canvas. */
+    _setPost(on) {
+      if (!on) { if (this.post) { this.post.composer.dispose(); this.post.bloom.dispose(); this.post = null; } return; }
+      if (this.post) return;
+      const composer = new T.EffectComposer(this.renderer, new T.WebGLRenderTarget(4, 4, { type: T.HalfFloatType, samples: 4 }));
+      const bloom = new T.UnrealBloomPass(new T.Vector2(4, 4), BLOOM.strength, BLOOM.radius, BLOOM.threshold);
+      addBlend(bloom.blendMaterial);
+      composer.addPass(new T.RenderPass(this.scene, this.camera));
+      composer.addPass(bloom);
+      composer.addPass(new T.OutputPass());
+      this.post = { composer, bloom };
     }
 
     /* false = nothing was drawn (still compiling) */
@@ -581,7 +612,7 @@
       if (this.compiling) return false;
       const fl = this.flameLight, i = fl.intensity;
       fl.intensity = i * FLAME_K;
-      this.renderer.render(this.scene, this.camera);
+      if (this.post) this.post.composer.render(); else this.renderer.render(this.scene, this.camera);
       fl.intensity = i;
       return true;
     }

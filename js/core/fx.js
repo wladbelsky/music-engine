@@ -42,6 +42,20 @@
     m.blendSrcAlpha = T.ZeroFactor; m.blendDstAlpha = T.OneFactor;
   }
 
+  /* The effect shaders work out their colours as they should look on screen (that is how they were tuned), but
+     the frame is rendered in linear HDR and tone mapped as a whole (Engine3D's composer): fxOut() takes such a
+     colour to linear light and lifts it by uGain (shared: EngineFX.gain), so the hot parts go above 1, bloom, and
+     burn out to white in the tone mapping instead of clipping to flat orange. FX_END applies the renderer's tone
+     mapping and output encoding when the shader draws straight to the canvas (quality low: no composer); into the
+     HDR buffer both are no-ops. */
+  const gain = { value: 3.0 };
+  const FX_OUT = `
+    uniform float uGain;
+    vec3 fxOut(vec3 c){ return pow(max(c, vec3(0.0)), vec3(2.2)) * uGain; }`;
+  const FX_END = `
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>`;
+
   const FIRE_RAMP = `
     vec3 fireRamp(float t){
       vec3 c = mix(vec3(0.35,0.03,0.0), vec3(1.0,0.28,0.03), smoothstep(0.02,0.35,t));
@@ -68,6 +82,7 @@
     uniform sampler2D uNoise; uniform float uTime; uniform float uInt; uniform float uSeed;
     varying vec2 vUv;
     ${FIRE_RAMP}
+    ${FX_OUT}
     void main(){
       float y = vUv.y;
       float x = (vUv.x - 0.5) * 2.0;
@@ -86,7 +101,7 @@
       vec3 col = fireRamp(temp) * d;
       float core = (1.0 - smoothstep(0.0, 0.22, y)) * (1.0 - smoothstep(0.0, 0.45, abs(x))) * uInt;
       col += vec3(0.25, 0.45, 1.0) * core * 0.9;               // blue-white nozzle core
-      gl_FragColor = vec4(col, 0.0);
+      gl_FragColor = vec4(fxOut(col), 0.0);${FX_END}
     }`;
 
   /* ---- particle kinds ----
@@ -145,11 +160,12 @@
       this.aSeed = new T.BufferAttribute(this.seed, 3); this.aSeed.setUsage(T.DynamicDrawUsage);
       g.setAttribute('position', this.aPos); g.setAttribute('aCol', this.aCol); g.setAttribute('aSize', this.aSize); g.setAttribute('aSeed', this.aSeed);
       this.mat = new T.ShaderMaterial({
-        uniforms: { uScale: pxScaleRef, uNoise: { value: noiseTex } },
+        uniforms: { uScale: pxScaleRef, uNoise: { value: noiseTex }, uGain: gain },
         vertexShader: `attribute float aSize; attribute vec4 aCol; attribute vec3 aSeed; varying vec4 vCol; varying vec3 vSeed; uniform float uScale;
           void main(){ vCol=aCol; vSeed=aSeed; vec4 mv=modelViewMatrix*vec4(position,1.0); gl_Position=projectionMatrix*mv;
           gl_PointSize = aSize*uScale/max(0.1,-mv.z); }`,
         fragmentShader: `uniform sampler2D uNoise; varying vec4 vCol; varying vec3 vSeed;
+          ${FX_OUT}
           void main(){
             vec2 d = gl_PointCoord - 0.5;
             float cs = cos(vSeed.z), sn = sin(vSeed.z);
@@ -163,17 +179,16 @@
             if (a <= 0.003) discard;
             float body = mix(0.55, 1.25, n);                        // brighter/darker blotches inside
             #ifdef ADDITIVE
-            gl_FragColor = vec4(vCol.rgb * body * vCol.a * a, 0.0);
+            gl_FragColor = vec4(fxOut(vCol.rgb * body * vCol.a * a), 0.0);
             #else
-            gl_FragColor = vec4(vCol.rgb * body, vCol.a * a);
-            #endif
+            gl_FragColor = vec4(pow(vCol.rgb * body, vec3(2.2)), vCol.a * a);   // smoke: unlit paint, no gain
+            #endif${FX_END}
           }`,
         transparent: true, depthWrite: false,
         defines: additive ? { ADDITIVE: 1 } : {},
         blending: additive ? T.CustomBlending : T.NormalBlending,
       });
       if (additive) addBlend(this.mat);
-      this.mat.toneMapped = false;
       this.points = new T.Points(g, this.mat); this.points.frustumCulled = false;
       this.points.renderOrder = additive ? 10 : 9;
     }
@@ -222,6 +237,7 @@
     uniform vec3 uTint;
     varying vec2 vUv;
     ${FIRE_RAMP}
+    ${FX_OUT}
     void main(){
       float y = vUv.y, x = (vUv.x - 0.5) * 2.0, z = y * uLen;
       vec2 q = vec2(vUv.x * 0.7 + uSeed, z * 0.3 - uTime * 3.2);
@@ -243,7 +259,7 @@
       // blue-violet sheath near the nozzle
       float sheath = smoothstep(r * 0.2, r * 0.8, abs(x)) * (1.0 - smoothstep(r * 0.8, r * 1.05, abs(x))) * (1.0 - smoothstep(0.0, 0.45, y));
       col += vec3(0.35, 0.4, 1.0) * sheath * (0.5 + n);
-      gl_FragColor = vec4(col * uTint * uInt, 0.0);
+      gl_FragColor = vec4(fxOut(col * uTint * uInt), 0.0);${FX_END}
     }`;
 
   /* a strip of 2 x (seg + 1) vertices, x in -0.5..0.5, y in 0..1 (flame jets, plumes) */
@@ -257,12 +273,12 @@
      drive it through .material.uniforms (uOrigin/uDir in world space, uLen, uWidth, uInt, uTime, uBend) */
   function flameJet(noise, parent) {
     const m = new T.ShaderMaterial({
-      uniforms: { uNoise: { value: noise }, uTime: { value: 0 }, uInt: { value: 0 }, uSeed: { value: Math.random() },
+      uniforms: { uNoise: { value: noise }, uGain: gain, uTime: { value: 0 }, uInt: { value: 0 }, uSeed: { value: Math.random() },
         uOrigin: { value: new T.Vector3() }, uDir: { value: new T.Vector3(0, 1, 0) }, uLen: { value: 1 }, uWidth: { value: 0.3 }, uBend: { value: 0.25 } },
       vertexShader: JET_VS, fragmentShader: JET_FS,
       transparent: true, depthWrite: false, blending: T.CustomBlending, side: T.DoubleSide,
     });
-    addBlend(m); m.toneMapped = false;
+    addBlend(m);
     const mesh = new T.Mesh(ribbon(12), m); mesh.frustumCulled = false; mesh.renderOrder = 11; mesh.visible = false;
     parent.add(mesh);
     return mesh;
@@ -270,19 +286,19 @@
   /* a plume mesh (hidden, not culled, added to `parent`); drive it through .material.uniforms */
   function plume(noise, parent, { len = 3, width = 1.2, diam = 1.1, dir = new T.Vector3(-1, 0, 0) } = {}) {
     const m = new T.ShaderMaterial({
-      uniforms: { uNoise: { value: noise }, uTime: { value: 0 }, uInt: { value: 0 }, uSeed: { value: Math.random() },
+      uniforms: { uNoise: { value: noise }, uGain: gain, uTime: { value: 0 }, uInt: { value: 0 }, uSeed: { value: Math.random() },
         uOrigin: { value: new T.Vector3() }, uDir: { value: dir.clone() }, uLen: { value: len }, uWidth: { value: width }, uDiam: { value: diam },
         uTint: { value: new T.Color(1, 1, 1) } },
       vertexShader: PLUME_VS, fragmentShader: PLUME_FS, transparent: true, depthWrite: false, side: T.DoubleSide,
     });
-    addBlend(m); m.toneMapped = false;
+    addBlend(m);
     const mesh = new T.Mesh(ribbon(24), m); mesh.frustumCulled = false; mesh.renderOrder = 11; mesh.visible = false;
     parent.add(mesh);
     return mesh;
   }
 
   window.EngineFX = {
-    makeNoiseTexture, addBlend, FIRE_RAMP, JET_VS, JET_FS, PLUME_VS, PLUME_FS, ribbon, plume, flameJet,
+    makeNoiseTexture, addBlend, gain, FX_OUT, FX_END, FIRE_RAMP, JET_VS, JET_FS, PLUME_VS, PLUME_FS, ribbon, plume, flameJet,
     ParticleSystem, particleKind,
     P: { FIRE: P_FIRE, FIREBALL: P_FIREBALL, VAPOR: P_VAPOR, SPARK: P_SPARK, STEAM: P_STEAM },
   };

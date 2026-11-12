@@ -14,6 +14,9 @@
   const T = THREE;
   const { DEG, clamp } = Engine3D.GEO;
   const FX = EngineFX, L = EngineLayouts;
+  // the frame is HDR now and the plumes are summed in linear light: a cluster burnt out to a white blob at the
+  // effects' common gain, so each plume is drawn at about half the light (0.73^2.2)
+  const HDR_K = 0.73;
 
   const R_T = 0.18, R_E = 0.62, L_B = 1.6;        // throat radius, exit radius, bell length (one engine at scale 1)
   const X_GIM = 0.95;                             // gimbal point, engine-local
@@ -193,7 +196,7 @@
         pl.visible = I > 0.02;
         if (!pl.visible) return;
         u.uOrigin.value.copy(this._exitW(en, -0.02)); u.uDir.value.copy(this._dirW(en)); u.uTime.value = e.time + i * 0.37;
-        u.uInt.value = Math.min(1.6, I) * flick * this.dim;      // overlapping plumes add up: dimmer each in a big cluster
+        u.uInt.value = Math.min(1.6, I) * flick * this.dim * HDR_K;      // overlapping plumes add up: dimmer each in a big cluster
         u.uLen.value = (2.4 + 4.2 * Math.min(1.4, I)) * s;
         u.uWidth.value = 1.9 * 2 * R_E * s * (1 + 0.08 * Math.min(1.4, I));
         u.uDiam.value = 1.15 * s;
