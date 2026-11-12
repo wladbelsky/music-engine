@@ -7,7 +7,9 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const URL0 = 'file://' + path.join(ROOT, 'index.html');
 const ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
 
-const launch = () => chromium.launch({ args: ARGS });
+// PW_CHROMIUM = a Chromium binary to use instead of the one this Playwright version downloads (a sandbox whose
+// preinstalled browser is of another Playwright version: PW_CHROMIUM=/opt/pw-browsers/chromium npm run test:e2e)
+const launch = () => chromium.launch({ args: ARGS, executablePath: process.env.PW_CHROMIUM || undefined });
 
 /* runs before the page's scripts: counters for rAF / DemoSource intervals, a fake WE (optional),
    an in-page beat generator, and a pixel reader for the WebGL canvas */

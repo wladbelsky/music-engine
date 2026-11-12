@@ -139,7 +139,7 @@ js/engines/marine.js     marine diesel: crossheads, open valve gear, turbocharge
 js/engines/rocket.js     rocket engines on a test stand: cluster, plumes, ignition, gimbals
 js/engines/induction.js  forced induction options, boost sources and parts: air filter, turbos, Roots blower
 js/main.js               glue: WE properties, audio, input, main loop, settings panel
-js/three.min.js          Three.js r149 (MIT, license in js/three.LICENSE.txt)
+js/three.min.js          Three.js r187 + addons, bundled by tools/vendor-three.js (MIT, license in js/three.LICENSE.txt)
 tools/                   baseline, sync-project and preview scripts (Node)
 test/                    automated tests (node:test + Playwright), see Tests
 .github/                 CI workflow

@@ -21,14 +21,20 @@
     const o = []; for (let i = 0; i < m; i += 2) o.push(i); for (let i = 1; i < m; i += 2) o.push(i); return o;
   }
 
+  /* three r155+ lights are physical. The scene was lit by eye with the old ones, which were PI times brighter for
+     the same number (LEGACY). The flame light's intensity is still written in the old units: FLAME_K converts it. */
+  const LEGACY = Math.PI, FLAME_K = 2.1, SHADOW_R = 2, COMPILE_CAP = 4000;
+
   class Engine3D {
     constructor(canvas) {
       this.canvas = canvas;
       const r = this.renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
       r.setClearColor(0x000000, 0);
-      r.outputEncoding = T.sRGBEncoding;
+      // three r152+ converts hex colours from sRGB by default; the palette here was picked by eye as raw values,
+      // so colour management stays off (the lighting maths is linear either way)
+      T.ColorManagement.enabled = false; r.outputColorSpace = T.SRGBColorSpace;
       r.toneMapping = T.ACESFilmicToneMapping; r.toneMappingExposure = 1.05;
-      r.shadowMap.enabled = true; r.shadowMap.type = T.PCFSoftShadowMap;
+      r.shadowMap.enabled = true; r.shadowMap.type = T.PCFShadowMap;   // hardware PCF; the softness is key.shadow.radius
 
       this.scene = new T.Scene();
       this.camera = new T.PerspectiveCamera(30, 16 / 9, 0.1, 200);
@@ -72,13 +78,15 @@
 
     _lights() {
       const s = this.scene;
-      s.add(new T.HemisphereLight(0x8090a0, 0x201810, 0.35));
-      const key = this.key = new T.DirectionalLight(0xfff1e0, 1.6);
+      s.add(new T.HemisphereLight(0x8090a0, 0x201810, 0.35 * LEGACY));
+      const key = this.key = new T.DirectionalLight(0xfff1e0, 1.6 * LEGACY);
       key.position.set(6, 10, 7); key.castShadow = true;
-      key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0004; key.shadow.normalBias = 0.035;
+      key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0004; key.shadow.normalBias = 0.035; key.shadow.radius = SHADOW_R;
       s.add(key); s.add(key.target);
-      const rim = new T.DirectionalLight(0x88aaff, 0.9); rim.position.set(-8, 5, -6); s.add(rim);
-      this.flameLight = new T.PointLight(0xff7a2a, 0, 9, 2); s.add(this.flameLight);
+      const rim = new T.DirectionalLight(0x88aaff, 0.9 * LEGACY); rim.position.set(-8, 5, -6); s.add(rim);
+      // the layouts set its intensity in the old (pre-physical) units and may recolour it, so the conversion is
+      // applied in render(); no distance decay, only the cutoff window: the closest to the old falloff
+      this.flameLight = new T.PointLight(0xff7a2a, 0, 9, 0); s.add(this.flameLight);
       this.ground = new T.Mesh(new T.PlaneGeometry(60, 60), new T.ShadowMaterial({ opacity: 0.55 }));
       this.ground.rotation.x = -Math.PI / 2; this.ground.receiveShadow = true; s.add(this.ground);
     }
@@ -160,6 +168,7 @@
       this._applyCutaway();
       this._fitPts = this._fitPoints();
       this._frame();
+      this._precompile();
     }
 
     /* the lowest vertex per (x, z) cell, engine-local: a small rolled/pitched block can't put anything else lower,
@@ -551,7 +560,31 @@
       return { x: (v.x + 1) / 2 * this.w, y: (1 - v.y) / 2 * this.h };
     }
 
-    render() { this.renderer.render(this.scene, this.camera); }
+    /* Shaders are compiled off the main thread before a new build is shown (three's compileAsync,
+       KHR_parallel_shader_compile): compiling them in the first render() froze the page for that frame, which the
+       user saw as the splash standing still. Until they are ready render() draws nothing, so the splash (or the
+       previous engine's last frame) stays; a newer build supersedes an older one, and a cap in case the
+       driver never reports back. */
+    _precompile() {
+      const r = this.renderer;
+      // without the extension three would compile synchronously anyway (and warn): leave that to the first render
+      if (!r.compileAsync || !r.extensions.has('KHR_parallel_shader_compile')) return;
+      const id = this._compileId = (this._compileId || 0) + 1;
+      const done = () => { if (id === this._compileId) this.compiling = false; };
+      this.compiling = true;
+      setTimeout(done, COMPILE_CAP);
+      try { r.compileAsync(this.scene, this.camera).then(done, done); } catch (e) { done(); }
+    }
+
+    /* false = nothing was drawn (still compiling) */
+    render() {
+      if (this.compiling) return false;
+      const fl = this.flameLight, i = fl.intensity;
+      fl.intensity = i * FLAME_K;
+      this.renderer.render(this.scene, this.camera);
+      fl.intensity = i;
+      return true;
+    }
   }
 
   // shared with the layouts and js/engines/induction.js

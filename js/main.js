@@ -344,7 +344,8 @@
     if (S.fps > 0 && now - last < 1000 / S.fps - 2) return;
     const step = Math.max(0, (now - last) / 1000), dt = Math.min(0.1, Math.max(0.001, step)); last = now;
     frame(dt, now / 1000, step, now);
-    sinceBuild++; splashCheck();
+    if (eng3d.compiling) sinceBuild = 0; else sinceBuild++;   // frames since the build was first drawn
+    splashCheck();
   }
 
   /* one frame of the wallpaper; also driven with a fixed step by tools/preview.js (loop paused) */
