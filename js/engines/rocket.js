@@ -147,6 +147,13 @@
       return this.I > 0.02 ? p.addScaledVector(this._dirW(en), 1.2 * this.s) : p;
     }
 
+    /* the middle of the nozzle exits and a light down the plumes */
+    fireLights() {
+      const c = new T.Vector3(), d = new T.Vector3();
+      this.engines.forEach(en => { c.add(this._exitW(en)); d.add(this._dirW(en)); });
+      c.divideScalar(this.engines.length); d.normalize();
+      return [{ p: c.clone().addScaledVector(d, 0.5 * this.s), w: 1 }, { p: c.addScaledVector(d, 2.4 * this.s), w: Math.min(1, this.I) }];
+    }
     _spawnAt(en, m, fn) { for (let i = 0; i < m; i++) fn(this._exitW(en), this._dirW(en)); }
     _vapour(en, m) {                              // chill-down / oxidiser-rich vapour out of a nozzle
       const e = this.e, s = this.s;

@@ -288,6 +288,17 @@
       return v;
     }
     glowPoint() { return this.e.stacks.length ? this._tipCenter() : null; } // world space: flame light, background glow
+    /* the stack tips split in two along their widest spread (the two banks of a V, or the front and back of a row):
+       a light over each half */
+    fireLights() {
+      const st = this.e.stacks; if (st.length < 2) return null;
+      const P = st.map(c => c.tipW || c.tip), lo = P[0].clone(), hi = P[0].clone();
+      P.forEach(p => { lo.min(p); hi.max(p); });
+      const ext = hi.clone().sub(lo), ax = ext.x >= ext.y && ext.x >= ext.z ? 'x' : ext.y >= ext.z ? 'y' : 'z', mid = (lo[ax] + hi[ax]) / 2;
+      const g = [new T.Vector3(), new T.Vector3()], n = [0, 0];
+      P.forEach(p => { const i = p[ax] < mid ? 0 : 1; g[i].add(p); n[i]++; });
+      return g.map((v, i) => n[i] ? { p: v.divideScalar(n[i]), w: n[i] } : null).filter(Boolean);
+    }
 
   }
   PistonLayout.kind = 'piston';

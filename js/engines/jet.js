@@ -186,6 +186,11 @@
     frameBox(box) { box.min.x -= 1.2; }                 // room for the plume
     glowPoint() { return this.I > 0.02 ? this._wJ(this.nozzleL).add(this._dirW().multiplyScalar(1.2)) : this._wJ(this.nozzleL); }
     _wJ(v) { return this.J.localToWorld(v.clone()); }
+    /* the nozzle and, with the afterburner lit, a light further down the plume */
+    fireLights() {
+      const p = this._wJ(this.nozzleL), d = this._dirW();
+      return [{ p: p.clone().addScaledVector(d, 0.6), w: 1 }, { p: p.addScaledVector(d, 2.6), w: Math.min(1, this.I) * 0.9 }];
+    }
     _dirW() { return new T.Vector3(-1, 0, 0).applyQuaternion(this.J.getWorldQuaternion(new T.Quaternion())); }
 
     exhaustPulse() {}

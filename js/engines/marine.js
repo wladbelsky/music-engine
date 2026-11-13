@@ -302,6 +302,11 @@
 
     /* ---- effects ---- */
     glowPoint() { return this._w(this.tipL); }
+    /* the funnel top and up its flame */
+    fireLights() {
+      const p = this._w(this.tipL), f = this.funnel;
+      return [{ p, w: 1 }, { p: p.clone().addScaledVector(f.dirW || f.dir, 1.2), w: Math.min(1, f.I) * 0.8 }];
+    }
 
     _puff(m, k, kind, dark) {                          // smoke out of the funnel
       const e = this.e, tp = this._w(this.tipL);

@@ -23,8 +23,12 @@
 
   /* three r155+ lights are physical. The scene was lit by eye with the old ones, which were PI times brighter for
      the same number (LEGACY). The flame light's intensity is still written in the old units: FLAME_K converts it. */
-  const LEGACY = Math.PI, FLAME_K = 2.1, SHADOW_R = 2, COMPILE_CAP = 4000;
+  const LEGACY = Math.PI, FLAME_K = 10, SHADOW_R = 2, COMPILE_CAP = 4000;
   const HOT = 2;
+  // fire lights (stage 3): FIRE_N physical point lights; FLAME_K converts flameLight's old units (tuned by eye),
+  // FIRE_LIFT raises the layout's points a little off the flame's base, the flame shadow is at most FIRE_SHADOW
+  // strong (reached at intensity FIRE_SHADOW_I), FLOOR_ALBEDO = how much of the fire light the floor sends back
+  const FIRE_N = 3, FIRE_RANGE = 12, FIRE_LIFT = 0.4, FIRE_SHADOW = 0.45, FIRE_SHADOW_I = 20, FLOOR_ALBEDO = 0.03, FLOOR_MAX = 0.12;
   const BLOOM = { strength: 0.03, radius: 0.3, threshold: 1.2 };
 
   class Engine3D {
@@ -91,9 +95,17 @@
       key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0004; key.shadow.normalBias = 0.035; key.shadow.radius = SHADOW_R;
       s.add(key); s.add(key.target);
       const rim = new T.DirectionalLight(0x88aaff, 0.9 * LEGACY); rim.position.set(-8, 5, -6); s.add(rim);
-      // the layouts set its intensity in the old (pre-physical) units and may recolour it, so the conversion is
-      // applied in render(); no distance decay, only the cutoff window: the closest to the old falloff
-      this.flameLight = new T.PointLight(0xff7a2a, 0, 9, 0); s.add(this.flameLight);
+      // flameLight is the fire's light as the core and the layouts drive it (old, pre-physical units; recoloured by
+      // some layouts). It is not in the scene: render() hands it to FIRE_N physical point lights (inverse square)
+      // placed where the layout says the fire is (fireLights()), so the light falls off across a big engine. A
+      // fixed number of lights: changing the count would recompile every shader.
+      this.flameLight = new T.PointLight(0xff7a2a, 0, 9, 0); this.flameK = FLAME_K;
+      this.fire = [];
+      for (let i = 0; i < FIRE_N; i++) { const L = new T.PointLight(0xff7a2a, 0, FIRE_RANGE, 2); this.fire.push(L); s.add(L); }
+      // the brightest one casts shadows on quality high: the engine's shadow from its own fire, flickering with it
+      const fs = this.fire[0].shadow;
+      fs.mapSize.set(512, 512); fs.camera.near = 0.05; fs.camera.far = FIRE_RANGE; fs.bias = -0.002; fs.normalBias = 0.02; fs.radius = 3; fs.intensity = 0;
+      this.floorGlow = this._floorGlow(); s.add(this.floorGlow);
       this.ground = new T.Mesh(new T.PlaneGeometry(60, 60), new T.ShadowMaterial({ opacity: 0.55 }));
       this.ground.rotation.x = -Math.PI / 2; this.ground.receiveShadow = true; s.add(this.ground);
     }
@@ -107,6 +119,8 @@
       const ms = q === 'high' ? 2048 : 1024;
       if (this.key.shadow.mapSize.x !== ms) { this.key.shadow.mapSize.set(ms, ms); if (this.key.shadow.map) { this.key.shadow.map.dispose(); this.key.shadow.map = null; } }
       this.ground.visible = q !== 'low';
+      this.floorGlow.visible = q !== 'low';
+      this.fire[0].castShadow = q === 'high';
       this._setPost(q !== 'low' && this.hdr);
       this.resize(this.w, this.h);
     }
@@ -485,6 +499,7 @@
       if (gp) this.flameLight.position.copy(gp).add(new T.Vector3(0, 0.4, 0));
       this.flameLight.intensity = gp ? (sim.flame * 2.2 + this.flash * 4) * (0.85 + Math.random() * 0.3) : 0;
       lay.updateFx(dt, sim, quality);             // the layout's effects (flame jets, steam, plume...)
+      this._firePts = gp ? lay.fireLights() : null;   // world space, after the sway (no Math.random: the traces)
       this.shake *= Math.exp(-dt / 0.12);
       if (this.camBase) {
         this.camera.position.copy(this.camBase);
@@ -608,14 +623,58 @@
       this.post = { composer, bloom };
     }
 
+    /* the light of the fire on the floor: the ground is only a shadow catcher, so a lit pool under the flames is
+       drawn as an additive disc (irradiance of each fire light on a horizontal plane, h / d^3). The engine hides it
+       through the depth test; the flame shadow on the ground (ShadowMaterial) darkens it where the engine stands. */
+    _floorGlow() {
+      const m = new T.ShaderMaterial({
+        uniforms: { uPos: { value: [0, 1, 2].map(() => new T.Vector3()) }, uCol: { value: [0, 1, 2].map(() => new T.Color(0, 0, 0)) }, uAlb: { value: FLOOR_ALBEDO } },
+        vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+        fragmentShader: `#define FLOOR_MAX ${FLOOR_MAX.toFixed(3)}
+          uniform vec3 uPos[${FIRE_N}]; uniform vec3 uCol[${FIRE_N}]; uniform float uAlb; varying vec3 vW;
+          void main(){
+            vec3 c = vec3(0.0);
+            for (int i = 0; i < ${FIRE_N}; i++) { vec3 d = uPos[i] - vW; float h = max(d.y, 0.05); float r2 = dot(d, d) + 0.04;
+              c += uCol[i] * h / (r2 * sqrt(r2)) * (1.0 - smoothstep(0.6, 1.0, sqrt(r2) / ${FIRE_RANGE.toFixed(1)})); }
+            vec3 g = c * uAlb; g = g * FLOOR_MAX / (FLOOR_MAX + g);   // a soft ceiling: a low, bright fire (the rocket) burnt the floor white
+            gl_FragColor = vec4(g, 0.0);
+            #include <tonemapping_fragment>
+            #include <colorspace_fragment>
+          }`,
+        transparent: true, depthWrite: false,
+      });
+      addBlend(m);
+      const g = new T.Mesh(new T.PlaneGeometry(2 * FIRE_RANGE, 2 * FIRE_RANGE), m);
+      g.rotation.x = -Math.PI / 2; g.position.y = 0.004; g.renderOrder = 2; g.frustumCulled = false; g.visible = false;
+      return g;
+    }
+
+    /* the fire light for this frame: flameLight's intensity split over the layout's points (weights w) */
+    _placeFire() {
+      const fl = this.flameLight, I = Math.max(0, fl.intensity) * this.flameK, pts = this._firePts;
+      let W = 0; if (pts) for (const f of pts) W += f.w;
+      const one = !pts || !pts.length || !(W > 0), u = this.floorGlow.material.uniforms;
+      this.fire.forEach((L, i) => {
+        const f = one ? (i === 0 ? { p: fl.position, w: 1 } : null) : pts[i];
+        L.color.copy(fl.color);
+        if (!f || I <= 0) { L.intensity = 0; u.uCol.value[i].setRGB(0, 0, 0); return; }
+        L.position.copy(f.p); if (!one) L.position.y += FIRE_LIFT;
+        L.intensity = I * f.w / (one ? 1 : W);
+        u.uPos.value[i].copy(L.position); u.uCol.value[i].copy(L.color).multiplyScalar(L.intensity);
+      });
+      if (this.floorGlow.visible) this.floorGlow.position.set(this.fire[0].position.x, 0.004, this.fire[0].position.z);
+      // the flame's shadow only as strong as the flame (ShadowMaterial would draw it at full strength in the dark)
+      const sh = this.fire[0].shadow, k = Math.min(1, this.fire[0].intensity / FIRE_SHADOW_I);
+      sh.intensity = FIRE_SHADOW * k;
+      sh.autoUpdate = k > 0.01;                   // no 6-face shadow pass while there is no fire
+    }
+
     /* false = nothing was drawn (still compiling) */
     render() {
       if (this.compiling) return false;
       if (this.renderer.info && this.renderer.info.reset) this.renderer.info.reset();
-      const fl = this.flameLight, i = fl.intensity;
-      fl.intensity = i * FLAME_K;
+      this._placeFire();
       if (this.post) this.post.composer.render(); else this.renderer.render(this.scene, this.camera);
-      fl.intensity = i;
       return true;
     }
   }
