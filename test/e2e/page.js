@@ -57,11 +57,12 @@ function initScript(we) {
     gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf);
     undo.forEach(o => { o.visible = true; });
     const k = innerWidth / W, ko = opts.keepOut || [], m = opts.margin || 0;
-    const st = { w: W, h: H, opaque: 0, lit: 0, litNoAlpha: 0, bbox: null, inKeepOut: 0, sample: null, near: 0 };
+    const st = { w: W, h: H, opaque: 0, lit: 0, faint: 0, litNoAlpha: 0, bbox: null, inKeepOut: 0, sample: null, near: 0 };
     let x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const i = (y * W + x) * 4, a = buf[i + 3], rgb = Math.max(buf[i], buf[i + 1], buf[i + 2]);
       const cx = x * k, cy = (H - 1 - y) * k;                         // GL rows are bottom-up
+      if (rgb > 4) st.faint++;                                         // any light at all (a bloom's outer glow)
       if (rgb > 24) { st.lit++; if (a === 0) st.litNoAlpha++; }
       if (opts.near && rgb > 150 && buf[i] > buf[i + 2] + 40 && Math.hypot(cx - opts.near.x, cy - opts.near.y) < opts.near.r) st.near++;
       if (a < 8) continue;

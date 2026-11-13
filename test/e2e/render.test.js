@@ -82,3 +82,34 @@ test('additive effects add light but never write alpha (no black boxes on the tr
   await props(P.page, { ignition: false });
   noErrors('additive');
 });
+
+test('HDR and bloom: flames glow beyond their own pixels at high quality, low draws straight to the canvas, the bloom writes no alpha', async () => {
+  await props(P.page, { layout: 'v', cylinders: 8, turbos: '1', ignition: true, quality: 'high' });
+  assert.ok(await P.page.evaluate(() => !!__dbg.eng3d.post), 'no post-processing at high quality');
+  await P.page.evaluate(() => { __dbg.sim.pedalIn = true; });
+  await until(P.page, () => __dbg.sim.flame > 0.6, null, 60000, 'flames');
+  // one frozen moment, drawn three ways: with the bloom, without it, and at low quality
+  const r = await P.page.evaluate(() => {
+    window.wallpaperPropertyListener.setPaused(true);
+    const e = __dbg.eng3d, out = {};
+    out.bloom = __t.pixels({ only: 'fx' });
+    e.post.bloom.enabled = false; out.plain = __t.pixels({ only: 'fx' }); e.post.bloom.enabled = true;
+    e.setQuality('low'); out.post = !!e.post; out.low = __t.pixels({ only: 'fx' }); out.lowAll = __t.pixels({});
+    e.setQuality('high');
+    window.wallpaperPropertyListener.setPaused(false);
+    return out;
+  });
+  assert.ok(r.plain.lit > 200, `flames drew only ${r.plain.lit} lit pixels`);
+  assert.ok(r.bloom.faint > r.plain.faint * 1.15, `the bloom adds no glow around the flames: ${r.bloom.faint} pixels with any light with it, ${r.plain.faint} without`);
+  assert.equal(r.bloom.opaque, 0, `${r.bloom.opaque} bloom/flame pixels wrote alpha`);
+  assert.equal(r.post, false, 'low quality still post-processes');
+  assert.ok(r.low.lit > 200 && r.low.opaque === 0, `low quality flames: ${JSON.stringify({ lit: r.low.lit, opaque: r.low.opaque })}`);
+  assert.ok(r.lowAll.opaque > 1000, 'low quality drew no engine');
+  await P.page.evaluate(() => { __dbg.sim.pedalIn = false; });
+  // engine off: nothing glows (bright metal under the studio lights must not bloom into a haze)
+  await props(P.page, { ignition: false });
+  await until(P.page, () => __dbg.sim.state === 'off' && __dbg.eng3d.flames.size.every(s => s === 0), null, 30000, 'effects gone');
+  const off = await P.page.evaluate(() => __t.pixels({ only: 'fx' }));
+  assert.equal(off.lit, 0, `${off.lit} lit effect pixels with the engine off`);
+  noErrors('hdr');
+});

@@ -40,6 +40,7 @@
       // straight to the canvas like quality low)
       this.hdr = !!(r.extensions && (r.extensions.has('EXT_color_buffer_float') || r.extensions.has('EXT_color_buffer_half_float')));
       this.post = null;
+      if (r.info) r.info.autoReset = false;         // a frame is several renders now: render() resets the counters itself
       r.shadowMap.enabled = true; r.shadowMap.type = T.PCFShadowMap;   // hardware PCF; the softness is key.shadow.radius
 
       this.scene = new T.Scene();
@@ -610,6 +611,7 @@
     /* false = nothing was drawn (still compiling) */
     render() {
       if (this.compiling) return false;
+      if (this.renderer.info && this.renderer.info.reset) this.renderer.info.reset();
       const fl = this.flameLight, i = fl.intensity;
       fl.intensity = i * FLAME_K;
       if (this.post) this.post.composer.render(); else this.renderer.render(this.scene, this.camera);
