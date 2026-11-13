@@ -92,17 +92,18 @@ test('HDR and bloom: flames glow beyond their own pixels at high quality, low dr
   const r = await P.page.evaluate(() => {
     window.wallpaperPropertyListener.setPaused(true);
     const e = __dbg.eng3d, out = {};
-    out.bloom = __t.pixels({ only: 'fx' });
-    e.post.bloom.enabled = false; out.plain = __t.pixels({ only: 'fx' }); e.post.bloom.enabled = true;
+    e.post.bloom.enabled = false; out.plain = __t.pixels({ only: 'fx', keep: true }); e.post.bloom.enabled = true;
+    out.bloom = __t.pixels({ only: 'fx', against: out.plain.buf }); delete out.plain.buf;
     e.setQuality('low'); out.post = !!e.post; out.low = __t.pixels({ only: 'fx' }); out.lowAll = __t.pixels({});
     e.setQuality('high');
     window.wallpaperPropertyListener.setPaused(false);
     return out;
   });
   assert.ok(r.plain.lit > 200, `flames drew only ${r.plain.lit} lit pixels`);
-  assert.ok(r.bloom.faint > r.plain.faint * 1.15, `the bloom adds no glow around the flames: ${r.bloom.faint} pixels with any light with it, ${r.plain.faint} without`);
   assert.equal(r.bloom.opaque, 0, `${r.bloom.opaque} bloom/flame pixels wrote alpha`);
   assert.equal(r.post, false, 'low quality still post-processes');
+  // the same frozen frame with and without the bloom: pixels that were dark and now glow (none without a bloom)
+  assert.ok(r.bloom.gained > r.plain.lit * 0.04, `the bloom adds no glow around the flames: ${r.bloom.gained} dark pixels lit by it (flames: ${r.plain.lit} lit pixels)`);
   assert.ok(r.low.lit > 200 && r.low.opaque === 0, `low quality flames: ${JSON.stringify({ lit: r.low.lit, opaque: r.low.opaque })}`);
   assert.ok(r.lowAll.opaque > 1000, 'low quality drew no engine');
   await P.page.evaluate(() => { __dbg.sim.pedalIn = false; });

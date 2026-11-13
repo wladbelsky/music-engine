@@ -55,14 +55,16 @@ function initScript(we) {
     e.render();
     const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight, buf = new Uint8Array(W * H * 4);
     gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    const base = opts.against && opts.against.length === buf.length ? opts.against : null;   // opts.keep: return the pixels for a later `against`
     undo.forEach(o => { o.visible = true; });
     const k = innerWidth / W, ko = opts.keepOut || [], m = opts.margin || 0;
-    const st = { w: W, h: H, opaque: 0, lit: 0, faint: 0, litNoAlpha: 0, bbox: null, inKeepOut: 0, sample: null, near: 0 };
+    const st = { w: W, h: H, opaque: 0, lit: 0, faint: 0, gained: 0, litNoAlpha: 0, bbox: null, inKeepOut: 0, sample: null, near: 0 };
     let x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const i = (y * W + x) * 4, a = buf[i + 3], rgb = Math.max(buf[i], buf[i + 1], buf[i + 2]);
       const cx = x * k, cy = (H - 1 - y) * k;                         // GL rows are bottom-up
       if (rgb > 4) st.faint++;                                         // any light at all (a bloom's outer glow)
+      if (base && rgb > 4 && Math.max(base[i], base[i + 1], base[i + 2]) <= 4) st.gained++;   // dark in `against`, lit now
       if (rgb > 24) { st.lit++; if (a === 0) st.litNoAlpha++; }
       if (opts.near && rgb > 150 && buf[i] > buf[i + 2] + 40 && Math.hypot(cx - opts.near.x, cy - opts.near.y) < opts.near.r) st.near++;
       if (a < 8) continue;
@@ -71,6 +73,7 @@ function initScript(we) {
       for (const s of ko) if (s.r !== undefined ? Math.hypot(cx - s.x, cy - s.y) < s.r - m : cx > s.x + m && cx < s.x + s.w - m && cy > s.y + m && cy < s.y + s.h - m) { st.inKeepOut++; if (!st.sample) st.sample = { x: cx, y: cy, s }; break; }
     }
     if (x1 >= 0) st.bbox = { x0, x1, y0, y1 };
+    if (opts.keep) st.buf = buf;
     return st;
   };
 }

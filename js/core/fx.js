@@ -163,7 +163,10 @@
         uniforms: { uScale: pxScaleRef, uNoise: { value: noiseTex }, uGain: gain },
         vertexShader: `attribute float aSize; attribute vec4 aCol; attribute vec3 aSeed; varying vec4 vCol; varying vec3 vSeed; uniform float uScale;
           void main(){ vCol=aCol; vSeed=aSeed; vec4 mv=modelViewMatrix*vec4(position,1.0); gl_Position=projectionMatrix*mv;
-          gl_PointSize = aSize*uScale/max(0.1,-mv.z); }`,
+          gl_PointSize = aSize*uScale/max(0.1,-mv.z);
+          // a dead particle (size 0) would still rasterise as a 1 px point (GL clamps the size to at least 1),
+          // showing its last colour: put it outside the clip volume
+          if (aSize <= 0.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0); }`,
         fragmentShader: `uniform sampler2D uNoise; varying vec4 vCol; varying vec3 vSeed;
           ${FX_OUT}
           void main(){
