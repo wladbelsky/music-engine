@@ -98,6 +98,7 @@ function load({ scripts, seed = 12345 } = {}) {
     }
   }
   g.run = (code, timeout) => vm.runInContext(code, g, timeout ? { timeout } : undefined); // timeout (ms) also stops endless loops
+  g.reseed = () => vm.runInContext(SEEDED.replace('__SEED__', String(seed)), g);   // start the random stream over
   g.fakeCanvas = fakeCanvas;
   return g;
 }
