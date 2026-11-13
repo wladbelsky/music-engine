@@ -28,6 +28,7 @@
   // fire lights (stage 3): FIRE_N physical point lights; FLAME_K converts flameLight's old units (tuned by eye),
   // FIRE_LIFT raises the layout's points a little off the flame's base, the flame shadow is at most FIRE_SHADOW
   // strong (reached at intensity FIRE_SHADOW_I), FLOOR_ALBEDO = how much of the fire light the floor sends back
+  const FIRE_LAYER = 1, FIRE_CASTERS = 60, FIRE_SHADOW_EVERY = 3;
   const FIRE_N = 3, FIRE_RANGE = 12, FIRE_LIFT = 0.4, FIRE_SHADOW = 0.45, FIRE_SHADOW_I = 20, FLOOR_ALBEDO = 0.03, FLOOR_MAX = 0.12;
   const BLOOM = { strength: 0.03, radius: 0.3, threshold: 1.2 };
 
@@ -104,6 +105,7 @@
       for (let i = 0; i < FIRE_N; i++) { const L = new T.PointLight(0xff7a2a, 0, FIRE_RANGE, 2); this.fire.push(L); s.add(L); }
       // the brightest one casts shadows on quality high: the engine's shadow from its own fire, flickering with it
       const fs = this.fire[0].shadow;
+      fs.camera.layers.set(FIRE_LAYER);
       fs.mapSize.set(512, 512); fs.camera.near = 0.05; fs.camera.far = FIRE_RANGE; fs.bias = -0.002; fs.normalBias = 0.02; fs.radius = 3; fs.intensity = 0;
       this.floorGlow = this._floorGlow(); s.add(this.floorGlow);
       this.ground = new T.Mesh(new T.PlaneGeometry(60, 60), new T.ShadowMaterial({ opacity: 0.55 }));
@@ -186,6 +188,7 @@
       const cc0 = this.box.getCenter(new T.Vector3()); cs.position.set(cc0.x, 0.012, cc0.z); cs.renderOrder = 1;
       root.add(cs);
       eng.traverse(o => { if (o.isMesh) { const tr = o.material.transparent; o.castShadow = !tr; o.receiveShadow = !tr; } });
+      this._fireCasters(eng);
       this.scene.add(root);
       this._applyCutaway();
       this._fitPts = this._fitPoints();
@@ -649,6 +652,22 @@
       return g;
     }
 
+    /* The flame's shadow is a cube map: six passes over its casters. Over every mesh (up to ~800 on the marine
+       engine) that cost more than the rest of the frame, so only the FIRE_CASTERS biggest parts are on FIRE_LAYER,
+       the only layer the flame's shadow camera renders. (Layer 0 stays on: the camera and the key light see all.) */
+    _fireCasters(eng) {
+      const list = [], sc = new T.Vector3();
+      eng.updateMatrixWorld(true);
+      eng.traverse(o => {
+        if (!o.isMesh || !o.castShadow) return;
+        if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+        o.getWorldScale(sc);
+        list.push([o.geometry.boundingSphere.radius * Math.max(sc.x, sc.y, sc.z), o]);
+      });
+      list.sort((a, b) => b[0] - a[0]);
+      list.forEach(([r, o], i) => { if (i < FIRE_CASTERS && r >= 0.3) o.layers.enable(FIRE_LAYER); });
+    }
+
     /* the fire light for this frame: flameLight's intensity split over the layout's points (weights w) */
     _placeFire() {
       const fl = this.flameLight, I = Math.max(0, fl.intensity) * this.flameK, pts = this._firePts;
@@ -666,7 +685,14 @@
       // the flame's shadow only as strong as the flame (ShadowMaterial would draw it at full strength in the dark)
       const sh = this.fire[0].shadow, k = Math.min(1, this.fire[0].intensity / FIRE_SHADOW_I);
       sh.intensity = FIRE_SHADOW * k;
-      sh.autoUpdate = k > 0.01;                   // no 6-face shadow pass while there is no fire
+      // the cube is redrawn every FIRE_SHADOW_EVERY frames (the fire flickers in brightness, not in place), right
+      // away when the fire lights up, and not at all without a fire
+      sh.autoUpdate = false;
+      if (k > 0.01) {
+        this._fireTick = ((this._fireTick || 0) + 1) % FIRE_SHADOW_EVERY;
+        if (!this._fireLit || this._fireTick === 0) sh.needsUpdate = true;
+      }
+      this._fireLit = k > 0.01;
     }
 
     /* false = nothing was drawn (still compiling) */
