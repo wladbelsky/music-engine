@@ -10,7 +10,7 @@
     accent: [0.75, 0.08, 0.06], dashColor: [1, 0.35, 0.1],
     background: 'garage', bgcolor: [0.12, 0.13, 0.16], customimage: '', bgdim: 0.2,
     sensitivity: 1, sway: 1, redline: 7000, flameThr: 0.62, stallDelay: 3, animSpeed: 1,
-    quality: 'high', showBpm: true, debug: false, fps: 0, showControls: true,
+    quality: 'high', ao: true, showBpm: true, debug: false, fps: 0, showControls: true,
     showRadio: false,                 // off by default (WE property / ?showradio=true / dev panel)
     odoUnits: 'km',                   // 'km' | 'mi' | 'off' (hidden, still counts)
   };
@@ -92,6 +92,7 @@
       if (v('animspeed') !== undefined) { const a = Number(v('animspeed')) / 100; S.animSpeed = isFinite(a) ? Math.max(0, a) : 1; } // editable: junk → default, never backwards
       if (v('sway') !== undefined) { const w = Number(v('sway')) / 100; S.sway = isFinite(w) ? Math.max(0, w) : 1; } // editable: junk → default
       if (v('quality') !== undefined) { S.quality = v('quality'); q = true; }
+      if (v('ambientocclusion') !== undefined) { S.ao = !!v('ambientocclusion'); q = true; }
       if (v('showbpm') !== undefined) S.showBpm = !!v('showbpm');
       if (v('debug') !== undefined) S.debug = !!v('debug');
       if (v('ignition') !== undefined) sim.ignition = !!v('ignition');
@@ -100,7 +101,7 @@
       if (v('odounits') !== undefined) S.odoUnits = ['mi', 'off'].includes(v('odounits')) ? v('odounits') : 'km';
       if (bgChanged) bg.set({ preset: S.background, bgcolor: S.bgcolor, dim: S.bgdim });
       if (rebuild) needRebuild = true;
-      if (q) eng3d.setQuality(S.quality);
+      if (q) { eng3d.ao = S.ao; eng3d.setQuality(S.quality); }
       applySettings();
     },
     applyGeneralProperties(p) { if (p.fps !== undefined) S.fps = p.fps; },
@@ -170,6 +171,7 @@
       { k: 'animspeed', t: 'range', l: 'crank anim %', d: 100, min: 25, max: 200 },
       { k: 'sway', t: 'range', l: 'sway %', d: 100, min: 0, max: 250 },
       { k: 'quality', t: 'select', l: 'quality', d: 'high', o: [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']] },
+      { k: 'ambientocclusion', t: 'bool', l: 'ambient occl.', d: true },
     ]],
     ['Dash', [
       { k: 'dashcolor', t: 'color', l: 'backlight', d: '1 0.35 0.1' },
@@ -308,7 +310,7 @@
   if (init.cylinders) init.cylinders.value = String(init.cylinders.value);
   if (init.turbos) init.turbos.value = String(init.turbos.value);
   resize();
-  eng3d.setQuality(S.quality);
+  eng3d.ao = S.ao; eng3d.setQuality(S.quality);
   bg.set({ preset: S.background, bgcolor: S.bgcolor, dim: S.bgdim });
   window.wallpaperPropertyListener.applyUserProperties(init);
   syncPanel();

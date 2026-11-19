@@ -29,7 +29,11 @@
   // FIRE_LIFT raises the layout's points a little off the flame's base, the flame shadow is at most FIRE_SHADOW
   // strong (reached at intensity FIRE_SHADOW_I), FLOOR_ALBEDO = how much of the fire light the floor sends back
   const FIRE_LAYER = 1, FIRE_CASTERS = 60, FIRE_SHADOW_EVERY = 3;
-  const FIRE_N = 3, FIRE_RANGE = 12, FIRE_LIFT = 0.4, FIRE_SHADOW = 0.45, FIRE_SHADOW_I = 20, FLOOR_ALBEDO = 0.03, FLOOR_MAX = 0.12;
+  // ambient occlusion (quality high): GTAO with a world-space radius, at the frame's resolution up to AO_PIXELS (about
+// 1080p; above that scaled down: at half resolution the noise showed as grain on small parts); AO_FX = how strongly
+// light from the fire over a pixel cancels its darkening (fire is not occluded by the metal behind it)
+const AO = { radius: 0.6, distanceExponent: 1, thickness: 1, scale: 1.5, samples: 32 }, AO_PD = { radius: 12, samples: 32 }, AO_PIXELS = 2.1e6, AO_K = 1, AO_FX = 4;
+const FIRE_N = 3, FIRE_RANGE = 12, FIRE_LIFT = 0.4, FIRE_SHADOW = 0.45, FIRE_SHADOW_I = 20, FLOOR_ALBEDO = 0.03, FLOOR_MAX = 0.12;
   const BLOOM = { strength: 0.03, radius: 0.3, threshold: 1.2 };
 
   class Engine3D {
@@ -64,7 +68,7 @@
       this.scene.add(this.flames.points, this.smoke.points);
 
       this.accent = new T.Color(0.75, 0.08, 0.06);
-      this.cutaway = true; this.quality = 'high';
+      this.cutaway = true; this.quality = 'high'; this.ao = true;   // ao: ambient occlusion at quality high (a property)
       this.crank = 0; this.crankTotal = 0; this.heat = 0; this.flash = 0; this.rock = 0; this.jolt = 0; this.joltV = 0; this._kick0 = 0;
       this._rotM = new T.Matrix4(); this._eul = new T.Euler(); this.lift = 0; this.mountY = 0; this.sway = 1; this.lean = 0; this.vibA = 0; this.ph1 = 0; this.ph2 = 0; this.ph3 = 0; this.phI = 0;
       this.root = null;
@@ -124,6 +128,7 @@
       this.floorGlow.visible = q !== 'low';
       this.fire[0].castShadow = q === 'high';
       this._setPost(q !== 'low' && this.hdr);
+      if (this.post) this.post.ao.enabled = q === 'high' && this.ao;
       this.resize(this.w, this.h);
     }
 
@@ -605,7 +610,9 @@
       // the programs differ per target (no tone mapping / encoding into the HDR buffer): compile for the one in use
       try {
         if (this.post) r.setRenderTarget(this.post.composer.readBuffer);
-        r.compileAsync(this.scene, this.camera).then(done, done);
+        const jobs = [r.compileAsync(this.scene, this.camera)];
+        if (this.post && this.post.ao.enabled) jobs.push(r.compileAsync(this.post.ao.programs(), this.camera));
+        Promise.all(jobs).then(done, done);
       } catch (e) { done(); }
       if (this.post) r.setRenderTarget(null);
     }
@@ -615,15 +622,87 @@
        toneMapping/exposure). The bloom is added with addBlend, so like every other glow here it leaves the
        canvas's alpha alone and shows over the page's background. Low draws straight to the canvas. */
     _setPost(on) {
-      if (!on) { if (this.post) { this.post.composer.dispose(); this.post.bloom.dispose(); this.post = null; } return; }
+      if (!on) { if (this.post) { this.post.composer.dispose(); this.post.bloom.dispose(); this.post.ao.dispose(); this.post = null; } return; }
       if (this.post) return;
       const composer = new T.EffectComposer(this.renderer, new T.WebGLRenderTarget(4, 4, { type: T.HalfFloatType, samples: 4 }));
       const bloom = new T.UnrealBloomPass(new T.Vector2(4, 4), BLOOM.strength, BLOOM.radius, BLOOM.threshold);
       addBlend(bloom.blendMaterial);
+      const ao = this._aoPass();
       composer.addPass(new T.RenderPass(this.scene, this.camera));
+      composer.addPass(ao);
       composer.addPass(bloom);
       composer.addPass(new T.OutputPass());
-      this.post = { composer, bloom };
+      this.post = { composer, bloom, ao };
+      ao.enabled = this.quality === 'high' && this.ao;
+    }
+
+    /* Ambient occlusion (quality high), a composer pass around three's GTAOPass:
+       - its G-buffer (normals + depth, an extra pass over the scene) holds only solid parts: no particles, lines,
+         glows, flame meshes or cutaway ghosts (they would cast dark halos), but the floor, for contact darkening;
+       - the fire's own light is drawn once more into a small buffer (depth-tested against that G-buffer), and where
+         it is bright the darkening fades: a flame in front of a crevice is not occluded by it;
+       - the result is multiplied into the frame, and over the transparent floor it adds alpha (black) instead,
+         so the contact shadow shows over the page's background.
+       The shadow maps are not redrawn by these extra passes. */
+    _aoPass() {
+      const scene = this.scene, cam = this.camera;
+      const g = new T.GTAOPass(scene, cam, 4, 4, undefined, AO, AO_PD);
+      const fx = new T.WebGLRenderTarget(4, 4, { type: T.HalfFloatType });
+      fx.depthTexture = g.depthTexture;
+      const mats = m => Array.isArray(m) ? m : [m];
+      const solid = o => o.isMesh && mats(o.material).every(m => !m.transparent || m.isShadowMaterial);
+      const light = m => m.blending === T.AdditiveBlending || (m.blending === T.CustomBlending && m.blendDst === T.OneFactor);
+      const off = [];
+      const hide = keep => scene.traverseVisible(o => {
+        if (!o.material || !(o.isMesh || o.isPoints || o.isLine || o.isSprite)) return;
+        for (const m of mats(o.material)) if (m.visible && !keep(o, m)) { m.visible = false; off.push(m); }
+      });
+      const show = () => { for (const m of off) m.visible = true; off.length = 0; };
+      g._overrideVisibility = () => hide(o => solid(o));
+      g._restoreVisibility = show;
+      g.output = T.GTAOPass.OUTPUT.Off;
+      const mat = new T.ShaderMaterial({
+        uniforms: { tDiffuse: { value: null }, tAO: { value: g.pdRenderTarget.texture }, tFx: { value: fx.texture }, uK: { value: AO_K }, uFx: { value: AO_FX } },
+        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: `uniform sampler2D tDiffuse, tAO, tFx; uniform float uK, uFx; varying vec2 vUv;
+          void main(){
+            vec4 c = texture2D(tDiffuse, vUv);
+            vec3 f = texture2D(tFx, vUv).rgb;
+            float lit = clamp(max(f.r, max(f.g, f.b)) * uFx, 0.0, 1.0);
+            float a = mix(1.0, mix(texture2D(tAO, vUv).r, 1.0, lit), uK);
+            gl_FragColor = vec4(c.rgb * a, 1.0 - (1.0 - c.a) * a);
+          }`,
+        depthTest: false, depthWrite: false, blending: T.NoBlending,
+      });
+      const quad = new T.FullScreenQuad(mat), cc = new T.Color();
+      return {
+        enabled: true, needsSwap: true, clear: false, renderToScreen: false, gtao: g, fx, material: mat,
+        setSize(w, h) {
+          const k = Math.min(1, Math.sqrt(AO_PIXELS / Math.max(1, w * h))), aw = Math.max(1, Math.round(w * k)), ah = Math.max(1, Math.round(h * k));
+          g.setSize(aw, ah); fx.setSize(aw, ah);
+        },
+        render(rr, writeBuffer, readBuffer) {
+          const sm = rr.shadowMap, au = sm.autoUpdate, ac = rr.autoClear, ca = rr.getClearAlpha();
+          rr.getClearColor(cc);
+          sm.autoUpdate = false;
+          g.render(rr, writeBuffer, readBuffer);                 // G-buffer, AO, denoise
+          hide((o, m) => light(m));                               // the fire's light alone, behind the solid parts
+          rr.setRenderTarget(fx); rr.autoClear = false; rr.setClearColor(0, 0); rr.clear(true, false, false);
+          rr.render(scene, cam);
+          show();
+          sm.autoUpdate = au; rr.autoClear = ac; rr.setClearColor(cc, ca);
+          mat.uniforms.tDiffuse.value = readBuffer.texture;
+          rr.setRenderTarget(writeBuffer); quad.render(rr);
+        },
+        // what the AO adds to compile: the G-buffer's normal material on plain and instanced meshes, its own passes
+        programs() {
+          const sc = new T.Scene(), geo = new T.PlaneGeometry(1, 1);
+          sc.add(new T.Mesh(geo, g.normalMaterial), new T.InstancedMesh(geo, g.normalMaterial, 1));
+          for (const m of [g.gtaoMaterial, g.pdMaterial, mat]) sc.add(new T.Mesh(geo, m));
+          return sc;
+        },
+        dispose() { g.dispose(); fx.dispose(); mat.dispose(); quad.dispose(); },
+      };
     }
 
     /* the light of the fire on the floor: the ground is only a shadow catcher, so a lit pool under the flames is

@@ -21,7 +21,7 @@ test('?demo=1 starts exactly one demo source (setupDev ran 3× once)', async () 
 });
 
 test('the panel has a control for every WE property, with the same options and ranges', async () => {
-  const P = await open(browser, '');
+  const P = await open(browser, 'ambientocclusion=true');   // the test pages start with it off unless asked
   await P.page.evaluate(() => { document.getElementById('devpanel').style.display = 'block'; });
   const ctl = await P.page.evaluate(keys => Object.fromEntries(keys.map(k => {
     const c = document.getElementById('dv-' + k);

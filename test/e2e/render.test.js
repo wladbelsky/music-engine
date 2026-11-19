@@ -114,3 +114,34 @@ test('HDR and bloom: flames glow beyond their own pixels at high quality, low dr
   assert.equal(off.lit, 0, `${off.lit} lit effect pixels with the engine off`);
   noErrors('hdr');
 });
+
+test('ambient occlusion (high only) only darkens the engine and the floor under it, never the fire', async () => {
+  await props(P.page, { layout: 'v', cylinders: 8, turbos: '1', ignition: true, quality: 'high', ambientocclusion: false });
+  assert.equal(await P.page.evaluate(() => __dbg.eng3d.post.ao.enabled), false, 'AO on while switched off');
+  await props(P.page, { quality: 'medium', ambientocclusion: true });
+  assert.equal(await P.page.evaluate(() => __dbg.eng3d.post.ao.enabled), false, 'AO on at medium quality');
+  await props(P.page, { quality: 'high' });
+  assert.equal(await P.page.evaluate(() => __dbg.eng3d.post.ao.enabled), true, 'no AO at high quality');
+  await P.page.evaluate(() => { __dbg.sim.pedalIn = true; });
+  await until(P.page, () => __dbg.sim.flame > 0.6, null, 60000, 'flames');
+  // one frozen moment: the fire alone (its bright pixels = the mask), the frame without AO, the frame with it
+  const r = await P.page.evaluate(() => {
+    window.wallpaperPropertyListener.setPaused(true);
+    const e = __dbg.eng3d, ao = e.post.ao, out = {};
+    e.post.bloom.enabled = false;                          // the bloom spreads light: compare the frame itself
+    out.fire = __t.pixels({ only: 'fx', keepMask: 120 });
+    ao.enabled = false; out.plain = __t.pixels({ keep: true }); ao.enabled = true;
+    out.ao = __t.pixels({ against: out.plain.buf, mask: out.fire.bright });
+    e.post.bloom.enabled = true;
+    delete out.plain.buf; delete out.fire.bright;
+    window.wallpaperPropertyListener.setPaused(false);
+    return out;
+  });
+  assert.ok(r.ao.mask > 500, `too little fire to test: ${r.ao.mask} bright fire pixels`);
+  assert.ok(r.ao.darker > r.plain.opaque * 0.02, `AO darkens nothing: ${r.ao.darker} darker pixels of ${r.plain.opaque}`);
+  assert.ok(r.ao.brighter <= r.plain.opaque * 0.001, `AO brightened ${r.ao.brighter} pixels`);
+  assert.ok(r.ao.maskDarker <= r.ao.mask * 0.01, `AO dimmed the fire: ${r.ao.maskDarker} of ${r.ao.mask} bright fire pixels darker`);
+  await P.page.evaluate(() => { __dbg.sim.pedalIn = false; });
+  await props(P.page, { ignition: false, ambientocclusion: false });
+  noErrors('ao');
+});

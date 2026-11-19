@@ -20,6 +20,7 @@ const ADDONS = {
   UnrealBloomPass: 'postprocessing/UnrealBloomPass.js',
   OutputPass: 'postprocessing/OutputPass.js',
   GTAOPass: 'postprocessing/GTAOPass.js',
+  FullScreenQuad: 'postprocessing/Pass.js',
 };
 
 const entry = [
