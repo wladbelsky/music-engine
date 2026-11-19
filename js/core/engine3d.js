@@ -29,11 +29,21 @@
   // FIRE_LIFT raises the layout's points a little off the flame's base, the flame shadow is at most FIRE_SHADOW
   // strong (reached at intensity FIRE_SHADOW_I), FLOOR_ALBEDO = how much of the fire light the floor sends back
   const FIRE_LAYER = 1, FIRE_CASTERS = 60, FIRE_SHADOW_EVERY = 3;
+  const FIRE_N = 3, FIRE_RANGE = 12, FIRE_LIFT = 0.4, FIRE_SHADOW = 0.45, FIRE_SHADOW_I = 20, FLOOR_ALBEDO = 0.03, FLOOR_MAX = 0.12;
   // ambient occlusion (quality high): GTAO with a world-space radius, at the frame's resolution up to AO_PIXELS (about
-// 1080p; above that scaled down: at half resolution the noise showed as grain on small parts); AO_FX = how strongly
-// light from the fire over a pixel cancels its darkening (fire is not occluded by the metal behind it)
-const AO = { radius: 0.6, distanceExponent: 1, thickness: 1, scale: 1.5, samples: 32 }, AO_PD = { radius: 12, samples: 32 }, AO_PIXELS = 2.1e6, AO_K = 1, AO_FX = 4;
-const FIRE_N = 3, FIRE_RANGE = 12, FIRE_LIFT = 0.4, FIRE_SHADOW = 0.45, FIRE_SHADOW_I = 20, FLOOR_ALBEDO = 0.03, FLOOR_MAX = 0.12;
+  // 1080p; above that scaled down: at half resolution the noise showed as grain on small parts); AO_FX = how strongly
+  // light from the fire over a pixel cancels its darkening (fire is not occluded by the metal behind it)
+  const AO = { radius: 0.6, distanceExponent: 1, thickness: 1, scale: 1.5, samples: 32 }, AO_PD = { radius: 12, samples: 32 };
+  const AO_PIXELS = 2.1e6, AO_K = 1, AO_FX = 4;
+  // physical materials (stage 5): clear-coated accent paint, heat tint on the exhaust (thin-film iridescence, its
+  // strength following the heat across tintRange, never 0: switching a feature off and on recompiles the shader).
+  // Anisotropic "brushed" steel was tried and dropped: its stretched highlights went over white and bloomed, on the
+  // turbo housings even at 0.3 with the engine off.
+  const PHYS = {
+    paint: { clearcoat: 1, clearcoatRoughness: 0.08 },
+    tint: { iridescence: 0.35, iridescenceIOR: 1.8, iridescenceThicknessMinimum: 180, iridescenceThicknessMaximum: 520 },
+    tintRange: [0.35, 1],
+  };
   const BLOOM = { strength: 0.03, radius: 0.3, threshold: 1.2 };
 
   class Engine3D {
@@ -270,17 +280,21 @@ const FIRE_N = 3, FIRE_RANGE = 12, FIRE_LIFT = 0.4, FIRE_SHADOW = 0.45, FIRE_SHA
       // glowing metal goes above white at full heat (HOT), so it blooms; the intensities stay 0..1-ish as before
       const hot = (r, g, b) => new T.Color(r, g, b).multiplyScalar(HOT);
       const std = (c, m, r, extra) => new T.MeshStandardMaterial(Object.assign({ color: c, metalness: m, roughness: r }, extra || {}));
+      // physical materials where they show: a clear coat on the accent paint, heat tint (iridescence: a thin oxide
+      // film) on the exhaust; the PHYS values stay above 0 so a change never switches a shader feature on or off
+      // (that would recompile)
+      const phys = (c, m, r, extra) => new T.MeshPhysicalMaterial(Object.assign({ color: c, metalness: m, roughness: r }, extra || {}));
       return {
         block: std(0x2c2f34, 0.85, 0.45),
         liner: std(0x9aa0a8, 0.9, 0.3, { transparent: true, opacity: 0.25, depthWrite: false, side: T.DoubleSide }),
         head: std(0x70757d, 0.92, 0.34),
-        cover: std(this.accent.clone(), 0.55, 0.28),
+        cover: phys(this.accent.clone(), 0.55, 0.28, PHYS.paint),
         steel: std(0xa9adb3, 1.0, 0.25),
         piston: std(0xb0b4ba, 1.0, 0.3, { emissive: hot(1.0, 0.45, 0.12), emissiveIntensity: 0 }),
         dark: std(0x141518, 0.3, 0.65),
         dark2: std(0x202226, 0.7, 0.45),
         spark: new T.MeshBasicMaterial({ color: 0x331a0a }),
-        header: std(0xa89a8e, 1.0, 0.28, { emissive: hot(1.0, 0.32, 0.06), emissiveIntensity: 0 }),
+        header: phys(0xa89a8e, 1.0, 0.28, Object.assign({ emissive: hot(1.0, 0.32, 0.06), emissiveIntensity: 0 }, PHYS.tint)),
         soot: std(0x17120f, 0.4, 0.85, { side: T.DoubleSide, emissive: hot(1.0, 0.38, 0.08), emissiveIntensity: 0 }),
         pulley: std(0x2b2d31, 0.9, 0.35),
         turbo: std(0x9a9ea5, 0.95, 0.3),
@@ -495,6 +509,7 @@ const FIRE_N = 3, FIRE_RANGE = 12, FIRE_LIFT = 0.4, FIRE_SHADOW = 0.45, FIRE_SHA
       const heatT = clamp(sim.flame * 0.7 + Math.max(0, rpm / Math.max(500, sim.settings.redline || 7000) - 0.55) * 0.6 + Math.max(0, sim.temp - 100) / 40, 0, 1);
       this.heat += (heatT - this.heat) * (1 - Math.exp(-dt / 1.8));
       this.mats.header.emissiveIntensity = this.heat * 0.9;
+      this.mats.header.iridescence = PHYS.tintRange[0] + (PHYS.tintRange[1] - PHYS.tintRange[0]) * clamp(this.heat, 0, 1);
       this.mats.soot.emissiveIntensity = clamp(sim.flame * 1.2 + this.flash * 2 + this.heat * 0.3, 0, 1.6);
       this.mats.turboHot.emissiveIntensity = clamp(this.heat * 0.7 + Math.max(0, sim.boost) * 0.25, 0, 1);
 
@@ -786,6 +801,7 @@ const FIRE_N = 3, FIRE_RANGE = 12, FIRE_LIFT = 0.4, FIRE_SHADOW = 0.45, FIRE_SHA
 
   // shared with the layouts and js/engines/induction.js
   Engine3D.GEO = { P, CR, ROD, BORE, DECK, DEG, clamp, firingOrder };
+  Engine3D.PHYS = PHYS;   // the layouts' own hot metal (jet pipe, rocket bells) takes the heat tint too
   Engine3D.FX = window.EngineFX;   // shaders, particle kinds, plume (js/core/fx.js)
   window.Engine3D = Engine3D;
 })();

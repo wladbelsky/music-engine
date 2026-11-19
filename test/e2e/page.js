@@ -105,7 +105,7 @@ async function open(browser, query = '', { we = false, w = 1280, h = 720, contex
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
-  page.on('console', m => { const t = m.text(); if (m.type() === 'error' || /THREE\.WebGL(Program|Renderer).*(error|Error)|Shader Error/.test(t)) errors.push('console: ' + t); });
+  page.on('console', m => { const t = m.text(); if (m.type() === 'error' || (m.type() === 'warning' && /^THREE\./.test(t)) || /THREE\.WebGL(Program|Renderer).*(error|Error)|Shader Error/.test(t)) errors.push('console: ' + t); });   // three's warnings count too (a renamed property)
   await page.addInitScript(initScript, we);
   const url = URL0 + (query ? '?' + query : '');
   await page.goto(url);

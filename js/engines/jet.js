@@ -66,7 +66,7 @@
     buildCase() {
       const e = this.e, M = this.M, J = this.J;
       // titanium jet pipe and petals that glow with the afterburner, darker blades (less glitter through the casing)
-      this.pipeMat = new T.MeshStandardMaterial({ color: 0x8d9197, metalness: 1, roughness: 0.35, emissive: new T.Color(1.0, 0.35, 0.08), emissiveIntensity: 0 });
+      this.pipeMat = new T.MeshPhysicalMaterial(Object.assign({ color: 0x8d9197, metalness: 1, roughness: 0.35, emissive: new T.Color(1.0, 0.35, 0.08), emissiveIntensity: 0 }, Engine3D.PHYS.tint));
       this.bladeMat = new T.MeshStandardMaterial({ color: 0x80858c, metalness: 0.9, roughness: 0.5 });
       const pts = []; for (let x = X_C0 + 0.1; x >= X_T1 - 0.001; x -= 0.05) pts.push([x, casingR(x)]);
       const cs = this._latheX(pts, M.block, 48); e._edges(cs, J, 20);
@@ -235,6 +235,7 @@
       M.turboHot.emissiveIntensity = clamp((sim.boost - 3.2) / 5, 0, 1) * 0.9;
       this.heat = (this.heat || 0) + ((run ? 0.08 * sim.throttle + 0.75 * clamp(this.I, 0, 1) : 0) - (this.heat || 0)) * (1 - Math.exp(-dt / 1.5));
       this.pipeMat.emissiveIntensity = this.heat;
+      const tr = Engine3D.PHYS.tintRange; this.pipeMat.iridescence = tr[0] + (tr[1] - tr[0]) * Math.min(1, Math.max(0, this.heat));
       // afterburner intensity: the flame state plus bursts on beats
       this.burst *= Math.exp(-dt / 0.25);
       const tgt = sim.flame * 1.05 + this.burst;

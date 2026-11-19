@@ -71,7 +71,7 @@
     /* the engines: shared geometry, each in a gimbal group (pivot at the gimbal block) */
     buildCrank() {
       const M = this.M, s = this.s;
-      this.nozzleMat = new T.MeshStandardMaterial({ color: 0x4a3f38, metalness: 0.85, roughness: 0.45, side: T.DoubleSide, emissive: new T.Color(1.0, 0.36, 0.1), emissiveIntensity: 0 });
+      this.nozzleMat = new T.MeshPhysicalMaterial(Object.assign({ color: 0x4a3f38, metalness: 0.85, roughness: 0.45, side: T.DoubleSide, emissive: new T.Color(1.0, 0.36, 0.1), emissiveIntensity: 0 }, Engine3D.PHYS.tint));
       this.chamberMat = new T.MeshStandardMaterial({ color: 0x3a2c24, metalness: 0.8, roughness: 0.5 });
       this.loxMat = new T.MeshStandardMaterial({ color: 0xaab4bc, metalness: 0.3, roughness: 0.75 });   // frosted oxidiser line
       const bell = []; for (let k = 0; k <= 24; k++) { const t = k / 24; bell.push([-t * L_B, bellR(t)]); }
@@ -189,6 +189,7 @@
       this.green *= Math.exp(-dt / 0.35);
       this.heat += ((this.I > 0.05 ? 0.25 + 0.55 * clamp(this.I, 0, 1.4) : 0) - this.heat) * (1 - Math.exp(-dt / 2));
       this.nozzleMat.emissiveIntensity = this.heat;
+      const tr = Engine3D.PHYS.tintRange; this.nozzleMat.iridescence = tr[0] + (tr[1] - tr[0]) * Math.min(1, Math.max(0, this.heat));
       const I = this.I, flick = 0.9 + 0.1 * Math.sin(e.time * 31) * Math.sin(e.time * 12.7), s = this.s;
       // gimbals: every beat swings the engines (outer ones more), with a slow steering wander while firing
       this.engines.forEach(en => {
