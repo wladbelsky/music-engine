@@ -625,11 +625,22 @@
       // the programs differ per target (no tone mapping / encoding into the HDR buffer): compile for the one in use
       try {
         if (this.post) r.setRenderTarget(this.post.composer.readBuffer);
-        const jobs = [r.compileAsync(this.scene, this.camera)];
+        // three compiles only what is visible: everything hidden (flash rings, arcs, flame meshes, parts of other
+        // quality levels) is shown for the synchronous part, or it would compile when it first appears, mid-song
+        const jobs = [this._showingAll(() => r.compileAsync(this.scene, this.camera))];
         if (this.post && this.post.ao.enabled) jobs.push(r.compileAsync(this.post.ao.programs(), this.camera));
         Promise.all(jobs).then(done, done);
       } catch (e) { done(); }
       if (this.post) r.setRenderTarget(null);
+    }
+
+    /* fn() with every hidden object of the scene shown (lights stay as they are: the set of lights is part of
+       every program) */
+    _showingAll(fn) {
+      const hidden = [];
+      this.scene.traverse(o => { if (!o.visible && !o.isLight) hidden.push(o); });
+      hidden.forEach(o => { o.visible = true; });
+      try { return fn(); } finally { hidden.forEach(o => { o.visible = false; }); }
     }
 
     /* Post-processing (quality medium/high): the scene goes into a linear half-float buffer (MSAA), the parts brighter

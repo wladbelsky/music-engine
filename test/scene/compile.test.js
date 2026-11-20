@@ -63,3 +63,16 @@ test('without KHR_parallel_shader_compile nothing waits: the first render compil
   assert.equal(W.e.render(), true);
   assert.equal(r.renders, n0 + 1);
 });
+
+test('the compile sees the hidden parts too (they would compile when they first appear), and they stay hidden', () => {
+  const { W, r } = slowCompile();
+  W.build(8, 'v', '1');
+  const hiddenNow = () => { const h = []; W.e.scene.traverse(o => { if (!o.visible && !o.isLight) h.push(o); }); return h; };
+  const before = hiddenNow();
+  assert.ok(before.length > 0, 'nothing hidden to test with');
+  let seen = null;
+  r.compileAsync = () => { seen = hiddenNow().length; return new Promise(() => {}); };
+  W.e._precompile();
+  assert.equal(seen, 0, `${seen} objects still hidden while compiling`);
+  assert.deepEqual(hiddenNow().map(o => o.uuid), before.map(o => o.uuid), 'the hidden parts were not hidden again');
+});
