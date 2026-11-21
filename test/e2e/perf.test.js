@@ -53,3 +53,18 @@ test('perfFlags keeps its switches in localStorage; bloom / flame shadow off sur
   assert.deepEqual(G.errors, []);
   await G.ctx.close();
 });
+
+test('glcheck (debug flag) logs a GL error from getProgramParameter with its stack, once per call site', async () => {
+  const G = await open(browser, 'glcheck=1&quality=low');
+  const logs = [];
+  G.page.on('console', m => { if (m.type() === 'warning' && m.text().startsWith('glcheck:')) logs.push(m.text()); });
+  await G.page.evaluate(() => {
+    const gl = __dbg.eng3d.renderer.getContext(), p = gl.createProgram();
+    gl.deleteProgram(p);
+    for (let i = 0; i < 3; i++) gl.getProgramParameter(p, gl.LINK_STATUS);   // a deleted program: what WE's console showed
+  });
+  await G.page.waitForTimeout(200);
+  assert.equal(logs.length, 1, `logged ${logs.length} times: ${logs.join(' / ')}`);
+  assert.match(logs[0], /GL error 0x501, isProgram false/);
+  await G.ctx.close();
+});

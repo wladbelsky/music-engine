@@ -49,6 +49,24 @@
     },
   };
   PERF.flags.gputime = PERF.flags.gputime === true || qs.get('gputime') === '1';
+  // perfFlags({ glcheck: true }) (debug): every getProgramParameter is followed by getError (a sync round trip, slow),
+  // and a GL error is logged once per call site with the stack and whether the program still exists: to find out who
+  // asks about a deleted program ("GL_INVALID_VALUE: glGetProgramiv: Program object expected" in WE's console)
+  if (PERF.flags.glcheck === true || qs.get('glcheck') === '1') (() => {
+    const gl = eng3d.renderer.getContext && eng3d.renderer.getContext();
+    if (!gl || !gl.getProgramParameter) return;
+    const orig = gl.getProgramParameter.bind(gl), seen = new Set();
+    gl.getProgramParameter = (p, n) => {
+      while (gl.getError() !== gl.NO_ERROR) { /* not ours */ }
+      const v = orig(p, n), err = gl.getError();
+      if (err !== gl.NO_ERROR) {
+        const st = new Error().stack.split('\n').slice(2, 10).map(x => x.trim()).join('\n  ');
+        if (!seen.has(st)) { seen.add(st); console.warn(`glcheck: getProgramParameter(0x${n.toString(16)}) → GL error 0x${err.toString(16)}, isProgram ${gl.isProgram(p)}, building ${!!eng3d.compiling}\n  ${st}`); }
+      }
+      return v;
+    };
+    console.log('glcheck on');
+  })();
   // GPU time of eng3d.render() (the 3D frame with all its passes): a timer query around it, read back a frame or two
   // later (never waited for); none on GPUs / browsers without the extension
   const gpuTimer = (() => {
