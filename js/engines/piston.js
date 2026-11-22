@@ -163,8 +163,24 @@
       e._pulley(0.36, fx + 0.14, 0, 0, 1);
       this.crankPulley = { x: fx + 0.14, y: 0, z: 0, r: 0.36 };
       if (!e.ind.blower) e._pulley(0.22, fx + 0.14, Math.min(topY, 1.1), 0, 1.6); // the blower belt runs there
-      e._pulley(0.15, fx + 0.14, 0.55, this.sidePulleyZ(), 2.4);
+      const sz = this.sidePulleyZ(), side = { y: 0.55, z: sz, r: 0.15 };
+      e._pulley(side.r, fx + 0.14, side.y, sz, 2.4);
+      this._alternator(side, fx);
+      e._belt(fx + 0.14, this.crankPulley, side);   // the crank drives it (the user saw the pulley hang in the air)
     }
+    /* the accessory pulley sits beside the timing cover: an alternator behind it, reaching back to altBack(), held on
+       a bracket from the cover's edge (without them it hung in the air) */
+    _alternator(p, fx) {
+      const M = this.M, back = this.altBack(), L = fx + 0.08 - back, sg = Math.sign(p.z) || 1;
+      const alt = new T.Mesh(new T.CylinderGeometry(0.17, 0.17, L, 18), M.dark2);
+      alt.rotation.z = Math.PI / 2; alt.position.set(back + L / 2, p.y, p.z); this.eng.add(alt);
+      const edge = sg * this.coverD() / 2, w = Math.abs(p.z - edge) + 0.08;
+      if (w > 0.1) for (const dy of [0.09, -0.09]) {          // two ears from the cover to the alternator's side
+        const ear = new T.Mesh(new T.BoxGeometry(0.06, 0.05, w), M.dark2);
+        ear.position.set(fx - 0.06, p.y + dy, (edge + p.z) / 2); this.eng.add(ear);
+      }
+    }
+    altBack() { return this.frontX - 0.4; }
 
     buildRear() {
       const e = this.e, M = this.M;

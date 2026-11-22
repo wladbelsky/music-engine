@@ -113,7 +113,7 @@
       const fx = bx + L / 2 + 0.05, sn = new T.Mesh(new T.CylinderGeometry(0.1, 0.13, px - fx, 16), M.blower);
       sn.rotation.z = Math.PI / 2; sn.position.set((fx + px) / 2 - bx, cy, 0); g.add(sn);
       e._pulley(bp.r, px, bp.y, bp.z, ratio);
-      this._belt(e, px, cp, bp);
+      e._belt(px, cp, bp);
       // top: scoop or pressure hat
       if (this.hat) {
         const hx = L / 2 - 0.5, hat = new T.Mesh(e._roundBox(0.8, 0.28, 0.62, 0.1), M.blower);
@@ -122,21 +122,6 @@
         inl.rotation.z = Math.PI / 2; inl.position.set(hx + 0.5, top + 0.14, 0); g.add(inl);
         e.tbPos = new T.Vector3(bx + hx + 0.62, mt.y + top + 0.14, mt.z);
       } else this._scoop(e, g, top, L);
-    }
-
-    /* two straight belt runs tangent to both pulleys (in the YZ plane, so a slanted belt works too) */
-    _belt(e, x, a, b) {
-      const dy = b.y - a.y, dz = b.z - a.z, D = Math.hypot(dy, dz);
-      if (D <= Math.abs(a.r - b.r)) return;
-      const phi = Math.atan2(dz, dy), al = Math.acos((a.r - b.r) / D);
-      for (const sg of [-1, 1]) {
-        const t = phi + sg * al, ny = Math.cos(t), nz = Math.sin(t);
-        const y1 = a.y + a.r * ny, z1 = a.z + a.r * nz, y2 = b.y + b.r * ny, z2 = b.z + b.r * nz;
-        const len = Math.hypot(y2 - y1, z2 - z1);
-        const strip = new T.Mesh(new T.BoxGeometry(0.1, len, 0.028), e.mats.dark);
-        strip.position.set(x, (y1 + y2) / 2, (z1 + z2) / 2); strip.rotation.x = Math.atan2(z2 - z1, y2 - y1);
-        e.eng.add(strip);
-      }
     }
 
     /* butterfly injector hat ("shotgun" scoop): a polished stadium-shaped mouth facing forward and a bit up,

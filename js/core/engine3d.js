@@ -262,6 +262,21 @@
       this.eng.add(g); this.spin(g, ratio);
       return g;
     }
+    /* a belt between two pulleys {y, z, r} at engine x: two straight runs tangent to both (in the YZ plane, so a
+       slanted belt works too) */
+    _belt(x, a, b) {
+      const dy = b.y - a.y, dz = b.z - a.z, D = Math.hypot(dy, dz);
+      if (D <= Math.abs(a.r - b.r)) return;
+      const phi = Math.atan2(dz, dy), al = Math.acos((a.r - b.r) / D);
+      for (const sg of [-1, 1]) {
+        const t = phi + sg * al, ny = Math.cos(t), nz = Math.sin(t);
+        const y1 = a.y + a.r * ny, z1 = a.z + a.r * nz, y2 = b.y + b.r * ny, z2 = b.z + b.r * nz;
+        const len = Math.hypot(y2 - y1, z2 - z1);
+        const strip = new T.Mesh(new T.BoxGeometry(0.1, len, 0.028), this.mats.dark);
+        strip.position.set(x, (y1 + y2) / 2, (z1 + z2) / 2); strip.rotation.x = Math.atan2(z2 - z1, y2 - y1);
+        this.eng.add(strip);
+      }
+    }
     /* position of cylinder c in its firing cycle at crank angle `crank`, normalised to 0..720
        (period 720; a rotor's cycle is one shaft turn, 360; a double-acting steam cylinder's 180) */
     _cyc(c, crank) { const per = c.period || 720; return (((crank - c.phase) % per + per) % per) * 720 / per; }
