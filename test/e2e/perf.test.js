@@ -68,3 +68,19 @@ test('glcheck (debug flag) logs a GL error from getProgramParameter with its sta
   assert.match(logs[0], /GL error 0x501, isProgram false/);
   await G.ctx.close();
 });
+
+test('perfReport leaves pauses (gaps over 1 s) out of the frame times and counts them', async () => {
+  const P = await open(browser, 'quality=low');
+  const r = await P.page.evaluate(async () => {
+    window.wallpaperPropertyListener.setPaused(true);
+    await new Promise(res => setTimeout(res, 300));
+    const p = perfReport(0.5);
+    for (const now of [1000, 1016.7, 1033.4, 27000, 27016.7]) __dbg.frame(1 / 60, now / 1000, 1 / 60, now);
+    return p;
+  });
+  assert.equal(r.pauses, 1);
+  assert.equal(r.frames, 5);
+  assert.ok(Math.abs(r.frameMs - 16.7) < 0.1 && r.frameMsMax < 17, `frame times with the pause: ${r.frameMs} / max ${r.frameMsMax}`);
+  assert.ok(Math.abs(r.fps - 59.9) < 0.5, `fps ${r.fps}`);
+  await P.ctx.close();
+});

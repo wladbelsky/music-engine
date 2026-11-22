@@ -35,14 +35,17 @@
        perfFlags({})                  — back to normal
      The flags live in localStorage (WE passes no URL parameters); ?gputime=1 does the same in a browser. Ambient
      occlusion and the quality level are WE properties already. */
-  const PERF_KEY = 'music-engine.perf';
+  const PERF_KEY = 'music-engine.perf', PAUSE_MS = 1000;
   const PERF = {
     recs: [],
     flags: (() => { try { return JSON.parse(localStorage.getItem(PERF_KEY) || '{}') || {}; } catch (e) { return {}; } })(),
     sample(ms, cpu, render, dash) {   // into every report running (each perfReport() call has its own record)
       const info = eng3d.renderer.info.render;
       for (const r of this.recs) {
-        if (r.last) r.frame.push(ms - r.last); r.last = ms;
+        // a gap over 1 s is a pause (WE pauses a covered wallpaper; a hidden tab), not a frame: counted apart, or one
+        // 26 s pause took the average of a 60 FPS run down to 39.5 FPS
+        if (r.last) { const d = ms - r.last; if (d > PAUSE_MS) r.pauses++; else r.frame.push(d); }
+        r.last = ms;
         r.cpu.push(cpu); r.render.push(render); r.dash.push(dash);
         r.calls.push(info.calls); r.tris.push(info.triangles); r.flame.push(sim.flame);
       }
@@ -104,7 +107,7 @@
     return 'saved — reload to apply: ' + JSON.stringify(f || {});
   }
   function perfReport(sec = 30) {
-    const r = { frame: [], cpu: [], render: [], dash: [], gpu: [], calls: [], tris: [], flame: [], last: 0 };
+    const r = { frame: [], cpu: [], render: [], dash: [], gpu: [], calls: [], tris: [], flame: [], last: 0, pauses: 0 };
     PERF.recs.push(r);
     console.log(`perfReport: measuring ${sec} s…`);
     return new Promise(res => setTimeout(() => {
@@ -122,6 +125,7 @@
         frameMs: avg(r.frame), frameMsP95: p95(r.frame), frameMsMax: max(r.frame),
         // frames longer than two frame intervals (two vsyncs, or two of the FPS limit's): visible stutter
         hitches: r.frame.filter(t => t > Math.max(33.4, S.fps > 0 ? 2000 / S.fps : 0)).length,
+        pauses: r.pauses,   // gaps over 1 s (paused or hidden), left out of the frame times
         cpuMs: avg(r.cpu), cpuMsP95: p95(r.cpu), cpuMsMax: max(r.cpu),
         renderCpuMs: avg(r.render), dashCpuMs: avg(r.dash),
         gpuMs: gpuTimer ? avg(r.gpu) : PERF.flags.gputime ? 'no timer queries on this GPU / browser' : 'perfFlags({ gputime: true }) + reload',

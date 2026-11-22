@@ -60,3 +60,14 @@ test('a fixed number of fire lights in every layout (a change would recompile ev
     assert.equal(W.e.floorGlow.visible, q !== 'low', `${q}: floor glow ${W.e.floorGlow.visible}`);
   }
 });
+
+test('the dark contact disc under the engine is only on quality low (medium/high cast real shadows)', () => {
+  const W = world().build(8, 'v'), e = W.e;
+  for (const q of ['low', 'medium', 'high', 'low']) {
+    e.setQuality(q);
+    assert.equal(e.contact.visible, q === 'low', `${q}: disc ${e.contact.visible ? 'shown' : 'hidden'}`);
+    assert.equal(e.ground.visible, q !== 'low', `${q}: shadow catcher`);
+  }
+  e.setQuality('high'); W.build(6, 'inline');
+  assert.equal(W.e.contact.visible, false, 'a new build at high shows the disc');
+});

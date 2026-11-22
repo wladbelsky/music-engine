@@ -34,7 +34,7 @@
   // 1080p; above that scaled down: at half resolution the noise showed as grain on small parts); AO_FX = how strongly
   // light from the fire over a pixel cancels its darkening (fire is not occluded by the metal behind it)
   const AO = { radius: 0.6, distanceExponent: 1, thickness: 1, scale: 1.5, samples: 32 }, AO_PD = { radius: 12, samples: 32 };
-  const AO_PIXELS = 2.1e6, AO_K = 1, AO_FX = 4;
+  const AO_PIXELS = 2.1e6, AO_K = 1, AO_FX = 4, AO_BRIGHT = [0.6, 1.4];   // AO fades out over this frame brightness
   // physical materials (stage 5): clear-coated accent paint, heat tint on the exhaust (thin-film iridescence, its
   // strength following the heat across tintRange, never 0: switching a feature off and on recompiles the shader).
   // Anisotropic "brushed" steel was tried and dropped: its stretched highlights went over white and bloomed, on the
@@ -136,6 +136,7 @@
       if (this.key.shadow.mapSize.x !== ms) { this.key.shadow.mapSize.set(ms, ms); if (this.key.shadow.map) { this.key.shadow.map.dispose(); this.key.shadow.map = null; } }
       this.ground.visible = q !== 'low';
       this.floorGlow.visible = q !== 'low';
+      if (this.contact) this.contact.visible = q === 'low';
       this.fire[0].castShadow = q === 'high';
       this._setPost(q !== 'low' && this.hdr);
       if (this.post) this.post.ao.enabled = q === 'high' && this.ao;
@@ -196,12 +197,13 @@
       this.box = new T.Box3().setFromObject(eng);
       this.ground.position.y = 0;
       this.baseY = this.mountY = eng.position.y; this.lift = 0;
-      // soft contact shadow (works on any background, also on 'low' quality)
+      // soft contact shadow under the engine: only on quality low, which has no shadow maps (medium/high cast the
+      // real shadows, and high adds the AO's contact darkening; the user asked for the dark disc to go there)
       const sz = this.box.getSize(new T.Vector3());
       const cs = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ alphaMap: this._blobTex(), transparent: true, depthWrite: false, color: 0x000000, opacity: 0.6 }));
       cs.rotation.x = -Math.PI / 2; cs.scale.set(sz.x * 1.45, sz.z * 1.6, 1);
       const cc0 = this.box.getCenter(new T.Vector3()); cs.position.set(cc0.x, 0.012, cc0.z); cs.renderOrder = 1;
-      root.add(cs);
+      root.add(cs); this.contact = cs; cs.visible = this.quality === 'low';
       eng.traverse(o => { if (o.isMesh) { const tr = o.material.transparent; o.castShadow = !tr; o.receiveShadow = !tr; } });
       this._fireCasters(eng);
       this.scene.add(root);
@@ -684,17 +686,25 @@
         for (const m of mats(o.material)) if (m.visible && !keep(o, m)) { m.visible = false; off.push(m); }
       });
       const show = () => { for (const m of off) m.visible = true; off.length = 0; };
+      // three's Poisson denoise picks a noise channel with noiseTexel[index % 4]: a dynamic vec4 index, which D3D's
+      // shader compiler warns about on every compile (X4000 in WE's console); the same channel by a dot product
+      g.pdMaterial.fragmentShader = g.pdMaterial.fragmentShader.split('noiseTexel[index % 4]').join('dot(noiseTexel, vec4(equal(ivec4(index % 4), ivec4(0, 1, 2, 3))))');
+      g.pdMaterial.needsUpdate = true;
       g._overrideVisibility = () => hide(o => solid(o));
       g._restoreVisibility = show;
       g.output = T.GTAOPass.OUTPUT.Off;
       const mat = new T.ShaderMaterial({
         uniforms: { tDiffuse: { value: null }, tAO: { value: g.pdRenderTarget.texture }, tFx: { value: fx.texture }, uK: { value: AO_K }, uFx: { value: AO_FX } },
         vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-        fragmentShader: `uniform sampler2D tDiffuse, tAO, tFx; uniform float uK, uFx; varying vec2 vUv;
+        fragmentShader: `#define AO_BRIGHT vec2(${AO_BRIGHT[0].toFixed(2)}, ${AO_BRIGHT[1].toFixed(2)})
+          uniform sampler2D tDiffuse, tAO, tFx; uniform float uK, uFx; varying vec2 vUv;
           void main(){
             vec4 c = texture2D(tDiffuse, vUv);
             vec3 f = texture2D(tFx, vUv).rgb;
             float lit = clamp(max(f.r, max(f.g, f.b)) * uFx, 0.0, 1.0);
+            // glowing metal (emissive, above white in the HDR frame) and bright highlights are not ambient light:
+            // AO noise on them showed as dark grain on the hot turbo housings
+            lit = max(lit, smoothstep(AO_BRIGHT.x, AO_BRIGHT.y, max(c.r, max(c.g, c.b))));
             float a = mix(1.0, mix(texture2D(tAO, vUv).r, 1.0, lit), uK);
             gl_FragColor = vec4(c.rgb * a, 1.0 - (1.0 - c.a) * a);
           }`,
