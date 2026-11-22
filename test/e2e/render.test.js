@@ -145,3 +145,27 @@ test('ambient occlusion (high only) only darkens the engine and the floor under 
   await props(P.page, { ignition: false, ambientocclusion: false });
   noErrors('ao');
 });
+
+test('highlights on metal and paint stop at white: nothing but glowing parts and fire blooms (the rocking boxer flashed)', async () => {
+  await props(P.page, { layout: 'boxer', cylinders: 6, turbos: '1', ignition: false, quality: 'high' });
+  await until(P.page, () => __dbg.sim.state === 'off' && __dbg.eng3d.flames.size.every(s => s === 0), null, 30000, 'engine off');
+  // the cold engine tilted through its rocking: the bloom must not add a visible glow anywhere on it
+  const r = await P.page.evaluate(() => {
+    window.wallpaperPropertyListener.setPaused(true);
+    const e = __dbg.eng3d, rx0 = e.eng.rotation.x;
+    let worst = 0;
+    for (let i = 0; i <= 12; i++) {
+      e.eng.rotation.x = -0.06 + i * 0.01; e.eng.updateMatrixWorld(true);
+      e.post.bloom.enabled = false; const a = __t.pixels({ only: 'engine', keep: true }).buf;
+      e.post.bloom.enabled = true; const b = __t.pixels({ only: 'engine', keep: true }).buf;
+      let n = 0; for (let k = 0; k < a.length; k += 4) if (Math.max(b[k] - a[k], b[k + 1] - a[k + 1], b[k + 2] - a[k + 2]) > 30) n++;
+      worst = Math.max(worst, n);
+    }
+    e.eng.rotation.x = rx0;
+    window.wallpaperPropertyListener.setPaused(false);
+    return worst;
+  });
+  assert.ok(r < 50, `the bloom glows around highlights on the cold engine: ${r} pixels`);
+  await props(P.page, { layout: 'v', cylinders: 8 });
+  noErrors('highlights');
+});

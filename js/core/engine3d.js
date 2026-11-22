@@ -40,11 +40,21 @@
   // Anisotropic "brushed" steel was tried and dropped: its stretched highlights went over white and bloomed, on the
   // turbo housings even at 0.3 with the engine off.
   const PHYS = {
-    paint: { clearcoat: 1, clearcoatRoughness: 0.08 },
+    paint: { clearcoat: 1, clearcoatRoughness: 0.2 },   // 0.08 flashed like a mirror as the engine rocked
     tint: { iridescence: 0.35, iridescenceIOR: 1.8, iridescenceThicknessMinimum: 180, iridescenceThicknessMaximum: 520 },
     tintRange: [0.35, 1],
   };
   const BLOOM = { strength: 0.03, radius: 0.3, threshold: 1.2 };
+  /* Reflected light on the metal and paint stops just above white (SPEC_CAP, under the bloom threshold); only what
+     glows (emissive hot metal, fire) goes beyond. In the HDR frame a highlight of the key light on a flat face (the
+     boxer's heads as it rocked) went far over white and the bloom made it a flash into the camera; r149's frame
+     clipped it at white. Every MeshStandard/Physical material (STANDARD) gets it through three's opaque_fragment
+     chunk; emissive is taken out first and added back uncapped. */
+  const SPEC_CAP = 1.1;
+  T.ShaderChunk.opaque_fragment = `#ifdef STANDARD
+    outgoingLight = min( outgoingLight - totalEmissiveRadiance, vec3( ${SPEC_CAP.toFixed(2)} ) ) + totalEmissiveRadiance;
+  #endif
+  ` + T.ShaderChunk.opaque_fragment;
 
   class Engine3D {
     constructor(canvas) {
