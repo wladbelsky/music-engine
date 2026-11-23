@@ -257,12 +257,6 @@
         "value": true,
         "order": 23
       },
-      "debug": {
-        "text": "Debug info",
-        "type": "bool",
-        "value": false,
-        "order": 25
-      },
       "sway": {
         "order": 20,
         "text": "Engine sway strength, %",

@@ -48,7 +48,7 @@ A web wallpaper with a 3D engine. The engine revs up to the music, and on the mo
 - **Stall after silence, s**.
 - **Crankshaft animation speed**, **engine sway strength**.
 - **Graphics quality**: low, medium, high. Medium and high render in HDR with a soft glow (bloom) around the fire; high adds the shadow the engine casts from its own flames and **ambient occlusion** (darker crevices, a contact shadow on the floor), which has its own switch for weaker graphics cards. If the wallpaper loads your system too much, also cap the FPS in the WE settings.
-- **Show BPM and load**, **debug info** (BPM, confidence, loudness, engine state).
+- **Show BPM and load**.
 - **Odometer**: kilometers, miles or hidden. The ODO and TRIP drum counters under the tachometer add mileage while the engine runs, faster at higher RPM (about 30 km/h per 1000 rpm). Click the counter to reset TRIP. Mileage is kept in the wallpaper's local storage. In Wallpaper Engine that storage belongs to each monitor, and WE may clear it (screensaver mode, cache reset), so treat it as best effort.
 
 ## Warning lamps

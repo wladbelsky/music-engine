@@ -90,7 +90,8 @@ test('every property is read by applyUserProperties (schemecolor is WE-only)', (
 
 test('the browser settings panel mirrors project.json', () => {
   const keys = Object.keys(props).filter(k => k !== 'schemecolor').sort();
-  assert.deepEqual(Object.keys(panelRows).sort(), keys);
+  const browserOnly = ['debug'];   // the debug overlay: the panel and ?debug=true only, not a WE setting
+  assert.deepEqual(Object.keys(panelRows).filter(k => !browserOnly.includes(k)).sort(), keys);
   const typeOf = { bool: 'bool', combo: 'select', color: 'color', file: 'file' };
   for (const k of keys) {
     const p = props[k], row = panelRows[k];
@@ -124,7 +125,8 @@ test('main.js defaults (S) match the project.json defaults', () => {
   assert.equal(S.sway * 100, props.sway.value);
   assert.equal(S.quality, props.quality.value);
   assert.equal(S.showBpm, props.showbpm.value);
-  assert.equal(S.debug, props.debug.value);
+  assert.equal(S.debug, false);
+  assert.equal(props.debug, undefined, 'debug info is a browser-only switch (panel, ?debug=true), not a WE setting');
   assert.equal(S.showControls, props.showcontrols.value);
   assert.equal(S.showRadio, props.showradio.value);
   assert.equal(S.odoUnits, props.odounits.value);
