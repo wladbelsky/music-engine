@@ -29,3 +29,14 @@ test('the heat tint is there cold, grows with the heat and never switches off', 
     assert.ok(min > 0 && m.iridescence <= 1, `${id}: tint out of range (min ${min}, hot ${m.iridescence})`);
   }
 });
+
+test('additive glows are tone mapped like the fire shaders (the electric glows were raw: white blobs, no bloom)', () => {
+  const { LAYOUT_IDS } = require('../helpers/load');
+  for (const id of LAYOUT_IDS) {
+    const W = world().build(8, id), T = W.g.THREE, raw = [];
+    W.e.scene.traverse(o => {
+      for (const m of [].concat(o.material || [])) if (m.blending === T.CustomBlending && m.blendDst === T.OneFactor && !m.isShaderMaterial && m.toneMapped === false) raw.push(`${o.type} ${m.type}`);
+    });
+    assert.deepEqual(raw, [], `${id}: additive glows outside the tone mapping`);
+  }
+});
