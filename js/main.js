@@ -38,7 +38,7 @@
   const PERF_KEY = 'music-engine.perf', PAUSE_MS = 1000;
   const PERF = {
     recs: [],
-    flags: (() => { try { return JSON.parse(localStorage.getItem(PERF_KEY) || '{}') || {}; } catch (e) { return {}; } })(),
+    flags: (() => { try { const f = JSON.parse(localStorage.getItem(PERF_KEY) || '{}'); return f && typeof f === 'object' && !Array.isArray(f) ? f : {}; } catch (e) { return {}; } })(),   // junk (perfFlags(true)) → none: a primitive would throw below (strict mode)
     sample(ms, cpu, render, dash) {   // into every report running (each perfReport() call has its own record)
       const info = eng3d.renderer.info.render;
       for (const r of this.recs) {
@@ -103,6 +103,7 @@
     if (PERF.flags.fireshadow === false) eng3d.fire[0].castShadow = false;
   }
   function perfFlags(f) {
+    if (!f || typeof f !== 'object' || Array.isArray(f)) f = {};
     try { localStorage.setItem(PERF_KEY, JSON.stringify(f || {})); } catch (e) { return 'localStorage unavailable'; }
     return 'saved — reload to apply: ' + JSON.stringify(f || {});
   }
@@ -123,8 +124,10 @@
         fpsLimit: S.fps || 'none', state: sim.state, flame: avg(r.flame), frames: r.cpu.length,
         fps: r.frame.length ? +(1000 / avg(r.frame)).toFixed(1) : 0,
         frameMs: avg(r.frame), frameMsP95: p95(r.frame), frameMsMax: max(r.frame),
-        // frames longer than two frame intervals (two vsyncs, or two of the FPS limit's): visible stutter
-        hitches: r.frame.filter(t => t > Math.max(33.4, S.fps > 0 ? 2000 / S.fps : 0)).length,
+        // frames longer than two frame intervals (two vsyncs, or two of the FPS limit's): visible stutter. The
+        // interval is the median frame (a 144 Hz display's is 6.9 ms, not 60 Hz's 16.7), never under 240 Hz's
+        hitches: (() => { const med = r.frame.length ? [...r.frame].sort((x, y) => x - y)[r.frame.length >> 1] : 16.7;
+          return r.frame.filter(t => t > 2 * Math.max(med, 1000 / 240, S.fps > 0 ? 1000 / S.fps : 0)).length; })(),
         pauses: r.pauses,   // gaps over 1 s (paused or hidden), left out of the frame times
         cpuMs: avg(r.cpu), cpuMsP95: p95(r.cpu), cpuMsMax: max(r.cpu),
         renderCpuMs: avg(r.render), dashCpuMs: avg(r.dash),

@@ -215,7 +215,6 @@
       const cc0 = this.box.getCenter(new T.Vector3()); cs.position.set(cc0.x, 0.012, cc0.z); cs.renderOrder = 1;
       root.add(cs); this.contact = cs; cs.visible = this.quality === 'low';
       eng.traverse(o => { if (o.isMesh) { const tr = o.material.transparent; o.castShadow = !tr; o.receiveShadow = !tr; } });
-      this._fireCasters(eng);
       this.scene.add(root);
       this._applyCutaway();
       this._fitPts = this._fitPoints();
@@ -371,6 +370,7 @@
       this.cyls.forEach(c => c.moving.forEach(o => { o.visible = on; }));
       M.liner.visible = on;
       this.root.traverse(o => { if (o.isMesh && (o.material === M.block || o.material === M.blowerCase)) { o.castShadow = !on; o.receiveShadow = !on; } });
+      this._fireCasters(this.eng);   // the ghosts stop casting in cutaway: their slots go to parts that do
     }
     setCutaway(on) { this.cutaway = on; if (this.root) this._applyCutaway(); }
     setAccent(c) { this.accent.copy(c); if (this.mats) this.mats.cover.color.copy(c); }
@@ -655,7 +655,10 @@
         // three compiles only what is visible: everything hidden (flash rings, arcs, flame meshes, parts of other
         // quality levels) is shown for the synchronous part, or it would compile when it first appears, mid-song
         const jobs = [this._showingAll(() => r.compileAsync(this.scene, this.camera))];
-        if (this.post && this.post.ao.enabled) jobs.push(r.compileAsync(this.post.ao.programs(), this.camera));
+        if (this.post && this.post.ao.enabled) {
+          const p = this.post.ao.programs();
+          jobs.push(r.compileAsync(p.gbuffer, this.camera, this.scene), r.compileAsync(p.passes, this.camera));
+        }
         Promise.all(jobs).then(done, done);
       } catch (e) { done(); }
       if (this.post) r.setRenderTarget(null);
@@ -675,7 +678,7 @@
        toneMapping/exposure). The bloom is added with addBlend, so like every other glow here it leaves the
        canvas's alpha alone and shows over the page's background. Low draws straight to the canvas. */
     _setPost(on) {
-      if (!on) { if (this.post) { this.post.composer.dispose(); this.post.bloom.dispose(); this.post.ao.dispose(); this.post = null; } return; }
+      if (!on) { if (this.post) { this.post.composer.passes.forEach(p => p.dispose && p.dispose()); this.post.composer.dispose(); this.post = null; } return; }   // every pass (OutputPass holds a material too)
       if (this.post) return;
       const composer = new T.EffectComposer(this.renderer, new T.WebGLRenderTarget(4, 4, { type: T.HalfFloatType, samples: 4 }));
       const bloom = new T.UnrealBloomPass(new T.Vector2(4, 4), BLOOM.strength, BLOOM.radius, BLOOM.threshold);
@@ -755,12 +758,14 @@
           mat.uniforms.tDiffuse.value = readBuffer.texture;
           rr.setRenderTarget(writeBuffer); quad.render(rr);
         },
-        // what the AO adds to compile: the G-buffer's normal material on plain and instanced meshes, its own passes
+        // what the AO adds to compile: the G-buffer's normal material on plain and instanced meshes (drawn over the
+        // scene, so compiled against its lights: the light counts are part of every program's key, lit or not), and
+        // its own passes (drawn on a bare quad, no lights)
         programs() {
-          const sc = new T.Scene(), geo = new T.PlaneGeometry(1, 1);
-          sc.add(new T.Mesh(geo, g.normalMaterial), new T.InstancedMesh(geo, g.normalMaterial, 1));
-          for (const m of [g.gtaoMaterial, g.pdMaterial, mat]) sc.add(new T.Mesh(geo, m));
-          return sc;
+          const gbuffer = new T.Scene(), passes = new T.Scene(), geo = new T.PlaneGeometry(1, 1);
+          gbuffer.add(new T.Mesh(geo, g.normalMaterial), new T.InstancedMesh(geo, g.normalMaterial, 1));
+          for (const m of [g.gtaoMaterial, g.pdMaterial, mat]) passes.add(new T.Mesh(geo, m));
+          return { gbuffer, passes };
         },
         dispose() { g.dispose(); fx.dispose(); mat.dispose(); quad.dispose(); },
       };
@@ -798,7 +803,9 @@
     _fireCasters(eng) {
       const list = [], sc = new T.Vector3();
       eng.updateMatrixWorld(true);
-      eng.traverse(o => {
+      eng.traverse(o => { if (o.isMesh) o.layers.disable(FIRE_LAYER); });
+      // only what casts and shows (the ghosts and the hidden moving parts depend on the cutaway: called again there)
+      eng.traverseVisible(o => {
         if (!o.isMesh || !o.castShadow) return;
         if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
         o.getWorldScale(sc);
