@@ -146,6 +146,35 @@ test('ambient occlusion (high only) only darkens the engine and the floor under 
   noErrors('ao');
 });
 
+test('ambient occlusion leaves the glow of hot metal alone (AO grain on a cooling turbo)', async () => {
+  await props(P.page, { layout: 'v', cylinders: 8, turbos: '2', ignition: false, quality: 'high', ambientocclusion: true });
+  await until(P.page, () => __dbg.sim.state === 'off', null, 30000, 'engine off');
+  // only the glow lights the frame: no lights, no environment, the turbo housings half way through cooling down
+  const r = await P.page.evaluate(() => {
+    window.wallpaperPropertyListener.setPaused(true);
+    const e = __dbg.eng3d, ao = e.post.ao, undo = [];
+    e.scene.traverse(o => { if (o.isLight && o.intensity) { undo.push([o, o.intensity]); o.intensity = 0; } });
+    const env = e.scene.environmentIntensity, hot = e.mats.turboHot.emissiveIntensity, fl = e.flameLight.intensity;
+    e.scene.environmentIntensity = 0; e.flameLight.intensity = 0;   // (render() lights the fire's pool from it) e.mats.turboHot.emissiveIntensity = 0.35; e.post.bloom.enabled = false;
+    ao.enabled = false; const a = __t.pixels({ only: 'engine', keep: true }).buf;
+    ao.enabled = true; const b = __t.pixels({ only: 'engine', keep: true }).buf;
+    undo.forEach(([o, i]) => { o.intensity = i; });
+    e.scene.environmentIntensity = env; e.mats.turboHot.emissiveIntensity = hot; e.flameLight.intensity = fl; e.post.bloom.enabled = true;
+    window.wallpaperPropertyListener.setPaused(false);
+    let glow = 0, darker = 0;
+    for (let k = 0; k < a.length; k += 4) {
+      const v = Math.max(a[k], a[k + 1], a[k + 2]);
+      if (v <= 24) continue;
+      glow++; if (Math.max(b[k], b[k + 1], b[k + 2]) < v - 6) darker++;
+    }
+    return { glow, darker };
+  });
+  assert.ok(r.glow > 300, `too little glow to test: ${r.glow} pixels`);
+  assert.ok(r.darker <= r.glow * 0.01, `AO darkened the glow: ${r.darker} of ${r.glow} pixels`);
+  await props(P.page, { ambientocclusion: false, turbos: '1' });
+  noErrors('ao glow');
+});
+
 test('highlights on metal and paint stop at white: nothing but glowing parts and fire blooms (the rocking boxer flashed)', async () => {
   await props(P.page, { layout: 'boxer', cylinders: 6, turbos: '1', ignition: false, quality: 'high' });
   await until(P.page, () => __dbg.sim.state === 'off' && __dbg.eng3d.flames.size.every(s => s === 0), null, 30000, 'engine off');

@@ -162,11 +162,14 @@
       cover.position.set(fx + 0.02, (topY + 0.6) / 2 - 0.5, 0); this.eng.add(cover);
       e._pulley(0.36, fx + 0.14, 0, 0, 1);
       this.crankPulley = { x: fx + 0.14, y: 0, z: 0, r: 0.36 };
-      if (!e.ind.blower) e._pulley(0.22, fx + 0.14, Math.min(topY, 1.1), 0, 1.6); // the blower belt runs there
+      const top = e.ind.blower ? null : { y: Math.min(topY, 1.1), z: 0, r: 0.22 };   // with a blower its pulley is there
+      if (top) e._pulley(top.r, fx + 0.14, top.y, 0, 1.6);
       const sz = this.sidePulleyZ(), side = { y: 0.55, z: sz, r: 0.15 };
       e._pulley(side.r, fx + 0.14, side.y, sz, 2.4);
       this._alternator(side, fx);
-      e._belt(fx + 0.14, this.crankPulley, side);   // the crank drives it (the user saw the pulley hang in the air)
+      // one belt from the crank over the alternator and the top pulley (the blower adds its own to it; the user saw
+      // the pulley hang in the air, then a belt that did not reach every pulley)
+      e._belt(fx + 0.14, this.crankPulley, side, ...(top ? [top] : []));
     }
     /* the accessory pulley sits beside the timing cover: an alternator behind it, reaching back to altBack(), held on
        a bracket from the cover's edge (without them it hung in the air) */

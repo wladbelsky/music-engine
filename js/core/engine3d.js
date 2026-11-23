@@ -31,10 +31,10 @@
   const FIRE_LAYER = 1, FIRE_CASTERS = 60, FIRE_SHADOW_EVERY = 3;
   const FIRE_N = 3, FIRE_RANGE = 12, FIRE_LIFT = 0.4, FIRE_SHADOW = 0.45, FIRE_SHADOW_I = 20, FLOOR_ALBEDO = 0.03, FLOOR_MAX = 0.12;
   // ambient occlusion (quality high): GTAO with a world-space radius, at the frame's resolution up to AO_PIXELS (about
-  // 1080p; above that scaled down: at half resolution the noise showed as grain on small parts); AO_FX = how strongly
-  // light from the fire over a pixel cancels its darkening (fire is not occluded by the metal behind it)
+  // 1080p; above that scaled down: at half resolution the noise showed as grain on small parts); AO_FX = how much of
+  // the fire's light and the hot metal's glow in a pixel is kept out of the darkening (neither is ambient light)
   const AO = { radius: 0.6, distanceExponent: 1, thickness: 1, scale: 1.5, samples: 32 }, AO_PD = { radius: 12, samples: 32 };
-  const AO_PIXELS = 2.1e6, AO_K = 1, AO_FX = 4, AO_BRIGHT = [0.6, 1.4];   // AO fades out over this frame brightness
+  const AO_PIXELS = 2.1e6, AO_K = 1, AO_FX = 1, AO_BRIGHT = [0.6, 1.4];   // AO fades out over this frame brightness (highlights)
   // physical materials (stage 5): clear-coated accent paint, heat tint on the exhaust (thin-film iridescence, its
   // strength following the heat across tintRange, never 0: switching a feature off and on recompiles the shader).
   // Anisotropic "brushed" steel was tried and dropped: its stretched highlights went over white and bloomed, on the
@@ -51,6 +51,7 @@
      clipped it at white. Every MeshStandard/Physical material (STANDARD) gets it through three's opaque_fragment
      chunk; emissive is taken out first and added back uncapped. */
   const SPEC_CAP = 1.1;
+  const BELT_T = 0.028;   // belt thickness across the pulley radius (_belt)
   T.ShaderChunk.opaque_fragment = `#ifdef STANDARD
     outgoingLight = min( outgoingLight - totalEmissiveRadiance, vec3( ${SPEC_CAP.toFixed(2)} ) ) + totalEmissiveRadiance;
   #endif
@@ -188,9 +189,11 @@
       lay.buildCase();
       lay.buildCrank(cyls);
       const plen = lay.buildIntake(cyls);
+      this.belts = [];
       lay.buildFront(plen);
       this.parts = window.Induction.parts(this.ind);
       this.parts.forEach(p => p.build(this, lay, plen));
+      this._belts();
       lay.buildRear();
       lay.buildExhaust(cyls);
       // pose the moving parts before grounding: until the first animate() they sit at their origins, and the steam
@@ -273,18 +276,34 @@
     }
     /* a belt between two pulleys {y, z, r} at engine x: two straight runs tangent to both (in the YZ plane, so a
        slanted belt works too) */
-    _belt(x, a, b) {
-      const dy = b.y - a.y, dz = b.z - a.z, D = Math.hypot(dy, dz);
-      if (D <= Math.abs(a.r - b.r)) return;
-      const phi = Math.atan2(dz, dy), al = Math.acos((a.r - b.r) / D);
-      for (const sg of [-1, 1]) {
-        const t = phi + sg * al, ny = Math.cos(t), nz = Math.sin(t);
-        const y1 = a.y + a.r * ny, z1 = a.z + a.r * nz, y2 = b.y + b.r * ny, z2 = b.z + b.r * nz;
-        const len = Math.hypot(y2 - y1, z2 - z1);
-        const strip = new T.Mesh(new T.BoxGeometry(0.1, len, 0.028), this.mats.dark);
-        strip.position.set(x, (y1 + y2) / 2, (z1 + z2) / 2); strip.rotation.x = Math.atan2(z2 - z1, y2 - y1);
-        this.eng.add(strip);
+    /* belts: the layout and the induction parts put their pulleys ({y, z, r}) on the belt of a plane x with
+       _belt(x, ...pulleys); once all are built, _belts() wraps each plane's pulleys in one closed band (their convex
+       hull: the runs between the pulleys and the wraps round them, BELT_T thick). Two belts on one plane (crank to
+       alternator, crank to blower) overlapped, a pulley went without one, and two straight strips per belt showed
+       their square ends at the pulleys as a seam (the user saw all of it) */
+    _belt(x, ...ps) {
+      let b = this.belts.find(b => Math.abs(b.x - x) < 1e-6);
+      if (!b) this.belts.push(b = { x, ps: [] });
+      for (const p of ps) if (!b.ps.some(q => Math.hypot(q.y - p.y, q.z - p.z) < 1e-6 && Math.abs(q.r - p.r) < 1e-6)) b.ps.push(p);
+    }
+    _belts() {
+      const hull = (ps, d) => {      // convex hull (monotone chain) of the pulleys' rims at r + d, as (z, y) points
+        const pts = [];
+        for (const p of ps) for (let k = 0; k < 96; k++) { const t = k / 96 * 2 * Math.PI; pts.push([p.z + (p.r + d) * Math.sin(t), p.y + (p.r + d) * Math.cos(t)]); }
+        pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+        const half = list => { const h = []; for (const q of list) { while (h.length >= 2 && cross(h[h.length - 2], h[h.length - 1], q) <= 0) h.pop(); h.push(q); } h.pop(); return h; };
+        return half(pts).concat(half(pts.slice().reverse()));
+      };
+      const path = (P, pts) => { pts.forEach(([z, y], i) => (i ? P.lineTo(z, y) : P.moveTo(z, y))); P.closePath(); return P; };
+      for (const b of this.belts) {
+        if (b.ps.length < 2) continue;
+        const shape = path(new T.Shape(), hull(b.ps, BELT_T / 2));
+        shape.holes.push(path(new T.Path(), hull(b.ps, -BELT_T / 2)));
+        const geo = this._alongX(new T.ExtrudeGeometry(shape, { depth: 0.1, bevelEnabled: false }), 0.1, b.x + 0.05);
+        this.eng.add(new T.Mesh(geo, this.mats.dark));
       }
+      this.belts = [];
     }
     /* position of cylinder c in its firing cycle at crank angle `crank`, normalised to 0..720
        (period 720; a rotor's cycle is one shaft turn, 360; a double-acting steam cylinder's 180) */
@@ -695,19 +714,29 @@
     /* Ambient occlusion (quality high), a composer pass around three's GTAOPass:
        - its G-buffer (normals + depth, an extra pass over the scene) holds only solid parts: no particles, lines,
          glows, flame meshes or cutaway ghosts (they would cast dark halos), but the floor, for contact darkening;
-       - the fire's own light is drawn once more into a small buffer (depth-tested against that G-buffer), and where
-         it is bright the darkening fades: a flame in front of a crevice is not occluded by it;
+       - the fire's own light and the glow of hot metal (emissive, drawn flat: AO_EMIT) are drawn once more into a
+         buffer (depth-tested against that G-buffer). Neither is ambient light, so the darkening applies only to the
+         rest of the pixel: a flame in front of a crevice is not occluded by it, and AO noise on a cooling turbo's
+         glow showed as grain;
        - the result is multiplied into the frame, and over the transparent floor it adds alpha (black) instead,
          so the contact shadow shows over the page's background.
        The shadow maps are not redrawn by these extra passes. */
     _aoPass() {
       const scene = this.scene, cam = this.camera;
       const g = new T.GTAOPass(scene, cam, 4, 4, undefined, AO, AO_PD);
-      const fx = new T.WebGLRenderTarget(4, 4, { type: T.HalfFloatType });
-      fx.depthTexture = g.depthTexture;
+      const fx = new T.WebGLRenderTarget(4, 4, { type: T.HalfFloatType, samples: 4 });
       const mats = m => Array.isArray(m) ? m : [m];
       const solid = o => o.isMesh && mats(o.material).every(m => !m.transparent || m.isShadowMaterial);
       const light = m => m.blending === T.AdditiveBlending || (m.blending === T.CustomBlending && m.blendDst === T.OneFactor);
+      // a solid part's own light: its emissive glow, or all of an unlit (basic) material's colour (the spark plugs)
+      const ownLight = (m, c) => m.emissive ? c.copy(m.emissive).multiplyScalar(m.emissiveIntensity) : m.isMeshBasicMaterial ? c.copy(m.color) : c.setRGB(0, 0, 0);
+      const tmp = new T.Color(), glows = o => o.isMesh && !Array.isArray(o.material) && solid(o) && Math.max(...ownLight(o.material, tmp).toArray()) > 1e-3;
+      // in that pass the solid parts are drawn flat: their emissive colour (one stand-in per material and side), or
+      // depth only (they hide the fire and the glow behind them). The G-buffer's depth is not shared for that: the
+      // same surface drawn again z-fought with it, a speckle of its own
+      const emit = new WeakMap(), flat = side => new T.MeshBasicMaterial({ color: 0, side });
+      const depthOnly = [T.FrontSide, T.BackSide, T.DoubleSide].map(side => new T.MeshBasicMaterial({ side, colorWrite: false }));
+      const swapped = [];
       const off = [];
       const hide = keep => scene.traverseVisible(o => {
         if (!o.material || !(o.isMesh || o.isPoints || o.isLine || o.isSprite)) return;
@@ -728,13 +757,11 @@
           uniform sampler2D tDiffuse, tAO, tFx; uniform float uK, uFx; varying vec2 vUv;
           void main(){
             vec4 c = texture2D(tDiffuse, vUv);
-            vec3 f = texture2D(tFx, vUv).rgb;
-            float lit = clamp(max(f.r, max(f.g, f.b)) * uFx, 0.0, 1.0);
-            // glowing metal (emissive, above white in the HDR frame) and bright highlights are not ambient light:
-            // AO noise on them showed as dark grain on the hot turbo housings
-            lit = max(lit, smoothstep(AO_BRIGHT.x, AO_BRIGHT.y, max(c.r, max(c.g, c.b))));
+            vec3 own = min(texture2D(tFx, vUv).rgb * uFx, c.rgb);   // fire + glow in this pixel: kept as they are
+            // bright highlights are not ambient light either
+            float lit = smoothstep(AO_BRIGHT.x, AO_BRIGHT.y, max(c.r, max(c.g, c.b)));
             float a = mix(1.0, mix(texture2D(tAO, vUv).r, 1.0, lit), uK);
-            gl_FragColor = vec4(c.rgb * a, 1.0 - (1.0 - c.a) * a);
+            gl_FragColor = vec4((c.rgb - own) * a + own, 1.0 - (1.0 - c.a) * a);
           }`,
         depthTest: false, depthWrite: false, blending: T.NoBlending,
       });
@@ -750,24 +777,38 @@
           rr.getClearColor(cc);
           sm.autoUpdate = false;
           g.render(rr, writeBuffer, readBuffer);                 // G-buffer, AO, denoise
-          hide((o, m) => light(m));                               // the fire's light alone, behind the solid parts
-          rr.setRenderTarget(fx); rr.autoClear = false; rr.setClearColor(0, 0); rr.clear(true, false, false);
+          // the fire's light and the hot metal's glow alone, behind the solid parts
+          hide((o, m) => light(m) || solid(o) || o.isLine);       // the edge lines are unlit: own light too
+          scene.traverseVisible(o => {
+            if (!o.isMesh || !solid(o)) return;
+            const m = o.material, sd = Array.isArray(m) ? T.FrontSide : m.side;
+            let em;
+            if (glows(o)) {
+              let rec = emit.get(m); if (!rec) emit.set(m, rec = {});
+              em = rec[sd] || (rec[sd] = flat(sd));
+              ownLight(m, em.color);
+            } else em = depthOnly[sd];
+            swapped.push(o, m); o.material = em;
+          });
+          rr.setRenderTarget(fx); rr.autoClear = false; rr.setClearColor(0, 0); rr.clear(true, true, false);
           rr.render(scene, cam);
+          for (let i = 0; i < swapped.length; i += 2) swapped[i].material = swapped[i + 1];
+          swapped.length = 0;
           show();
           sm.autoUpdate = au; rr.autoClear = ac; rr.setClearColor(cc, ca);
           mat.uniforms.tDiffuse.value = readBuffer.texture;
           rr.setRenderTarget(writeBuffer); quad.render(rr);
         },
-        // what the AO adds to compile: the G-buffer's normal material on plain and instanced meshes (drawn over the
-        // scene, so compiled against its lights: the light counts are part of every program's key, lit or not), and
+        // what the AO adds to compile: the G-buffer's normal material and the flat glow stand-ins on plain and
+        // instanced meshes (drawn over the scene, so compiled against its lights: the light counts are part of every program's key, lit or not), and
         // its own passes (drawn on a bare quad, no lights)
         programs() {
           const gbuffer = new T.Scene(), passes = new T.Scene(), geo = new T.PlaneGeometry(1, 1);
-          gbuffer.add(new T.Mesh(geo, g.normalMaterial), new T.InstancedMesh(geo, g.normalMaterial, 1));
+          for (const m of [g.normalMaterial, ...[T.FrontSide, T.BackSide, T.DoubleSide].map(flat)]) gbuffer.add(new T.Mesh(geo, m), new T.InstancedMesh(geo, m, 1));
           for (const m of [g.gtaoMaterial, g.pdMaterial, mat]) passes.add(new T.Mesh(geo, m));
           return { gbuffer, passes };
         },
-        dispose() { g.dispose(); fx.dispose(); mat.dispose(); quad.dispose(); },
+        dispose() { g.dispose(); fx.dispose(); mat.dispose(); quad.dispose(); depthOnly.forEach(m => m.dispose()); },
       };
     }
 
