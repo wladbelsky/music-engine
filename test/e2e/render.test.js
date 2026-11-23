@@ -122,7 +122,9 @@ test('ambient occlusion (high only) only darkens the engine and the floor under 
   assert.equal(await P.page.evaluate(() => __dbg.eng3d.post.ao.enabled), false, 'AO on at medium quality');
   await props(P.page, { quality: 'high' });
   assert.equal(await P.page.evaluate(() => __dbg.eng3d.post.ao.enabled), true, 'no AO at high quality');
-  await P.page.evaluate(() => { __dbg.sim.pedalIn = true; });
+  // rev up without it (SwiftShader frames with AO are slow: CI ran out of time waiting for the flames); the frozen
+  // frame below renders with and without it
+  await P.page.evaluate(() => { __dbg.eng3d.post.ao.enabled = false; __dbg.sim.pedalIn = true; });
   await until(P.page, () => __dbg.sim.flame > 0.6, null, 60000, 'flames');
   // one frozen moment: the fire alone (its bright pixels = the mask), the frame without AO, the frame with it
   const r = await P.page.evaluate(() => {
