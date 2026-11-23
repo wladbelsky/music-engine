@@ -120,7 +120,10 @@ test('pause stops the loop; any setPaused sequence leaves exactly one rAF chain'
   const f0 = await ev(() => __dbg.eng3d.renderer.info.render.frame);
   await P.page.waitForTimeout(600);
   assert.equal(await ev(() => __dbg.eng3d.renderer.info.render.frame), f0, 'renders while paused');
-  assert.equal(await pending(), 0);
+  // the callback queued before the pause still runs (and stops there), but it can come late: the browser holds
+  // rAF until the GPU has finished the last frame, over a second with SwiftShader on quality high
+  await until(P.page, () => __t.raf.size === 0, null, 5000, 'the rAF chain ends after a pause');
+  assert.equal(await ev(() => __dbg.eng3d.renderer.info.render.frame), f0, 'renders while paused');
   await ev(() => window.wallpaperPropertyListener.setPaused(false));
   // the next frame, not a fixed 300 ms: after the heavy tests SwiftShader draws one every 200–300 ms
   await until(P.page, f => __dbg.eng3d.renderer.info.render.frame > f, f0, 5000, 'a frame after unpause');

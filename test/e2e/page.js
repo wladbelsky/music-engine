@@ -7,13 +7,24 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const URL0 = 'file://' + path.join(ROOT, 'index.html');
 const ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
 
-const launch = () => chromium.launch({ args: ARGS });
+// PW_CHROMIUM = a Chromium binary to use instead of the one this Playwright version downloads (a sandbox whose
+// preinstalled browser is of another Playwright version: PW_CHROMIUM=/opt/pw-browsers/chromium npm run test:e2e)
+const launch = () => chromium.launch({ args: ARGS, executablePath: process.env.PW_CHROMIUM || undefined });
 
 /* runs before the page's scripts: counters for rAF / DemoSource intervals, a fake WE (optional),
    an in-page beat generator, and a pixel reader for the WebGL canvas */
 function initScript(we) {
   /* eslint-disable no-undef */
   const T = window.__t = { raf: new Set(), intervals30: 0, audioRegs: 0, mediaRegs: {} };
+  // ambient occlusion starts off unless the page's first settings (saved, URL) name it: in SwiftShader it triples
+  // the cost of a frame and the tests waiting for the sim to get somewhere ran out of time (render.test.js and the
+  // panel defaults test turn it on themselves)
+  let L = null;
+  Object.defineProperty(window, 'wallpaperPropertyListener', { configurable: true, get: () => L, set(v) {
+    const apply = v.applyUserProperties.bind(v); let first = true;
+    v.applyUserProperties = p => { if (first) { first = false; if (!('ambientocclusion' in p)) p = Object.assign({ ambientocclusion: { value: false } }, p); } return apply(p); };
+    L = v;
+  } });
   const rAF = window.requestAnimationFrame.bind(window), cAF = window.cancelAnimationFrame.bind(window);
   window.requestAnimationFrame = cb => { const id = rAF(ts => { T.raf.delete(id); cb(ts); }); T.raf.add(id); return id; };
   window.cancelAnimationFrame = id => { T.raf.delete(id); cAF(id); };
@@ -44,7 +55,9 @@ function initScript(we) {
   T.stopBeat = () => clearInterval(T.beatId);
   /* render one frame and read the WebGL canvas back (same task, so no preserveDrawingBuffer needed).
      opts.only: 'engine' hides the ground, contact shadow, flames and smoke; 'fx' hides the engine, ground, contact
-     shadow and smoke (additive effects only). Returns stats in CSS px. */
+     shadow and smoke (additive effects only). Returns stats in CSS px.
+     opts.against (a `keep` buffer of the same frame drawn another way): gained / brighter / darker pixel counts;
+     opts.keepMask = v returns `bright` (pixels brighter than v), opts.mask = such a mask: `mask`, `maskDarker`. */
   T.pixels = (opts = {}) => {
     const e = __dbg.eng3d, r = e.renderer, gl = r.getContext(), undo = [];
     const hide = o => { if (o && o.visible) { o.visible = false; undo.push(o); } };
@@ -53,13 +66,22 @@ function initScript(we) {
     e.render();
     const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight, buf = new Uint8Array(W * H * 4);
     gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    const base = opts.against && opts.against.length === buf.length ? opts.against : null;   // opts.keep: return the pixels for a later `against`
     undo.forEach(o => { o.visible = true; });
     const k = innerWidth / W, ko = opts.keepOut || [], m = opts.margin || 0;
-    const st = { w: W, h: H, opaque: 0, lit: 0, litNoAlpha: 0, bbox: null, inKeepOut: 0, sample: null, near: 0 };
+    const st = { w: W, h: H, opaque: 0, lit: 0, faint: 0, gained: 0, brighter: 0, darker: 0, mask: 0, maskDarker: 0, litNoAlpha: 0, bbox: null, inKeepOut: 0, sample: null, near: 0 };
     let x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const i = (y * W + x) * 4, a = buf[i + 3], rgb = Math.max(buf[i], buf[i + 1], buf[i + 2]);
       const cx = x * k, cy = (H - 1 - y) * k;                         // GL rows are bottom-up
+      if (rgb > 4) st.faint++;                                         // any light at all (a bloom's outer glow)
+      if (base && rgb > 4 && Math.max(base[i], base[i + 1], base[i + 2]) <= 4) st.gained++;   // dark in `against`, lit now
+      if (base) {
+        const d = rgb - Math.max(base[i], base[i + 1], base[i + 2]);
+        if (d > 6) st.brighter++; else if (d < -6 || a > base[i + 3] + 6) st.darker++;
+        if (opts.mask && opts.mask[i / 4] && d < -6) st.maskDarker++;   // darker where the mask is set
+      }
+      if (opts.mask && opts.mask[i / 4]) st.mask++;
       if (rgb > 24) { st.lit++; if (a === 0) st.litNoAlpha++; }
       if (opts.near && rgb > 150 && buf[i] > buf[i + 2] + 40 && Math.hypot(cx - opts.near.x, cy - opts.near.y) < opts.near.r) st.near++;
       if (a < 8) continue;
@@ -68,6 +90,8 @@ function initScript(we) {
       for (const s of ko) if (s.r !== undefined ? Math.hypot(cx - s.x, cy - s.y) < s.r - m : cx > s.x + m && cx < s.x + s.w - m && cy > s.y + m && cy < s.y + s.h - m) { st.inKeepOut++; if (!st.sample) st.sample = { x: cx, y: cy, s }; break; }
     }
     if (x1 >= 0) st.bbox = { x0, x1, y0, y1 };
+    if (opts.keep) st.buf = buf;
+    if (opts.keepMask) { st.bright = new Uint8Array(W * H); for (let j = 0; j < W * H; j++) st.bright[j] = Math.max(buf[4 * j], buf[4 * j + 1], buf[4 * j + 2]) > opts.keepMask ? 1 : 0; }
     return st;
   };
 }
@@ -81,7 +105,7 @@ async function open(browser, query = '', { we = false, w = 1280, h = 720, contex
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
-  page.on('console', m => { const t = m.text(); if (m.type() === 'error' || /THREE\.WebGL(Program|Renderer).*(error|Error)|Shader Error/.test(t)) errors.push('console: ' + t); });
+  page.on('console', m => { const t = m.text(); if (m.type() === 'error' || (m.type() === 'warning' && /^THREE\./.test(t)) || /THREE\.WebGL(Program|Renderer).*(error|Error)|Shader Error/.test(t)) errors.push('console: ' + t); });   // three's warnings count too (a renamed property)
   await page.addInitScript(initScript, we);
   const url = URL0 + (query ? '?' + query : '');
   await page.goto(url);

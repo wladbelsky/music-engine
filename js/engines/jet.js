@@ -66,7 +66,7 @@
     buildCase() {
       const e = this.e, M = this.M, J = this.J;
       // titanium jet pipe and petals that glow with the afterburner, darker blades (less glitter through the casing)
-      this.pipeMat = new T.MeshStandardMaterial({ color: 0x8d9197, metalness: 1, roughness: 0.35, emissive: new T.Color(1.0, 0.35, 0.08), emissiveIntensity: 0 });
+      this.pipeMat = new T.MeshPhysicalMaterial(Object.assign({ color: 0x8d9197, metalness: 1, roughness: 0.35, emissive: new T.Color(1.0, 0.35, 0.08), emissiveIntensity: 0 }, Engine3D.PHYS.tint));
       this.bladeMat = new T.MeshStandardMaterial({ color: 0x80858c, metalness: 0.9, roughness: 0.5 });
       const pts = []; for (let x = X_C0 + 0.1; x >= X_T1 - 0.001; x -= 0.05) pts.push([x, casingR(x)]);
       const cs = this._latheX(pts, M.block, 48); e._edges(cs, J, 20);
@@ -186,6 +186,11 @@
     frameBox(box) { box.min.x -= 1.2; }                 // room for the plume
     glowPoint() { return this.I > 0.02 ? this._wJ(this.nozzleL).add(this._dirW().multiplyScalar(1.2)) : this._wJ(this.nozzleL); }
     _wJ(v) { return this.J.localToWorld(v.clone()); }
+    /* the nozzle and, with the afterburner lit, a light further down the plume */
+    fireLights() {
+      const p = this._wJ(this.nozzleL), d = this._dirW();
+      return [{ p: p.clone().addScaledVector(d, 0.6), w: 1 }, { p: p.addScaledVector(d, 2.6), w: Math.min(1, this.I) * 0.9 }];
+    }
     _dirW() { return new T.Vector3(-1, 0, 0).applyQuaternion(this.J.getWorldQuaternion(new T.Quaternion())); }
 
     exhaustPulse() {}
@@ -230,6 +235,7 @@
       M.turboHot.emissiveIntensity = clamp((sim.boost - 3.2) / 5, 0, 1) * 0.9;
       this.heat = (this.heat || 0) + ((run ? 0.08 * sim.throttle + 0.75 * clamp(this.I, 0, 1) : 0) - (this.heat || 0)) * (1 - Math.exp(-dt / 1.5));
       this.pipeMat.emissiveIntensity = this.heat;
+      const tr = Engine3D.PHYS.tintRange; this.pipeMat.iridescence = tr[0] + (tr[1] - tr[0]) * Math.min(1, Math.max(0, this.heat));
       // afterburner intensity: the flame state plus bursts on beats
       this.burst *= Math.exp(-dt / 0.25);
       const tgt = sim.flame * 1.05 + this.burst;

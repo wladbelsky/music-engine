@@ -4,7 +4,7 @@
 (function () {
   'use strict';
   const T = THREE;
-  const { makeNoiseTexture, ParticleSystem } = window.EngineFX;
+  const { makeNoiseTexture, ParticleSystem, addBlend } = window.EngineFX;
   const DEG = Math.PI / 180;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -21,14 +21,57 @@
     const o = []; for (let i = 0; i < m; i += 2) o.push(i); for (let i = 1; i < m; i += 2) o.push(i); return o;
   }
 
+  /* three r155+ lights are physical. The scene was lit by eye with the old ones, which were PI times brighter for
+     the same number (LEGACY). The flame light's intensity is still written in the old units: FLAME_K converts it. */
+  const LEGACY = Math.PI, FLAME_K = 10, SHADOW_R = 2, COMPILE_CAP = 4000;
+  const HOT = 2;
+  // fire lights (stage 3): FIRE_N physical point lights; FLAME_K converts flameLight's old units (tuned by eye),
+  // FIRE_LIFT raises the layout's points a little off the flame's base, the flame shadow is at most FIRE_SHADOW
+  // strong (reached at intensity FIRE_SHADOW_I), FLOOR_ALBEDO = how much of the fire light the floor sends back
+  const FIRE_LAYER = 1, FIRE_CASTERS = 60, FIRE_SHADOW_EVERY = 3;
+  const FIRE_N = 3, FIRE_RANGE = 12, FIRE_LIFT = 0.4, FIRE_SHADOW = 0.45, FIRE_SHADOW_I = 20, FLOOR_ALBEDO = 0.03, FLOOR_MAX = 0.12;
+  // ambient occlusion (quality high): GTAO with a world-space radius, at the frame's resolution up to AO_PIXELS (about
+  // 1080p; above that scaled down: at half resolution the noise showed as grain on small parts); AO_FX = how much of
+  // the fire's light and the hot metal's glow in a pixel is kept out of the darkening (neither is ambient light)
+  const AO = { radius: 0.6, distanceExponent: 1, thickness: 1, scale: 1.5, samples: 32 }, AO_PD = { radius: 12, samples: 32 };
+  const AO_PIXELS = 2.1e6, AO_K = 1, AO_FX = 1, AO_BRIGHT = [0.6, 1.4];   // AO fades out over this frame brightness (highlights)
+  // physical materials (stage 5): clear-coated accent paint, heat tint on the exhaust (thin-film iridescence, its
+  // strength following the heat across tintRange, never 0: switching a feature off and on recompiles the shader).
+  // Anisotropic "brushed" steel was tried and dropped: its stretched highlights went over white and bloomed, on the
+  // turbo housings even at 0.3 with the engine off.
+  const PHYS = {
+    paint: { clearcoat: 1, clearcoatRoughness: 0.2 },   // 0.08 flashed like a mirror as the engine rocked
+    tint: { iridescence: 0.35, iridescenceIOR: 1.8, iridescenceThicknessMinimum: 180, iridescenceThicknessMaximum: 520 },
+    tintRange: [0.35, 1],
+  };
+  const BLOOM = { strength: 0.03, radius: 0.3, threshold: 1.2 };
+  /* Reflected light on the metal and paint stops just above white (SPEC_CAP, under the bloom threshold); only what
+     glows (emissive hot metal, fire) goes beyond. In the HDR frame a highlight of the key light on a flat face (the
+     boxer's heads as it rocked) went far over white and the bloom made it a flash into the camera; r149's frame
+     clipped it at white. Every MeshStandard/Physical material (STANDARD) gets it through three's opaque_fragment
+     chunk; emissive is taken out first and added back uncapped. */
+  const SPEC_CAP = 1.1;
+  const BELT_T = 0.028;   // belt thickness across the pulley radius (_belt)
+  T.ShaderChunk.opaque_fragment = `#ifdef STANDARD
+    outgoingLight = min( outgoingLight - totalEmissiveRadiance, vec3( ${SPEC_CAP.toFixed(2)} ) ) + totalEmissiveRadiance;
+  #endif
+  ` + T.ShaderChunk.opaque_fragment;
+
   class Engine3D {
     constructor(canvas) {
       this.canvas = canvas;
       const r = this.renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
       r.setClearColor(0x000000, 0);
-      r.outputEncoding = T.sRGBEncoding;
+      // three r152+ converts hex colours from sRGB by default; the palette here was picked by eye as raw values,
+      // so colour management stays off (the lighting maths is linear either way)
+      T.ColorManagement.enabled = false; r.outputColorSpace = T.SRGBColorSpace;
       r.toneMapping = T.ACESFilmicToneMapping; r.toneMappingExposure = 1.05;
-      r.shadowMap.enabled = true; r.shadowMap.type = T.PCFSoftShadowMap;
+      // an HDR frame buffer needs float render targets (always there in WebGL 2 on desktop; the fallback draws
+      // straight to the canvas like quality low)
+      this.hdr = !!(r.extensions && (r.extensions.has('EXT_color_buffer_float') || r.extensions.has('EXT_color_buffer_half_float')));
+      this.post = null;
+      if (r.info) r.info.autoReset = false;         // a frame is several renders now: render() resets the counters itself
+      r.shadowMap.enabled = true; r.shadowMap.type = T.PCFShadowMap;   // hardware PCF; the softness is key.shadow.radius
 
       this.scene = new T.Scene();
       this.camera = new T.PerspectiveCamera(30, 16 / 9, 0.1, 200);
@@ -46,7 +89,7 @@
       this.scene.add(this.flames.points, this.smoke.points);
 
       this.accent = new T.Color(0.75, 0.08, 0.06);
-      this.cutaway = true; this.quality = 'high';
+      this.cutaway = true; this.quality = 'high'; this.ao = true;   // ao: ambient occlusion at quality high (a property)
       this.crank = 0; this.crankTotal = 0; this.heat = 0; this.flash = 0; this.rock = 0; this.jolt = 0; this.joltV = 0; this._kick0 = 0;
       this._rotM = new T.Matrix4(); this._eul = new T.Euler(); this.lift = 0; this.mountY = 0; this.sway = 1; this.lean = 0; this.vibA = 0; this.ph1 = 0; this.ph2 = 0; this.ph3 = 0; this.phI = 0;
       this.root = null;
@@ -72,13 +115,24 @@
 
     _lights() {
       const s = this.scene;
-      s.add(new T.HemisphereLight(0x8090a0, 0x201810, 0.35));
-      const key = this.key = new T.DirectionalLight(0xfff1e0, 1.6);
+      s.add(new T.HemisphereLight(0x8090a0, 0x201810, 0.35 * LEGACY));
+      const key = this.key = new T.DirectionalLight(0xfff1e0, 1.6 * LEGACY);
       key.position.set(6, 10, 7); key.castShadow = true;
-      key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0004; key.shadow.normalBias = 0.035;
+      key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0004; key.shadow.normalBias = 0.035; key.shadow.radius = SHADOW_R;
       s.add(key); s.add(key.target);
-      const rim = new T.DirectionalLight(0x88aaff, 0.9); rim.position.set(-8, 5, -6); s.add(rim);
-      this.flameLight = new T.PointLight(0xff7a2a, 0, 9, 2); s.add(this.flameLight);
+      const rim = new T.DirectionalLight(0x88aaff, 0.9 * LEGACY); rim.position.set(-8, 5, -6); s.add(rim);
+      // flameLight is the fire's light as the core and the layouts drive it (old, pre-physical units; recoloured by
+      // some layouts). It is not in the scene: render() hands it to FIRE_N physical point lights (inverse square)
+      // placed where the layout says the fire is (fireLights()), so the light falls off across a big engine. A
+      // fixed number of lights: changing the count would recompile every shader.
+      this.flameLight = new T.PointLight(0xff7a2a, 0, 9, 0); this.flameK = FLAME_K;
+      this.fire = [];
+      for (let i = 0; i < FIRE_N; i++) { const L = new T.PointLight(0xff7a2a, 0, FIRE_RANGE, 2); this.fire.push(L); s.add(L); }
+      // the brightest one casts shadows on quality high: the engine's shadow from its own fire, flickering with it
+      const fs = this.fire[0].shadow;
+      fs.camera.layers.set(FIRE_LAYER);
+      fs.mapSize.set(512, 512); fs.camera.near = 0.05; fs.camera.far = FIRE_RANGE; fs.bias = -0.002; fs.normalBias = 0.02; fs.radius = 3; fs.intensity = 0;
+      this.floorGlow = this._floorGlow(); s.add(this.floorGlow);
       this.ground = new T.Mesh(new T.PlaneGeometry(60, 60), new T.ShadowMaterial({ opacity: 0.55 }));
       this.ground.rotation.x = -Math.PI / 2; this.ground.receiveShadow = true; s.add(this.ground);
     }
@@ -92,6 +146,11 @@
       const ms = q === 'high' ? 2048 : 1024;
       if (this.key.shadow.mapSize.x !== ms) { this.key.shadow.mapSize.set(ms, ms); if (this.key.shadow.map) { this.key.shadow.map.dispose(); this.key.shadow.map = null; } }
       this.ground.visible = q !== 'low';
+      this.floorGlow.visible = q !== 'low';
+      if (this.contact) this.contact.visible = q === 'low';
+      this.fire[0].castShadow = q === 'high';
+      this._setPost(q !== 'low' && this.hdr);
+      if (this.post) this.post.ao.enabled = q === 'high' && this.ao;
       this.resize(this.w, this.h);
     }
 
@@ -130,9 +189,11 @@
       lay.buildCase();
       lay.buildCrank(cyls);
       const plen = lay.buildIntake(cyls);
+      this.belts = [];
       lay.buildFront(plen);
       this.parts = window.Induction.parts(this.ind);
       this.parts.forEach(p => p.build(this, lay, plen));
+      this._belts();
       lay.buildRear();
       lay.buildExhaust(cyls);
       // pose the moving parts before grounding: until the first animate() they sit at their origins, and the steam
@@ -149,17 +210,19 @@
       this.box = new T.Box3().setFromObject(eng);
       this.ground.position.y = 0;
       this.baseY = this.mountY = eng.position.y; this.lift = 0;
-      // soft contact shadow (works on any background, also on 'low' quality)
+      // soft contact shadow under the engine: only on quality low, which has no shadow maps (medium/high cast the
+      // real shadows, and high adds the AO's contact darkening; the user asked for the dark disc to go there)
       const sz = this.box.getSize(new T.Vector3());
       const cs = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ alphaMap: this._blobTex(), transparent: true, depthWrite: false, color: 0x000000, opacity: 0.6 }));
       cs.rotation.x = -Math.PI / 2; cs.scale.set(sz.x * 1.45, sz.z * 1.6, 1);
       const cc0 = this.box.getCenter(new T.Vector3()); cs.position.set(cc0.x, 0.012, cc0.z); cs.renderOrder = 1;
-      root.add(cs);
+      root.add(cs); this.contact = cs; cs.visible = this.quality === 'low';
       eng.traverse(o => { if (o.isMesh) { const tr = o.material.transparent; o.castShadow = !tr; o.receiveShadow = !tr; } });
       this.scene.add(root);
       this._applyCutaway();
       this._fitPts = this._fitPoints();
       this._frame();
+      this._precompile();
     }
 
     /* the lowest vertex per (x, z) cell, engine-local: a small rolled/pitched block can't put anything else lower,
@@ -211,6 +274,37 @@
       this.eng.add(g); this.spin(g, ratio);
       return g;
     }
+    /* a belt between two pulleys {y, z, r} at engine x: two straight runs tangent to both (in the YZ plane, so a
+       slanted belt works too) */
+    /* belts: the layout and the induction parts put their pulleys ({y, z, r}) on the belt of a plane x with
+       _belt(x, ...pulleys); once all are built, _belts() wraps each plane's pulleys in one closed band (their convex
+       hull: the runs between the pulleys and the wraps round them, BELT_T thick). Two belts on one plane (crank to
+       alternator, crank to blower) overlapped, a pulley went without one, and two straight strips per belt showed
+       their square ends at the pulleys as a seam (the user saw all of it) */
+    _belt(x, ...ps) {
+      let b = this.belts.find(b => Math.abs(b.x - x) < 1e-6);
+      if (!b) this.belts.push(b = { x, ps: [] });
+      for (const p of ps) if (!b.ps.some(q => Math.hypot(q.y - p.y, q.z - p.z) < 1e-6 && Math.abs(q.r - p.r) < 1e-6)) b.ps.push(p);
+    }
+    _belts() {
+      const hull = (ps, d) => {      // convex hull (monotone chain) of the pulleys' rims at r + d, as (z, y) points
+        const pts = [];
+        for (const p of ps) for (let k = 0; k < 96; k++) { const t = k / 96 * 2 * Math.PI; pts.push([p.z + (p.r + d) * Math.sin(t), p.y + (p.r + d) * Math.cos(t)]); }
+        pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+        const half = list => { const h = []; for (const q of list) { while (h.length >= 2 && cross(h[h.length - 2], h[h.length - 1], q) <= 0) h.pop(); h.push(q); } h.pop(); return h; };
+        return half(pts).concat(half(pts.slice().reverse()));
+      };
+      const path = (P, pts) => { pts.forEach(([z, y], i) => (i ? P.lineTo(z, y) : P.moveTo(z, y))); P.closePath(); return P; };
+      for (const b of this.belts) {
+        if (b.ps.length < 2) continue;
+        const shape = path(new T.Shape(), hull(b.ps, BELT_T / 2));
+        shape.holes.push(path(new T.Path(), hull(b.ps, -BELT_T / 2)));
+        const geo = this._alongX(new T.ExtrudeGeometry(shape, { depth: 0.1, bevelEnabled: false }), 0.1, b.x + 0.05);
+        this.eng.add(new T.Mesh(geo, this.mats.dark));
+      }
+      this.belts = [];
+    }
     /* position of cylinder c in its firing cycle at crank angle `crank`, normalised to 0..720
        (period 720; a rotor's cycle is one shaft turn, 360; a double-acting steam cylinder's 180) */
     _cyc(c, crank) { const per = c.period || 720; return (((crank - c.phase) % per + per) % per) * 720 / per; }
@@ -228,26 +322,32 @@
     }
 
     _materials() {
+      // glowing metal goes above white at full heat (HOT), so it blooms; the intensities stay 0..1-ish as before
+      const hot = (r, g, b) => new T.Color(r, g, b).multiplyScalar(HOT);
       const std = (c, m, r, extra) => new T.MeshStandardMaterial(Object.assign({ color: c, metalness: m, roughness: r }, extra || {}));
+      // physical materials where they show: a clear coat on the accent paint, heat tint (iridescence: a thin oxide
+      // film) on the exhaust; the PHYS values stay above 0 so a change never switches a shader feature on or off
+      // (that would recompile)
+      const phys = (c, m, r, extra) => new T.MeshPhysicalMaterial(Object.assign({ color: c, metalness: m, roughness: r }, extra || {}));
       return {
         block: std(0x2c2f34, 0.85, 0.45),
         liner: std(0x9aa0a8, 0.9, 0.3, { transparent: true, opacity: 0.25, depthWrite: false, side: T.DoubleSide }),
         head: std(0x70757d, 0.92, 0.34),
-        cover: std(this.accent.clone(), 0.55, 0.28),
+        cover: phys(this.accent.clone(), 0.55, 0.28, PHYS.paint),
         steel: std(0xa9adb3, 1.0, 0.25),
-        piston: std(0xb0b4ba, 1.0, 0.3, { emissive: new T.Color(1.0, 0.45, 0.12), emissiveIntensity: 0 }),
+        piston: std(0xb0b4ba, 1.0, 0.3, { emissive: hot(1.0, 0.45, 0.12), emissiveIntensity: 0 }),
         dark: std(0x141518, 0.3, 0.65),
         dark2: std(0x202226, 0.7, 0.45),
         spark: new T.MeshBasicMaterial({ color: 0x331a0a }),
-        header: std(0xa89a8e, 1.0, 0.28, { emissive: new T.Color(1.0, 0.32, 0.06), emissiveIntensity: 0 }),
-        soot: std(0x17120f, 0.4, 0.85, { side: T.DoubleSide, emissive: new T.Color(1.0, 0.38, 0.08), emissiveIntensity: 0 }),
+        header: phys(0xa89a8e, 1.0, 0.28, Object.assign({ emissive: hot(1.0, 0.32, 0.06), emissiveIntensity: 0 }, PHYS.tint)),
+        soot: std(0x17120f, 0.4, 0.85, { side: T.DoubleSide, emissive: hot(1.0, 0.38, 0.08), emissiveIntensity: 0 }),
         pulley: std(0x2b2d31, 0.9, 0.35),
         turbo: std(0x9a9ea5, 0.95, 0.3),
-        turboHot: std(0x6b5e55, 0.9, 0.4, { emissive: new T.Color(1.0, 0.3, 0.05), emissiveIntensity: 0 }),
+        turboHot: std(0x6b5e55, 0.9, 0.4, { emissive: hot(1.0, 0.3, 0.05), emissiveIntensity: 0 }),
         blower: std(0xc4c8ce, 0.95, 0.28),
         blowerCase: std(0xb4b8be, 0.95, 0.3),   // ghosts in cutaway mode so the rotors show
         brass: std(0xc8a24a, 1.0, 0.3),
-        fire: std(0x2a1208, 0.2, 0.8, { emissive: new T.Color(1.0, 0.42, 0.1), emissiveIntensity: 0 }), // firebox door, combustor cans
+        fire: std(0x2a1208, 0.2, 0.8, { emissive: hot(1.0, 0.42, 0.1), emissiveIntensity: 0 }), // firebox door, combustor cans
         edge: new T.LineBasicMaterial({ color: 0x9aa3ad, transparent: true, opacity: 0.35 }),
       };
     }
@@ -289,6 +389,7 @@
       this.cyls.forEach(c => c.moving.forEach(o => { o.visible = on; }));
       M.liner.visible = on;
       this.root.traverse(o => { if (o.isMesh && (o.material === M.block || o.material === M.blowerCase)) { o.castShadow = !on; o.receiveShadow = !on; } });
+      this._fireCasters(this.eng);   // the ghosts stop casting in cutaway: their slots go to parts that do
     }
     setCutaway(on) { this.cutaway = on; if (this.root) this._applyCutaway(); }
     setAccent(c) { this.accent.copy(c); if (this.mats) this.mats.cover.color.copy(c); }
@@ -305,6 +406,7 @@
     resize(w, h, dashSide) {
       this.w = w; this.h = h; if (dashSide) this.dashSide = dashSide;
       this.renderer.setSize(w, h, false);
+      if (this.post) { this.post.composer.setPixelRatio(this.renderer.getPixelRatio()); this.post.composer.setSize(w, h); }
       this._frame();
     }
     _frame() {
@@ -453,6 +555,7 @@
       const heatT = clamp(sim.flame * 0.7 + Math.max(0, rpm / Math.max(500, sim.settings.redline || 7000) - 0.55) * 0.6 + Math.max(0, sim.temp - 100) / 40, 0, 1);
       this.heat += (heatT - this.heat) * (1 - Math.exp(-dt / 1.8));
       this.mats.header.emissiveIntensity = this.heat * 0.9;
+      this.mats.header.iridescence = PHYS.tintRange[0] + (PHYS.tintRange[1] - PHYS.tintRange[0]) * clamp(this.heat, 0, 1);
       this.mats.soot.emissiveIntensity = clamp(sim.flame * 1.2 + this.flash * 2 + this.heat * 0.3, 0, 1.6);
       this.mats.turboHot.emissiveIntensity = clamp(this.heat * 0.7 + Math.max(0, sim.boost) * 0.25, 0, 1);
 
@@ -465,6 +568,7 @@
       if (gp) this.flameLight.position.copy(gp).add(new T.Vector3(0, 0.4, 0));
       this.flameLight.intensity = gp ? (sim.flame * 2.2 + this.flash * 4) * (0.85 + Math.random() * 0.3) : 0;
       lay.updateFx(dt, sim, quality);             // the layout's effects (flame jets, steam, plume...)
+      this._firePts = gp ? lay.fireLights() : null;   // world space, after the sway (no Math.random: the traces)
       this.shake *= Math.exp(-dt / 0.12);
       if (this.camBase) {
         this.camera.position.copy(this.camBase);
@@ -551,11 +655,247 @@
       return { x: (v.x + 1) / 2 * this.w, y: (1 - v.y) / 2 * this.h };
     }
 
-    render() { this.renderer.render(this.scene, this.camera); }
+    /* Shaders are compiled off the main thread before a new build is shown (three's compileAsync,
+       KHR_parallel_shader_compile): compiling them in the first render() froze the page for that frame, which the
+       user saw as the splash standing still. Until they are ready render() draws nothing, so the splash (or the
+       previous engine's last frame) stays; a newer build supersedes an older one, and a cap in case the
+       driver never reports back. */
+    _precompile() {
+      const r = this.renderer;
+      // without the extension three would compile synchronously anyway (and warn): leave that to the first render
+      if (!r.compileAsync || !r.extensions.has('KHR_parallel_shader_compile')) return;
+      const id = this._compileId = (this._compileId || 0) + 1;
+      const done = () => { if (id === this._compileId) this.compiling = false; };
+      this.compiling = true;
+      setTimeout(done, COMPILE_CAP);
+      // the programs differ per target (no tone mapping / encoding into the HDR buffer): compile for the one in use
+      try {
+        if (this.post) r.setRenderTarget(this.post.composer.readBuffer);
+        // three compiles only what is visible: everything hidden (flash rings, arcs, flame meshes, parts of other
+        // quality levels) is shown for the synchronous part, or it would compile when it first appears, mid-song
+        const jobs = [this._showingAll(() => r.compileAsync(this.scene, this.camera))];
+        if (this.post && this.post.ao.enabled) {
+          const p = this.post.ao.programs();
+          jobs.push(r.compileAsync(p.gbuffer, this.camera, this.scene), r.compileAsync(p.passes, this.camera));
+        }
+        Promise.all(jobs).then(done, done);
+      } catch (e) { done(); }
+      if (this.post) r.setRenderTarget(null);
+    }
+
+    /* fn() with every hidden object of the scene shown (lights stay as they are: the set of lights is part of
+       every program) */
+    _showingAll(fn) {
+      const hidden = [];
+      this.scene.traverse(o => { if (!o.visible && !o.isLight) hidden.push(o); });
+      hidden.forEach(o => { o.visible = true; });
+      try { return fn(); } finally { hidden.forEach(o => { o.visible = false; }); }
+    }
+
+    /* Post-processing (quality medium/high): the scene goes into a linear half-float buffer (MSAA), the parts brighter
+       than white bloom, and the whole frame is tone mapped and encoded at the end (OutputPass reads the renderer's
+       toneMapping/exposure). The bloom is added with addBlend, so like every other glow here it leaves the
+       canvas's alpha alone and shows over the page's background. Low draws straight to the canvas. */
+    _setPost(on) {
+      if (!on) { if (this.post) { this.post.composer.passes.forEach(p => p.dispose && p.dispose()); this.post.composer.dispose(); this.post = null; } return; }   // every pass (OutputPass holds a material too)
+      if (this.post) return;
+      const composer = new T.EffectComposer(this.renderer, new T.WebGLRenderTarget(4, 4, { type: T.HalfFloatType, samples: 4 }));
+      const bloom = new T.UnrealBloomPass(new T.Vector2(4, 4), BLOOM.strength, BLOOM.radius, BLOOM.threshold);
+      addBlend(bloom.blendMaterial);
+      const ao = this._aoPass();
+      composer.addPass(new T.RenderPass(this.scene, this.camera));
+      composer.addPass(ao);
+      composer.addPass(bloom);
+      composer.addPass(new T.OutputPass());
+      this.post = { composer, bloom, ao };
+      ao.enabled = this.quality === 'high' && this.ao;
+    }
+
+    /* Ambient occlusion (quality high), a composer pass around three's GTAOPass:
+       - its G-buffer (normals + depth, an extra pass over the scene) holds only solid parts: no particles, lines,
+         glows, flame meshes or cutaway ghosts (they would cast dark halos), but the floor, for contact darkening;
+       - the fire's own light and the glow of hot metal (emissive, drawn flat: AO_EMIT) are drawn once more into a
+         buffer (depth-tested against that G-buffer). Neither is ambient light, so the darkening applies only to the
+         rest of the pixel: a flame in front of a crevice is not occluded by it, and AO noise on a cooling turbo's
+         glow showed as grain;
+       - the result is multiplied into the frame, and over the transparent floor it adds alpha (black) instead,
+         so the contact shadow shows over the page's background.
+       The shadow maps are not redrawn by these extra passes. */
+    _aoPass() {
+      const scene = this.scene, cam = this.camera;
+      const g = new T.GTAOPass(scene, cam, 4, 4, undefined, AO, AO_PD);
+      const fx = new T.WebGLRenderTarget(4, 4, { type: T.HalfFloatType, samples: 4 });
+      const mats = m => Array.isArray(m) ? m : [m];
+      const solid = o => o.isMesh && mats(o.material).every(m => !m.transparent || m.isShadowMaterial);
+      const light = m => m.blending === T.AdditiveBlending || (m.blending === T.CustomBlending && m.blendDst === T.OneFactor);
+      // a solid part's own light: its emissive glow, or all of an unlit (basic) material's colour (the spark plugs)
+      const ownLight = (m, c) => m.emissive ? c.copy(m.emissive).multiplyScalar(m.emissiveIntensity) : m.isMeshBasicMaterial ? c.copy(m.color) : c.setRGB(0, 0, 0);
+      const tmp = new T.Color(), glows = o => o.isMesh && !Array.isArray(o.material) && solid(o) && Math.max(...ownLight(o.material, tmp).toArray()) > 1e-3;
+      // in that pass the solid parts are drawn flat: their emissive colour (one stand-in per material and side), or
+      // depth only (they hide the fire and the glow behind them). The G-buffer's depth is not shared for that: the
+      // same surface drawn again z-fought with it, a speckle of its own
+      const emit = new WeakMap(), flat = side => new T.MeshBasicMaterial({ color: 0, side });
+      const depthOnly = [T.FrontSide, T.BackSide, T.DoubleSide].map(side => new T.MeshBasicMaterial({ side, colorWrite: false }));
+      const swapped = [];
+      const off = [];
+      const hide = keep => scene.traverseVisible(o => {
+        if (!o.material || !(o.isMesh || o.isPoints || o.isLine || o.isSprite)) return;
+        for (const m of mats(o.material)) if (m.visible && !keep(o, m)) { m.visible = false; off.push(m); }
+      });
+      const show = () => { for (const m of off) m.visible = true; off.length = 0; };
+      // three's Poisson denoise picks a noise channel with noiseTexel[index % 4]: a dynamic vec4 index, which D3D's
+      // shader compiler warns about on every compile (X4000 in WE's console); the same channel by a dot product
+      g.pdMaterial.fragmentShader = g.pdMaterial.fragmentShader.split('noiseTexel[index % 4]').join('dot(noiseTexel, vec4(equal(ivec4(index % 4), ivec4(0, 1, 2, 3))))');
+      g.pdMaterial.needsUpdate = true;
+      g._overrideVisibility = () => hide(o => solid(o));
+      g._restoreVisibility = show;
+      g.output = T.GTAOPass.OUTPUT.Off;
+      const mat = new T.ShaderMaterial({
+        uniforms: { tDiffuse: { value: null }, tAO: { value: g.pdRenderTarget.texture }, tFx: { value: fx.texture }, uK: { value: AO_K }, uFx: { value: AO_FX } },
+        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: `#define AO_BRIGHT vec2(${AO_BRIGHT[0].toFixed(2)}, ${AO_BRIGHT[1].toFixed(2)})
+          uniform sampler2D tDiffuse, tAO, tFx; uniform float uK, uFx; varying vec2 vUv;
+          void main(){
+            vec4 c = texture2D(tDiffuse, vUv);
+            vec3 own = min(texture2D(tFx, vUv).rgb * uFx, c.rgb);   // fire + glow in this pixel: kept as they are
+            // bright highlights are not ambient light either
+            float lit = smoothstep(AO_BRIGHT.x, AO_BRIGHT.y, max(c.r, max(c.g, c.b)));
+            float a = mix(1.0, mix(texture2D(tAO, vUv).r, 1.0, lit), uK);
+            gl_FragColor = vec4((c.rgb - own) * a + own, 1.0 - (1.0 - c.a) * a);
+          }`,
+        depthTest: false, depthWrite: false, blending: T.NoBlending,
+      });
+      const quad = new T.FullScreenQuad(mat), cc = new T.Color();
+      return {
+        enabled: true, needsSwap: true, clear: false, renderToScreen: false, gtao: g, fx, material: mat,
+        setSize(w, h) {
+          const k = Math.min(1, Math.sqrt(AO_PIXELS / Math.max(1, w * h))), aw = Math.max(1, Math.round(w * k)), ah = Math.max(1, Math.round(h * k));
+          g.setSize(aw, ah); fx.setSize(aw, ah);
+        },
+        render(rr, writeBuffer, readBuffer) {
+          const sm = rr.shadowMap, au = sm.autoUpdate, ac = rr.autoClear, ca = rr.getClearAlpha();
+          rr.getClearColor(cc);
+          sm.autoUpdate = false;
+          g.render(rr, writeBuffer, readBuffer);                 // G-buffer, AO, denoise
+          // the fire's light and the hot metal's glow alone, behind the solid parts
+          hide((o, m) => light(m) || solid(o) || o.isLine);       // the edge lines are unlit: own light too
+          scene.traverseVisible(o => {
+            if (!o.isMesh || !solid(o)) return;
+            const m = o.material, sd = Array.isArray(m) ? T.FrontSide : m.side;
+            let em;
+            if (glows(o)) {
+              let rec = emit.get(m); if (!rec) emit.set(m, rec = {});
+              em = rec[sd] || (rec[sd] = flat(sd));
+              ownLight(m, em.color);
+            } else em = depthOnly[sd];
+            swapped.push(o, m); o.material = em;
+          });
+          rr.setRenderTarget(fx); rr.autoClear = false; rr.setClearColor(0, 0); rr.clear(true, true, false);
+          rr.render(scene, cam);
+          for (let i = 0; i < swapped.length; i += 2) swapped[i].material = swapped[i + 1];
+          swapped.length = 0;
+          show();
+          sm.autoUpdate = au; rr.autoClear = ac; rr.setClearColor(cc, ca);
+          mat.uniforms.tDiffuse.value = readBuffer.texture;
+          rr.setRenderTarget(writeBuffer); quad.render(rr);
+        },
+        // what the AO adds to compile: the G-buffer's normal material and the flat glow stand-ins on plain and
+        // instanced meshes (drawn over the scene, so compiled against its lights: the light counts are part of every program's key, lit or not), and
+        // its own passes (drawn on a bare quad, no lights)
+        programs() {
+          const gbuffer = new T.Scene(), passes = new T.Scene(), geo = new T.PlaneGeometry(1, 1);
+          for (const m of [g.normalMaterial, ...[T.FrontSide, T.BackSide, T.DoubleSide].map(flat)]) gbuffer.add(new T.Mesh(geo, m), new T.InstancedMesh(geo, m, 1));
+          for (const m of [g.gtaoMaterial, g.pdMaterial, mat]) passes.add(new T.Mesh(geo, m));
+          return { gbuffer, passes };
+        },
+        dispose() { g.dispose(); fx.dispose(); mat.dispose(); quad.dispose(); depthOnly.forEach(m => m.dispose()); },
+      };
+    }
+
+    /* the light of the fire on the floor: the ground is only a shadow catcher, so a lit pool under the flames is
+       drawn as an additive disc (irradiance of each fire light on a horizontal plane, h / d^3). The engine hides it
+       through the depth test; the flame shadow on the ground (ShadowMaterial) darkens it where the engine stands. */
+    _floorGlow() {
+      const m = new T.ShaderMaterial({
+        uniforms: { uPos: { value: [0, 1, 2].map(() => new T.Vector3()) }, uCol: { value: [0, 1, 2].map(() => new T.Color(0, 0, 0)) }, uAlb: { value: FLOOR_ALBEDO } },
+        vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+        fragmentShader: `#define FLOOR_MAX ${FLOOR_MAX.toFixed(3)}
+          uniform vec3 uPos[${FIRE_N}]; uniform vec3 uCol[${FIRE_N}]; uniform float uAlb; varying vec3 vW;
+          void main(){
+            vec3 c = vec3(0.0);
+            for (int i = 0; i < ${FIRE_N}; i++) { vec3 d = uPos[i] - vW; float h = max(d.y, 0.05); float r2 = dot(d, d) + 0.04;
+              c += uCol[i] * h / (r2 * sqrt(r2)) * (1.0 - smoothstep(0.6, 1.0, sqrt(r2) / ${FIRE_RANGE.toFixed(1)})); }
+            vec3 g = c * uAlb; g = g * FLOOR_MAX / (FLOOR_MAX + g);   // a soft ceiling: a low, bright fire (the rocket) burnt the floor white
+            gl_FragColor = vec4(g, 0.0);
+            #include <tonemapping_fragment>
+            #include <colorspace_fragment>
+          }`,
+        transparent: true, depthWrite: false,
+      });
+      addBlend(m);
+      const g = new T.Mesh(new T.PlaneGeometry(2 * FIRE_RANGE, 2 * FIRE_RANGE), m);
+      g.rotation.x = -Math.PI / 2; g.position.y = 0.004; g.renderOrder = 2; g.frustumCulled = false; g.visible = false;
+      return g;
+    }
+
+    /* The flame's shadow is a cube map: six passes over its casters. Over every mesh (up to ~800 on the marine
+       engine) that cost more than the rest of the frame, so only the FIRE_CASTERS biggest parts are on FIRE_LAYER,
+       the only layer the flame's shadow camera renders. (Layer 0 stays on: the camera and the key light see all.) */
+    _fireCasters(eng) {
+      const list = [], sc = new T.Vector3();
+      eng.updateMatrixWorld(true);
+      eng.traverse(o => { if (o.isMesh) o.layers.disable(FIRE_LAYER); });
+      // only what casts and shows (the ghosts and the hidden moving parts depend on the cutaway: called again there)
+      eng.traverseVisible(o => {
+        if (!o.isMesh || !o.castShadow) return;
+        if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+        o.getWorldScale(sc);
+        list.push([o.geometry.boundingSphere.radius * Math.max(sc.x, sc.y, sc.z), o]);
+      });
+      list.sort((a, b) => b[0] - a[0]);
+      list.forEach(([r, o], i) => { if (i < FIRE_CASTERS && r >= 0.3) o.layers.enable(FIRE_LAYER); });
+    }
+
+    /* the fire light for this frame: flameLight's intensity split over the layout's points (weights w) */
+    _placeFire() {
+      const fl = this.flameLight, I = Math.max(0, fl.intensity) * this.flameK, pts = this._firePts;
+      let W = 0; if (pts) for (const f of pts) W += f.w;
+      const one = !pts || !pts.length || !(W > 0), u = this.floorGlow.material.uniforms;
+      this.fire.forEach((L, i) => {
+        const f = one ? (i === 0 ? { p: fl.position, w: 1 } : null) : pts[i];
+        L.color.copy(fl.color);
+        if (!f || I <= 0) { L.intensity = 0; u.uCol.value[i].setRGB(0, 0, 0); return; }
+        L.position.copy(f.p); if (!one) L.position.y += FIRE_LIFT;
+        L.intensity = I * f.w / (one ? 1 : W);
+        u.uPos.value[i].copy(L.position); u.uCol.value[i].copy(L.color).multiplyScalar(L.intensity);
+      });
+      if (this.floorGlow.visible) this.floorGlow.position.set(this.fire[0].position.x, 0.004, this.fire[0].position.z);
+      // the flame's shadow only as strong as the flame (ShadowMaterial would draw it at full strength in the dark)
+      const sh = this.fire[0].shadow, k = Math.min(1, this.fire[0].intensity / FIRE_SHADOW_I);
+      sh.intensity = FIRE_SHADOW * k;
+      // the cube is redrawn every FIRE_SHADOW_EVERY frames (the fire flickers in brightness, not in place), right
+      // away when the fire lights up, and not at all without a fire
+      sh.autoUpdate = false;
+      if (k > 0.01) {
+        this._fireTick = ((this._fireTick || 0) + 1) % FIRE_SHADOW_EVERY;
+        if (!this._fireLit || this._fireTick === 0) sh.needsUpdate = true;
+      }
+      this._fireLit = k > 0.01;
+    }
+
+    /* false = nothing was drawn (still compiling) */
+    render() {
+      if (this.compiling) return false;
+      if (this.renderer.info && this.renderer.info.reset) this.renderer.info.reset();
+      this._placeFire();
+      if (this.post) this.post.composer.render(); else this.renderer.render(this.scene, this.camera);
+      return true;
+    }
   }
 
   // shared with the layouts and js/engines/induction.js
   Engine3D.GEO = { P, CR, ROD, BORE, DECK, DEG, clamp, firingOrder };
+  Engine3D.PHYS = PHYS;   // the layouts' own hot metal (jet pipe, rocket bells) takes the heat tint too
   Engine3D.FX = window.EngineFX;   // shaders, particle kinds, plume (js/core/fx.js)
   window.Engine3D = Engine3D;
 })();

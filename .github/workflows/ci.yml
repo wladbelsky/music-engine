@@ -16,7 +16,7 @@ concurrency:
 jobs:
   unit:
     name: Unit + scene tests (Node)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -29,7 +29,8 @@ jobs:
 
   e2e:
     name: E2E (Chromium + SwiftShader WebGL)
-    runs-on: ubuntu-latest
+    # pinned: ubuntu-latest became 26.04, which the pinned Playwright (1.56.1) cannot install Chromium's deps for
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4

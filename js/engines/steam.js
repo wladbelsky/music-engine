@@ -246,6 +246,8 @@
 
     /* ---- effects ---- */
     glowPoint() { return this._w(this.doorL, this.boilerI); }
+    /* the firebox door, and a faint one at the chimney top (the sparks) */
+    fireLights() { return [{ p: this._w(this.doorL, this.boilerI), w: 1 }, { p: this._w(this.tipL, this.chimI), w: 0.25 }]; }
 
     _chuff(k) {                                       // a puff of exhaust steam out of the chimney
       const e = this.e, tp = this._w(this.tipL, this.chimI), m = Math.max(1, Math.round((2 + 3 * k) * Math.min(1, 3 / this.n))); // fewer per chuff with more cylinders

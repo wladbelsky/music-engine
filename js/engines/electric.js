@@ -33,8 +33,12 @@
       paint(u, c, k, s0) { c[k] = 0.7; c[k + 1] = 0.72; c[k + 2] = 0.78; c[k + 3] = 0.25 * Math.sin(Math.PI * Math.min(1, u * 1.3)); return s0 * (0.5 + 2.5 * u); } },
   });
 
-  /* additive, unlit, for glows that must add light on the transparent canvas (Engine3D.FX.addBlend) */
-  const glowMat = (r, g, b) => { const m = new T.MeshBasicMaterial({ color: new T.Color(r, g, b), transparent: true, depthWrite: false }); FX.addBlend(m); m.toneMapped = false; return m; };
+  /* additive, unlit, for glows that must add light on the transparent canvas (Engine3D.FX.addBlend). Tone mapped like
+     the fire shaders: glowSet() takes an on-screen colour to linear light × FX.gain (what fxOut() does), so the glows
+     go blue-white and bloom in the HDR frame and look the same on low (they were raw, not tone mapped: white blobs) */
+  const glowMat = (r, g, b) => { const m = new T.MeshBasicMaterial({ color: new T.Color(r, g, b), transparent: true, depthWrite: false }); FX.addBlend(m); return m; };
+  const lin = v => Math.pow(Math.max(v, 0), 2.2) * FX.gain.value;
+  const glowSet = (m, r, g, b) => m.color.setRGB(lin(r), lin(g), lin(b));
 
   class ElectricLayout extends L.base {
     static normCyl(n) { const v = Math.round(Number(n)); return isFinite(v) ? clamp(v + Math.abs(v % 2), 2, 12) : 4; }
@@ -238,7 +242,7 @@
     /* the brush's contact glow (glow = the core's pulse envelope) */
     cylinderFx(c, glow) {
       const I = this.spark * (0.5 + 0.9 * glow) * (0.6 + 0.4 * Math.random()) + this.ring * 0.8;
-      c.glowMat.color.setRGB(0.5 * I, 0.75 * I, 1.6 * I);
+      glowSet(c.glowMat, 0.5 * I, 0.75 * I, 1.6 * I);
       c.glowMat.visible = I > 0.01;
     }
 
@@ -303,7 +307,7 @@
       this.comm.emissiveIntensity = this.spark * 0.04 + this.ring * 0.9;
       e.flameLight.intensity = Math.max(e.flameLight.intensity, (this.spark * 1.1 + this.ring * 4) * flick);
       // flashover ring
-      this.ringMat.color.setRGB(0.9 * this.ring * flick, 1.2 * this.ring * flick, 2.4 * this.ring * flick);
+      glowSet(this.ringMat, 0.9 * this.ring * flick, 1.2 * this.ring * flick, 2.4 * this.ring * flick);
       this.rings.forEach((m, k) => { m.visible = this.ring > 0.03; m.rotation.x = Math.random() * 6.28; m.scale.setScalar(1 + (Math.random() - 0.5) * 0.08 * (k + 1)); });
       // arcs, rebuilt every 50 ms while the music peaks
       this.arcT -= dt;
@@ -312,7 +316,7 @@
       if (arcOn && this.arcT <= 0) { this.arcT = 0.05; this._arcs(sim); }
       if (!arcOn && this.arcI < 0.05) this.arcs.forEach(a => { a.visible = false; });
       const ai = this.arcI * (0.7 + 0.6 * sim.flame) * flick;
-      this.arcMat.color.setRGB(0.9 * ai, 1.1 * ai, 2.2 * ai);
+      glowSet(this.arcMat, 0.9 * ai, 1.1 * ai, 2.2 * ai);
       // blur shells over the commutator and the armature bars
       const over = this.rotS.over || 0;
       this.blurC.material.opacity = clamp((over - 0.3) / 0.4, 0, 0.8);

@@ -20,6 +20,9 @@ function fakeAudio(o = {}) {
 function world({ w = 1920, h = 1080, dash = {}, seed } = {}) {
   const g = load({ seed });
   const e = new g.Engine3D(g.fakeCanvas());
+  // the renderer's own objects (lights, effect pools...) draw uuids from Math.random: start the stream over after
+  // them, so the traces don't shift when Engine3D gains or loses one
+  g.reseed();
   let d = null;
   if (dash !== false) { d = new g.Dash(g.fakeCanvas()); d.set(dash); d.resize(w, h, 1); e.setKeepOut(d.keepOut()); }
   e.resize(w, h);

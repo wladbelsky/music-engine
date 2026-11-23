@@ -67,3 +67,38 @@ test('WE: without any properties from WE the splash still goes away (cap)', asyn
   assert.ok(s.gone && s.gone.layout === 'v', JSON.stringify(s));
   assert.deepEqual(errors, [], errors.join('\n'));
 });
+
+/* in the page before its scripts: a renderer whose shader compile takes `ms` (SwiftShader has no
+   KHR_parallel_shader_compile, so the real path never waits here) */
+function slowShaders(ms) {
+  let T3;
+  Object.defineProperty(window, 'THREE', {
+    configurable: true, get: () => T3,
+    set(v) {
+      const R = v.WebGLRenderer;
+      v.WebGLRenderer = function (o) {
+        const r = new R(o), has = r.extensions.has.bind(r.extensions);
+        r.extensions.has = n => n === 'KHR_parallel_shader_compile' || has(n);
+        r.compileAsync = () => new Promise(res => setTimeout(() => { window.__splash.compiled = { loops: window.__splash.loops, splash: !!document.getElementById('splash') && !document.getElementById('splash').classList.contains('gone') }; res(); }, ms));
+        return r;
+      };
+      T3 = v;
+    },
+  });
+}
+
+test('the splash stays up while the shaders compile in the background (the loop keeps running), then fades', async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+  try {
+    await context.addInitScript(watchSplash, null);
+    await context.addInitScript(slowShaders, 1200);
+    const P = await open(browser, 'layout=v&cylinders=8', { context });
+    await P.page.waitForFunction(() => !document.getElementById('splash'), null, { timeout: 30000 });
+    const s = await P.page.evaluate(() => window.__splash);
+    assert.ok(s.compiled, 'the build never asked for a compile: ' + JSON.stringify(s));
+    assert.ok(s.compiled.loops >= 3, `the loop did not run during the compile: ${JSON.stringify(s)}`);
+    assert.ok(s.compiled.splash, 'the splash was gone before the engine could be drawn');
+    assert.ok(s.gone.loops >= s.compiled.loops + 2, `faded before the compiled engine was on screen: ${JSON.stringify(s)}`);
+    assert.deepEqual(P.errors, [], P.errors.join('\n'));
+  } finally { await context.close(); }
+});

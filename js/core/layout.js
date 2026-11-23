@@ -74,6 +74,9 @@
     updateFx(dt, sim, quality) { this.e.time += dt; }   // effects; must advance e.time
     afterSway() {}                      // world-space positions of effect origins, after the rocking
     glowPoint() { return null; }        // world space: flame light, background glow
+    /* where the fire light comes from, world space after the sway: up to 3 {p: Vector3, w: weight} (the light is
+       split by weight; points are raised by Engine3D's FIRE_LIFT), or null = one light at glowPoint() */
+    fireLights() { return null; }
     frameBox(box) {}                    // widen the framing box for effects
 
     /* ---- small builders (engine space) ---- */

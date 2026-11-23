@@ -14,6 +14,9 @@
   const T = THREE;
   const { DEG, clamp } = Engine3D.GEO;
   const FX = EngineFX, L = EngineLayouts;
+  // the frame is HDR now and the plumes are summed in linear light: a cluster burnt out to a white blob at the
+  // effects' common gain, so each plume is drawn at about half the light (0.73^2.2)
+  const HDR_K = 0.73;
 
   const R_T = 0.18, R_E = 0.62, L_B = 1.6;        // throat radius, exit radius, bell length (one engine at scale 1)
   const X_GIM = 0.95;                             // gimbal point, engine-local
@@ -68,7 +71,7 @@
     /* the engines: shared geometry, each in a gimbal group (pivot at the gimbal block) */
     buildCrank() {
       const M = this.M, s = this.s;
-      this.nozzleMat = new T.MeshStandardMaterial({ color: 0x4a3f38, metalness: 0.85, roughness: 0.45, side: T.DoubleSide, emissive: new T.Color(1.0, 0.36, 0.1), emissiveIntensity: 0 });
+      this.nozzleMat = new T.MeshPhysicalMaterial(Object.assign({ color: 0x4a3f38, metalness: 0.85, roughness: 0.45, side: T.DoubleSide, emissive: new T.Color(1.0, 0.36, 0.1), emissiveIntensity: 0 }, Engine3D.PHYS.tint));
       this.chamberMat = new T.MeshStandardMaterial({ color: 0x3a2c24, metalness: 0.8, roughness: 0.5 });
       this.loxMat = new T.MeshStandardMaterial({ color: 0xaab4bc, metalness: 0.3, roughness: 0.75 });   // frosted oxidiser line
       const bell = []; for (let k = 0; k <= 24; k++) { const t = k / 24; bell.push([-t * L_B, bellR(t)]); }
@@ -144,6 +147,13 @@
       return this.I > 0.02 ? p.addScaledVector(this._dirW(en), 1.2 * this.s) : p;
     }
 
+    /* the middle of the nozzle exits and a light down the plumes */
+    fireLights() {
+      const c = new T.Vector3(), d = new T.Vector3();
+      this.engines.forEach(en => { c.add(this._exitW(en)); d.add(this._dirW(en)); });
+      c.divideScalar(this.engines.length); d.normalize();
+      return [{ p: c.clone().addScaledVector(d, 0.5 * this.s), w: 1 }, { p: c.addScaledVector(d, 2.4 * this.s), w: Math.min(1, this.I) }];
+    }
     _spawnAt(en, m, fn) { for (let i = 0; i < m; i++) fn(this._exitW(en), this._dirW(en)); }
     _vapour(en, m) {                              // chill-down / oxidiser-rich vapour out of a nozzle
       const e = this.e, s = this.s;
@@ -179,6 +189,7 @@
       this.green *= Math.exp(-dt / 0.35);
       this.heat += ((this.I > 0.05 ? 0.25 + 0.55 * clamp(this.I, 0, 1.4) : 0) - this.heat) * (1 - Math.exp(-dt / 2));
       this.nozzleMat.emissiveIntensity = this.heat;
+      const tr = Engine3D.PHYS.tintRange; this.nozzleMat.iridescence = tr[0] + (tr[1] - tr[0]) * Math.min(1, Math.max(0, this.heat));
       const I = this.I, flick = 0.9 + 0.1 * Math.sin(e.time * 31) * Math.sin(e.time * 12.7), s = this.s;
       // gimbals: every beat swings the engines (outer ones more), with a slow steering wander while firing
       this.engines.forEach(en => {
@@ -193,7 +204,7 @@
         pl.visible = I > 0.02;
         if (!pl.visible) return;
         u.uOrigin.value.copy(this._exitW(en, -0.02)); u.uDir.value.copy(this._dirW(en)); u.uTime.value = e.time + i * 0.37;
-        u.uInt.value = Math.min(1.6, I) * flick * this.dim;      // overlapping plumes add up: dimmer each in a big cluster
+        u.uInt.value = Math.min(1.6, I) * flick * this.dim * HDR_K;      // overlapping plumes add up: dimmer each in a big cluster
         u.uLen.value = (2.4 + 4.2 * Math.min(1.4, I)) * s;
         u.uWidth.value = 1.9 * 2 * R_E * s * (1 + 0.08 * Math.min(1.4, I));
         u.uDiam.value = 1.15 * s;

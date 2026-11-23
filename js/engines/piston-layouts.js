@@ -381,13 +381,7 @@
     }
     frontTopY() { return this.hy - 0.2; }
     coverD() { return 0.55; }
-    buildFront(plen) {
-      super.buildFront(plen);
-      // the narrow cover leaves the accessory pulley in the air: put an alternator behind it on the housing
-      const face = this.n / 2 * this.pitch + 0.07, px = this.frontX + 0.08, L = px - face;
-      const alt = new T.Mesh(new T.CylinderGeometry(0.17, 0.17, L, 18), this.M.dark2);
-      alt.rotation.z = Math.PI / 2; alt.position.set(face + L / 2, 0.55, this.sidePulleyZ()); this.eng.add(alt);
-    }
+    altBack() { return this.n / 2 * this.pitch + 0.07; }   // the alternator reaches back to the front housing
     topY() { return this.hy + 0.75; }
     turboMount() {
       const s = clamp(0.55 + 0.25 * this.n, 0.8, 1.6);    // a 2-rotor gets a proper-size turbo

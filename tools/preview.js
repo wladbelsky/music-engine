@@ -149,6 +149,7 @@ const state = () => ({ state: __dbg.sim.state, rpm: Math.round(__dbg.sim.rpm), f
 
 async function gif(browser, name, query) {
   const { page, errors, ctx } = await open(browser, query, { we: true, w: GIF.render, h: GIF.render });
+  await page.waitForFunction(() => !__dbg.eng3d.compiling, null, { timeout: 30000 });   // render() draws nothing while the shaders compile
   await page.evaluate(setup, [SONG, true, GIF.margin]);
   await page.evaluate(s => __pv.run(s, false), SONG.warm + SONG.loud);
   const st = await page.evaluate(state);
@@ -169,6 +170,7 @@ async function gif(browser, name, query) {
 
 async function shot(browser, name, S) {
   const { page, errors, ctx } = await open(browser, S.q, { we: true, w: SHOT.w, h: SHOT.h });
+  await page.waitForFunction(() => !__dbg.eng3d.compiling, null, { timeout: 30000 });   // render() draws nothing while the shaders compile
   await page.evaluate(setup, [SONG, false]);
   // a used car: something on the odometer; the radio playing a track
   await page.evaluate(radio => { __dbg.odo._write(48213.7, 312.4); if (radio) __dbg.media.mock(...radio); }, S.radio || null);

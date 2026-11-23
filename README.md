@@ -47,8 +47,8 @@ A web wallpaper with a 3D engine. The engine revs up to the music, and on the mo
 - **Audio sensitivity**, **rev limiter**, **flame threshold** (lower means more frequent flames).
 - **Stall after silence, s**.
 - **Crankshaft animation speed**, **engine sway strength**.
-- **Graphics quality**: low, medium, high. If the wallpaper loads your system too much, also cap the FPS in the WE settings.
-- **Show BPM and load**, **debug info** (BPM, confidence, loudness, engine state).
+- **Graphics quality**: low, medium, high. Medium and high render in HDR with a soft glow (bloom) around the fire; high adds the shadow the engine casts from its own flames and **ambient occlusion** (darker crevices, a contact shadow on the floor), which has its own switch for weaker graphics cards. If the wallpaper loads your system too much, also cap the FPS in the WE settings.
+- **Show BPM and load**.
 - **Odometer**: kilometers, miles or hidden. The ODO and TRIP drum counters under the tachometer add mileage while the engine runs, faster at higher RPM (about 30 km/h per 1000 rpm). Click the counter to reset TRIP. Mileage is kept in the wallpaper's local storage. In Wallpaper Engine that storage belongs to each monitor, and WE may clear it (screensaver mode, cache reset), so treat it as best effort.
 
 ## Warning lamps
@@ -83,6 +83,10 @@ python -m http.server 8000
 ```
 
 Parameters can be passed in the URL: `?demo=1&layout=radial&cylinders=9&turbos=sc&background=carbon&ignition=false`.
+
+## Measuring performance
+
+To see what the wallpaper costs on your machine: in Wallpaper Engine's settings set a **CEF devtools port** (General tab), open `http://localhost:<port>` in Chrome, pick the wallpaper and run `perfReport(60)` in its console. After a minute it logs (and returns) the frame rate, frame and CPU times (average, 95th percentile, worst), stutters, draw calls and triangles, with the engine and quality it measured. `perfFlags({ gputime: true })` and a reload (F5 in the devtools) adds the GPU time of the 3D frame; `perfFlags({ bloom: false })` or `perfFlags({ fireshadow: false })` compares without the bloom or the flame shadow; `perfFlags({})` resets. In a browser, `?gputime=1` does the same as the flag.
 
 ## Tests
 
@@ -139,7 +143,7 @@ js/engines/marine.js     marine diesel: crossheads, open valve gear, turbocharge
 js/engines/rocket.js     rocket engines on a test stand: cluster, plumes, ignition, gimbals
 js/engines/induction.js  forced induction options, boost sources and parts: air filter, turbos, Roots blower
 js/main.js               glue: WE properties, audio, input, main loop, settings panel
-js/three.min.js          Three.js r149 (MIT, license in js/three.LICENSE.txt)
+js/three.min.js          Three.js r187 + addons, bundled by tools/vendor-three.js (MIT, license in js/three.LICENSE.txt)
 tools/                   baseline, sync-project and preview scripts (Node)
 test/                    automated tests (node:test + Playwright), see Tests
 .github/                 CI workflow

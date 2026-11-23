@@ -10,7 +10,7 @@
     accent: [0.75, 0.08, 0.06], dashColor: [1, 0.35, 0.1],
     background: 'garage', bgcolor: [0.12, 0.13, 0.16], customimage: '', bgdim: 0.2,
     sensitivity: 1, sway: 1, redline: 7000, flameThr: 0.62, stallDelay: 3, animSpeed: 1,
-    quality: 'high', showBpm: true, debug: false, fps: 0, showControls: true,
+    quality: 'high', ao: true, showBpm: true, debug: false, fps: 0, showControls: true,
     showRadio: false,                 // off by default (WE property / ?showradio=true / dev panel)
     odoUnits: 'km',                   // 'km' | 'mi' | 'off' (hidden, still counts)
   };
@@ -25,6 +25,123 @@
   const glow = $('glow');
   let paused = false, needRebuild = true, booted = false, weProps = !IS_WE; // weProps: WE has sent its properties (splash)
   const MIN_REDLINE = 500, MAX_REDLINE = 15000;
+
+  /* ---------- performance report on a real GPU (from carrier-wallpaper) ----------
+     In Wallpaper Engine: Settings → General → "CEF devtools port" (e.g. 8080), open http://localhost:8080 in Chrome,
+     pick the wallpaper, then in its console:
+       perfFlags({ gputime: true })   — once: GPU time of the 3D frame (EXT_disjoint_timer_query_webgl2), needs a reload
+       perfReport(60)                 — measures 60 s, logs and returns a summary (frame / CPU / GPU times, draw calls)
+       perfFlags({ bloom: false }) / perfFlags({ fireshadow: false }) — the next load without that (to compare),
+       perfFlags({})                  — back to normal
+     The flags live in localStorage (WE passes no URL parameters); ?gputime=1 does the same in a browser. Ambient
+     occlusion and the quality level are WE properties already. */
+  const PERF_KEY = 'music-engine.perf', PAUSE_MS = 1000;
+  const PERF = {
+    recs: [],
+    flags: (() => { try { const f = JSON.parse(localStorage.getItem(PERF_KEY) || '{}'); return f && typeof f === 'object' && !Array.isArray(f) ? f : {}; } catch (e) { return {}; } })(),   // junk (perfFlags(true)) → none: a primitive would throw below (strict mode)
+    sample(ms, cpu, render, dash) {   // into every report running (each perfReport() call has its own record)
+      const info = eng3d.renderer.info.render;
+      for (const r of this.recs) {
+        // a gap over 1 s is a pause (WE pauses a covered wallpaper; a hidden tab), not a frame: counted apart, or one
+        // 26 s pause took the average of a 60 FPS run down to 39.5 FPS
+        if (r.last) { const d = ms - r.last; if (d > PAUSE_MS) r.pauses++; else r.frame.push(d); }
+        r.last = ms;
+        r.cpu.push(cpu); r.render.push(render); r.dash.push(dash);
+        r.calls.push(info.calls); r.tris.push(info.triangles); r.flame.push(sim.flame);
+      }
+    },
+  };
+  PERF.flags.gputime = PERF.flags.gputime === true || qs.get('gputime') === '1';
+  // perfFlags({ glcheck: true }) (debug): every getProgramParameter is followed by getError (a sync round trip, slow),
+  // and a GL error is logged once per call site with the stack and whether the program still exists: to find out who
+  // asks about a deleted program ("GL_INVALID_VALUE: glGetProgramiv: Program object expected" in WE's console)
+  if (PERF.flags.glcheck === true || qs.get('glcheck') === '1') (() => {
+    const gl = eng3d.renderer.getContext && eng3d.renderer.getContext();
+    if (!gl || !gl.getProgramParameter) return;
+    const orig = gl.getProgramParameter.bind(gl), seen = new Set();
+    gl.getProgramParameter = (p, n) => {
+      while (gl.getError() !== gl.NO_ERROR) { /* not ours */ }
+      const v = orig(p, n), err = gl.getError();
+      if (err !== gl.NO_ERROR) {
+        const st = new Error().stack.split('\n').slice(2, 10).map(x => x.trim()).join('\n  ');
+        if (!seen.has(st)) { seen.add(st); console.warn(`glcheck: getProgramParameter(0x${n.toString(16)}) → GL error 0x${err.toString(16)}, isProgram ${gl.isProgram(p)}, building ${!!eng3d.compiling}\n  ${st}`); }
+      }
+      return v;
+    };
+    console.log('glcheck on');
+  })();
+  // GPU time of eng3d.render() (the 3D frame with all its passes): a timer query around it, read back a frame or two
+  // later (never waited for); none on GPUs / browsers without the extension
+  const gpuTimer = (() => {
+    const gl = PERF.flags.gputime && eng3d.renderer.getContext && eng3d.renderer.getContext();
+    const ext = gl && gl.getExtension('EXT_disjoint_timer_query_webgl2');
+    if (!ext) return null;
+    const pending = [];
+    let on = false;
+    return {
+      begin() { if (pending.length > 6) return; const q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, q); pending.push(q); on = true; },
+      end() { if (on) gl.endQuery(ext.TIME_ELAPSED_EXT); on = false; },
+      poll() {
+        while (pending.length && gl.getQueryParameter(pending[0], gl.QUERY_RESULT_AVAILABLE)) {
+          const q = pending.shift();
+          if (!gl.getParameter(ext.GPU_DISJOINT_EXT)) { const v = gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6; for (const r of PERF.recs) r.gpu.push(v); }
+          gl.deleteQuery(q);
+        }
+      },
+    };
+  })();
+  function gpuName() {
+    try {
+      const gl = eng3d.renderer.getContext(), x = gl.getExtension('WEBGL_debug_renderer_info');
+      return String(gl.getParameter(x ? x.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+    } catch (e) { return 'unknown'; }
+  }
+  // the flags' switches, after every quality change (setQuality sets bloom and the flame shadow back)
+  function setQuality() {
+    eng3d.ao = S.ao; eng3d.setQuality(S.quality);
+    if (PERF.flags.bloom === false && eng3d.post) eng3d.post.bloom.enabled = false;
+    if (PERF.flags.fireshadow === false) eng3d.fire[0].castShadow = false;
+  }
+  function perfFlags(f) {
+    if (!f || typeof f !== 'object' || Array.isArray(f)) f = {};
+    try { localStorage.setItem(PERF_KEY, JSON.stringify(f || {})); } catch (e) { return 'localStorage unavailable'; }
+    return 'saved — reload to apply: ' + JSON.stringify(f || {});
+  }
+  function perfReport(sec = 30) {
+    const r = { frame: [], cpu: [], render: [], dash: [], gpu: [], calls: [], tris: [], flame: [], last: 0, pauses: 0 };
+    PERF.recs.push(r);
+    console.log(`perfReport: measuring ${sec} s…`);
+    return new Promise(res => setTimeout(() => {
+      PERF.recs.splice(PERF.recs.indexOf(r), 1);
+      const avg = a => a.length ? +(a.reduce((x, y) => x + y, 0) / a.length).toFixed(2) : null;
+      const p95 = a => a.length ? +[...a].sort((x, y) => x - y)[Math.floor(a.length * 0.95)].toFixed(2) : null;
+      const max = a => a.length ? +Math.max(...a).toFixed(1) : null;
+      const e = eng3d, c = e.renderer.domElement, mem = e.renderer.info.memory;
+      const out = {
+        gpu: gpuName(), layout: S.layout, cylinders: S.cylinders, induction: S.induction.key, quality: S.quality,
+        hdr: !!e.post, ao: !!(e.post && e.post.ao.enabled), bloom: !!(e.post && e.post.bloom.enabled),
+        fireShadow: !!e.fire[0].castShadow, cutaway: S.cutaway, size: `${c.width}x${c.height}`, pixelRatio: +e.renderer.getPixelRatio().toFixed(2),
+        fpsLimit: S.fps || 'none', state: sim.state, flame: avg(r.flame), frames: r.cpu.length,
+        fps: r.frame.length ? +(1000 / avg(r.frame)).toFixed(1) : 0,
+        frameMs: avg(r.frame), frameMsP95: p95(r.frame), frameMsMax: max(r.frame),
+        // frames longer than two frame intervals (two vsyncs, or two of the FPS limit's): visible stutter. The
+        // interval is the median frame (a 144 Hz display's is 6.9 ms, not 60 Hz's 16.7), never under 240 Hz's
+        hitches: (() => { const med = r.frame.length ? [...r.frame].sort((x, y) => x - y)[r.frame.length >> 1] : 16.7;
+          return r.frame.filter(t => t > 2 * Math.max(med, 1000 / 240, S.fps > 0 ? 1000 / S.fps : 0)).length; })(),
+        pauses: r.pauses,   // gaps over 1 s (paused or hidden), left out of the frame times
+        cpuMs: avg(r.cpu), cpuMsP95: p95(r.cpu), cpuMsMax: max(r.cpu),
+        renderCpuMs: avg(r.render), dashCpuMs: avg(r.dash),
+        gpuMs: gpuTimer ? avg(r.gpu) : PERF.flags.gputime ? 'no timer queries on this GPU / browser' : 'perfFlags({ gputime: true }) + reload',
+        gpuMsP95: gpuTimer ? p95(r.gpu) : null, gpuMsMax: gpuTimer ? max(r.gpu) : null,
+        drawCalls: avg(r.calls), triangles: Math.round(avg(r.tris) || 0),
+        programs: e.renderer.info.programs ? e.renderer.info.programs.length : null, geometries: mem.geometries, textures: mem.textures,
+        flags: PERF.flags,
+      };
+      console.log('perfReport ' + JSON.stringify(out)); res(out);
+    }, sec * 1000));
+  }
+  window.perfReport = perfReport; window.perfFlags = perfFlags;
+
 
   // browser only: the settings panel choices survive a reload (WE keeps its own property values)
   const STORE = 'music-engine.settings';
@@ -92,6 +209,7 @@
       if (v('animspeed') !== undefined) { const a = Number(v('animspeed')) / 100; S.animSpeed = isFinite(a) ? Math.max(0, a) : 1; } // editable: junk → default, never backwards
       if (v('sway') !== undefined) { const w = Number(v('sway')) / 100; S.sway = isFinite(w) ? Math.max(0, w) : 1; } // editable: junk → default
       if (v('quality') !== undefined) { S.quality = v('quality'); q = true; }
+      if (v('ambientocclusion') !== undefined) { S.ao = !!v('ambientocclusion'); q = true; }
       if (v('showbpm') !== undefined) S.showBpm = !!v('showbpm');
       if (v('debug') !== undefined) S.debug = !!v('debug');
       if (v('ignition') !== undefined) sim.ignition = !!v('ignition');
@@ -100,7 +218,7 @@
       if (v('odounits') !== undefined) S.odoUnits = ['mi', 'off'].includes(v('odounits')) ? v('odounits') : 'km';
       if (bgChanged) bg.set({ preset: S.background, bgcolor: S.bgcolor, dim: S.bgdim });
       if (rebuild) needRebuild = true;
-      if (q) eng3d.setQuality(S.quality);
+      if (q) setQuality();
       applySettings();
     },
     applyGeneralProperties(p) { if (p.fps !== undefined) S.fps = p.fps; },
@@ -170,6 +288,7 @@
       { k: 'animspeed', t: 'range', l: 'crank anim %', d: 100, min: 25, max: 200 },
       { k: 'sway', t: 'range', l: 'sway %', d: 100, min: 0, max: 250 },
       { k: 'quality', t: 'select', l: 'quality', d: 'high', o: [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']] },
+      { k: 'ambientocclusion', t: 'bool', l: 'ambient occl.', d: true },
     ]],
     ['Dash', [
       { k: 'dashcolor', t: 'color', l: 'backlight', d: '1 0.35 0.1' },
@@ -308,7 +427,7 @@
   if (init.cylinders) init.cylinders.value = String(init.cylinders.value);
   if (init.turbos) init.turbos.value = String(init.turbos.value);
   resize();
-  eng3d.setQuality(S.quality);
+  setQuality();
   bg.set({ preset: S.background, bgcolor: S.bgcolor, dim: S.bgdim });
   window.wallpaperPropertyListener.applyUserProperties(init);
   syncPanel();
@@ -343,19 +462,27 @@
     rafId = requestAnimationFrame(loop);
     if (S.fps > 0 && now - last < 1000 / S.fps - 2) return;
     const step = Math.max(0, (now - last) / 1000), dt = Math.min(0.1, Math.max(0.001, step)); last = now;
+    if (gpuTimer) gpuTimer.poll();
     frame(dt, now / 1000, step, now);
-    sinceBuild++; splashCheck();
+    if (eng3d.compiling) sinceBuild = 0; else sinceBuild++;   // frames since the build was first drawn
+    splashCheck();
   }
 
   /* one frame of the wallpaper; also driven with a fixed step by tools/preview.js (loop paused) */
   function frame(dt, t, step = dt, now = t * 1000) {
+    const t0 = PERF.recs.length ? performance.now() : 0;
     if (needRebuild) { needRebuild = false; eng3d.build(S.cylinders, S.layout, S.induction); eng3d.setCutaway(S.cutaway); eng3d.resize(...viewSize()); dash.set({ label: engineLabel() }); sinceBuild = 0; }
     audio.tick(t);
     sim.update(dt, audio, t);
     odo.update(Math.min(step, 1), sim, now); // real time (low FPS caps), but not a whole hidden-tab gap
     eng3d.update(dt, sim, S.animSpeed, S.quality);
+    const rec = PERF.recs.length > 0, t1 = rec ? performance.now() : 0;
+    if (gpuTimer && rec) gpuTimer.begin();
     eng3d.render();
+    if (gpuTimer && rec) gpuTimer.end();
+    const t2 = rec ? performance.now() : 0;
     dash.draw(sim, audio, dt, t, media, odo);
+    if (rec) { const t3 = performance.now(); PERF.sample(now, t3 - t0, t2 - t1, t3 - t2); }
     // glow on the background around the exhaust (warm for fire, the type's own colour otherwise)
     const gp = eng3d.glowScreen();
     const gi = Math.min(1, sim.flame * 0.8 + eng3d.flash * 0.6);

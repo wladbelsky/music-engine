@@ -244,17 +244,18 @@
         ],
         "order": 21
       },
+      "ambientocclusion": {
+        "text": "Ambient occlusion (High quality)",
+        "type": "bool",
+        "value": true,
+        "condition": "quality.value == 'high'",
+        "order": 22
+      },
       "showbpm": {
         "text": "Show BPM and load",
         "type": "bool",
         "value": true,
-        "order": 22
-      },
-      "debug": {
-        "text": "Debug info",
-        "type": "bool",
-        "value": false,
-        "order": 24
+        "order": 23
       },
       "sway": {
         "order": 20,
@@ -284,7 +285,7 @@
         "value": false
       },
       "odounits": {
-        "order": 23,
+        "order": 24,
         "text": "Odometer",
         "type": "combo",
         "value": "km",
